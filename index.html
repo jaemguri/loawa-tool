@@ -23,13 +23,11 @@
     const effectiveRatioInput = document.getElementById('effectiveRatio');
     const resultDiv = document.getElementById('result');
 
-    // 태그(<FONT>, <BR> 등) 걷어내고 순수 텍스트만 남기는 함수
     function stripHtml(str) {
       if (!str) return '';
       return String(str).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
-    // 게임 툴팁(JSON 문자열)을 읽기 쉬운 줄바꿈 텍스트로 바꿔주는 함수
     function parseTooltip(tooltipStr) {
       const lines = [];
       try {
@@ -45,9 +43,7 @@
             lines.push(`[${label}] ${content}`);
           }
         });
-      } catch (e) {
-        // 파싱 실패하면 그냥 빈 배열 반환
-      }
+      } catch (e) {}
       return lines;
     }
 
@@ -72,126 +68,49 @@
           return;
         }
 
-        let html = '';
+        const dealerStats = calculateCharacterStats(data.dealer);
+        const supportStats = calculateCharacterStats(data.support);
 
-        // ① 기본 스탯
-        html += `<h2>${data.profiles.CharacterName} (${data.profiles.ServerName})</h2>`;
-        html += `<p>클래스: ${data.profiles.CharacterClassName} / 아이템레벨: ${data.profiles.ItemAvgLevel}</p>`;
-        html += `<pre>${JSON.stringify(data.profiles.Stats, null, 2)}</pre>`;
-
-        html += `<h3>아바타(원본)</h3><pre>${JSON.stringify(data.avatars, null, 2)}</pre>`;
-        // ② 장비 (무기, 악세서리 등)
-        html += `<h3>장비</h3>`;
-        (data.equipment || []).forEach((item) => {
-          html += `<p><b>${item.Type} - ${stripHtml(item.Name)}</b></p>`;
-          html += `<pre>${parseTooltip(item.Tooltip).join('\n')}</pre>`;
-        });
-
-        // ③ 아크그리드
-        html += `<h3>아크그리드</h3>`;
-        if (data.arkgrid && data.arkgrid.Slots) {
-          data.arkgrid.Slots.forEach((slot) => {
-            html += `<p><b>${slot.Name} (Point: ${slot.Point})</b></p>`;
-            html += `<pre>${parseTooltip(slot.Tooltip).join('\n')}</pre>`;
-            (slot.Gems || []).forEach((gem) => {
-              html += `<pre>[젬-${gem.Grade}] ${parseTooltip(gem.Tooltip).join(' / ')}</pre>`;
-            });
-          });
+        if (!dealerStats || !supportStats) {
+          resultDiv.textContent = '무기 정보를 찾을 수 없습니다.';
+          return;
         }
 
-        // --- 무기 공격력 계산 테스트 ---
-        const weaponItem = (data.equipment || []).find((item) => item.Type === '무기');
-        let weaponTestHtml = '';
-        if (weaponItem) {
-          const levelMatch = stripHtml(weaponItem.Name).match(/\+(\d+)/);
-          const weaponLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
+        // 서포터 버프력 계산
+        const allyBuffPercent = getTotalAllyAttackBuffPercent(
+          data.support.equipment, supportStats.braceletOptions, data.support.arkgrid
+        );
+        const buffGemPercent = getSupportBuffGemPercent(data.support.gems, supportStats.className);
+        const supportBuffPower = calculateSupportBuffPower(
+          supportStats.basePower, allyBuffPercent, buffGemPercent, effectiveRatio
+        );
 
-          const braceletItem = (data.equipment || []).find((it) => it.Type === '팔찌');
-          const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
-          const braceletOptions = parseBraceletOptions(braceletText);
-          const braceletFlat = braceletOptions.weaponAttackFlat;
-          
+        // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
+        const finalDamage = calculateFinalDamage(
+          dealerStats.basePower,
+          dealerStats.accessoryAttackFlat,
+          dealerStats.chaosCoreAttack.flat,
+          supportBuffPower,
+          dealerStats.chaosCoreAttack.percent,
+          dealerStats.earringAttackPercent,
+          dealerStats.arkgridGemsAttackPercent
+        );
 
-          const earringItems = (data.equipment || []).filter((it) => it.Type === '귀걸이');
-          let earringPercent = 0;
-          earringItems.forEach((it) => {
-            const text = parseTooltip(it.Tooltip).join(' ');
-            earringPercent += extractPercent(text, '무기 공격력');
-          });
+        resultDiv.innerHTML = `
+          <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
+          <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
+          <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
+          <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
+          <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
 
-          let coreFlat = 0;
-          let corePercent = 0;
-          let debugCoreRaw = '';
-          let debugCoreActivated = '';
-          if (data.arkgrid && data.arkgrid.Slots) {
-            const chaosStarSlot = data.arkgrid.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
-            if (chaosStarSlot) {
-              const strippedCoreOption = getCoreOptionText(chaosStarSlot.Tooltip);
-              const segments = getActivatedCoreSegments(strippedCoreOption, chaosStarSlot.Point);
-              const coreSums = sumCoreSegments(segments, '무기 공격력');
-              coreFlat = coreSums.flat;
-              corePercent = coreSums.percent;
-              debugCoreRaw = strippedCoreOption;
-              debugCoreActivated = segments.join(' | ');
-            }
-          }
+          <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
+          <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
+          <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
+          <p>공증 버프 보석%: ${buffGemPercent}</p>
+          <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
 
-          const enlightenmentLevel = getArkPassiveLevelFromData(data.arkpassive, '깨달음');
-          const enlightenmentPercent = enlightenmentWeaponAttackPercent(enlightenmentLevel);
-
-          const flatBonusSum = braceletFlat + coreFlat;
-          const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
-
-          const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
-          const eqStrDebug = getStatTotalFromEquipment(data.equipment, '힘');
-          const eqDexDebug = getStatTotalFromEquipment(data.equipment, '민첩');
-          const eqIntDebug = getStatTotalFromEquipment(data.equipment, '지능');
-          const brStrDebug = extractFlat(braceletText, '힘');
-          const brDexDebug = extractFlat(braceletText, '민첩');
-          const brIntDebug = extractFlat(braceletText, '지능');
-          const avatarPercentDebug = getAvatarPrimaryStatPercent(data.avatars);
-          const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars);
-          const purePower = calculatePureAttackPower(primaryStat, calculated);
-          const gemPercent = getGemsBaseAttackPercent(data.gems);
-          const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);
-          const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent);
-          const accessoryAttackFlat = getAccessoryAttackFlat(data.equipment);
-          const chaosCoreAttack = getChaosStarCoreAttack(data.arkgrid);
-          const earringAttackPercent = getEarringAttackPercent(data.equipment);
-          const arkgridGemsAttackPercent = getAllArkgridGemsAttackPercent(data.arkgrid);
-          const statWindowAttack = calculateStatWindowAttackPower(
-            basePower, accessoryAttackFlat, chaosCoreAttack.flat, chaosCoreAttack.percent,
-            earringAttackPercent, arkgridGemsAttackPercent
-          );
-
-          weaponTestHtml = `
-            <h3>무기 공격력 계산</h3>
-            <p>무기 레벨: ${weaponLevel}</p>
-            <p>팔찌 고정값: ${braceletFlat}</p>
-            <p>코어 고정값: ${coreFlat}</p>
-            <p>귀걸이 %: ${earringPercent}</p>
-            <p>코어 %: ${corePercent}</p>
-            <p>코어 원본: ${debugCoreRaw}</p>
-            <p>코어 활성화: ${debugCoreActivated}</p>
-            <p>깨달음 레벨: ${enlightenmentLevel} → 무기 공격력 %: ${enlightenmentPercent}</p>
-            <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
-            <p>장비 힘/민첩/지능: ${eqStrDebug} / ${eqDexDebug} / ${eqIntDebug}</p>
-            <p>팔찌 힘/민첩/지능: ${brStrDebug} / ${brDexDebug} / ${brIntDebug}</p>
-            <p>아바타 %: ${avatarPercentDebug}</p>
-            <p>힘/민첩/지능(최댓값): ${primaryStat}</p>
-            <p><b>순수 공격력: ${purePower.toLocaleString()}</b></p>
-            <p>보석 기본공격력 %: ${gemPercent}</p>
-            <p>세공 기본공격력 %: ${stonePercent}</p>
-            <p><b>기본 공격력: ${basePower.toLocaleString()}</b></p>
-            <p>악세 공격력 고정: ${accessoryAttackFlat}</p>
-            <p>혼돈별코어 공격력 고정/%: ${chaosCoreAttack.flat} / ${chaosCoreAttack.percent}</p>
-            <p>귀걸이 공격력%: ${earringAttackPercent}</p>
-            <p>아크그리드 젬 공격력%: ${arkgridGemsAttackPercent}</p>
-            <p><b>스탯창 공격력: ${statWindowAttack.toLocaleString()}</b></p>
-          `;
-        }
-
-        resultDiv.innerHTML = weaponTestHtml + html;
+          <h2>최종 데미지: ${finalDamage.toLocaleString()}</h2>
+        `;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
       }
