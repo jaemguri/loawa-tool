@@ -8,7 +8,9 @@
   <h1>내 캐릭터 정보 조회</h1>
   <p>여기에 캐릭터 정보가 표시될 예정입니다.</p>
 
-  <input type="text" id="charName" placeholder="캐릭터명을 입력하세요">
+  <p>딜러 닉네임: <input type="text" id="dealerName" placeholder="딜러 캐릭터명"></p>
+  <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
+  <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <button id="searchBtn">조회하기</button>
 
   <div id="result"></div>
@@ -16,7 +18,9 @@
   <script src="calculate.js"></script>
   <script>
     const searchBtn = document.getElementById('searchBtn');
-    const charNameInput = document.getElementById('charName');
+    const dealerNameInput = document.getElementById('dealerName');
+    const supportNameInput = document.getElementById('supportName');
+    const effectiveRatioInput = document.getElementById('effectiveRatio');
     const resultDiv = document.getElementById('result');
 
     // 태그(<FONT>, <BR> 등) 걷어내고 순수 텍스트만 남기는 함수
@@ -48,16 +52,19 @@
     }
 
     searchBtn.addEventListener('click', async () => {
-      const name = charNameInput.value.trim();
-      if (!name) {
-        resultDiv.textContent = '캐릭터명을 입력해주세요.';
+      const dealerName = dealerNameInput.value.trim();
+      const supportName = supportNameInput.value.trim();
+      const effectiveRatio = (parseFloat(effectiveRatioInput.value) || 0) / 100;
+
+      if (!dealerName || !supportName) {
+        resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
         return;
       }
 
       resultDiv.textContent = '조회 중...';
 
       try {
-        const response = await fetch(`/api/character?name=${encodeURIComponent(name)}`);
+        const response = await fetch(`/api/character?dealer=${encodeURIComponent(dealerName)}&support=${encodeURIComponent(supportName)}`);
         const data = await response.json();
 
         if (!response.ok) {
