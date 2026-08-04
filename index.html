@@ -72,6 +72,7 @@
         html += `<p>클래스: ${data.profiles.CharacterClassName} / 아이템레벨: ${data.profiles.ItemAvgLevel}</p>`;
         html += `<pre>${JSON.stringify(data.profiles.Stats, null, 2)}</pre>`;
 
+        html += `<h3>아바타(원본)</h3><pre>${JSON.stringify(data.avatars, null, 2)}</pre>`;
         // ② 장비 (무기, 악세서리 등)
         html += `<h3>장비</h3>`;
         (data.equipment || []).forEach((item) => {
@@ -135,7 +136,7 @@
           const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
 
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
-          const primaryStat = getMaxPrimaryStat(data.profiles.Stats);
+          const primaryStat = getMaxPrimaryStat(data.equipment);
           const purePower = calculatePureAttackPower(primaryStat, calculated);
           const gemPercent = getGemsBaseAttackPercent(data.gems);
           const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);

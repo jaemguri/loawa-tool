@@ -11,12 +11,13 @@ export default async function handler(req, res) {
   const base = `https://developer-lostark.game.onstove.com/armories/characters/${encodeURIComponent(name)}`;
 
   try {
-    const [profilesRes, equipmentRes, arkgridRes, arkpassiveRes, gemsRes] = await Promise.all([
+    const [profilesRes, equipmentRes, arkgridRes, arkpassiveRes, gemsRes, avatarsRes] = await Promise.all([
       fetch(`${base}/profiles`, { headers }),
       fetch(`${base}/equipment`, { headers }),
       fetch(`${base}/arkgrid`, { headers }),
       fetch(`${base}/arkpassive`, { headers }),
       fetch(`${base}/gems`, { headers }),
+      fetch(`${base}/avatars`, { headers }),
     ]);
 
     if (!profilesRes.ok) {
@@ -28,8 +29,9 @@ export default async function handler(req, res) {
     const arkgrid = arkgridRes.ok ? await arkgridRes.json() : null;
     const arkpassive = arkpassiveRes.ok ? await arkpassiveRes.json() : null;
     const gems = gemsRes.ok ? await gemsRes.json() : null;
+    const avatars = avatarsRes.ok ? await avatarsRes.json() : null;
 
-    return res.status(200).json({ profiles, equipment, arkgrid, arkpassive, gems });
+    return res.status(200).json({ profiles, equipment, arkgrid, arkpassive, gems, avatars });
   } catch (error) {
     return res.status(500).json({ error: '서버 오류가 발생했습니다: ' + error.message });
   }
