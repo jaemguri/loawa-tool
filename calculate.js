@@ -390,11 +390,12 @@ function getAvatarPrimaryStatPercent(avatarsData) {
   return Math.min(total, 8);
 }
 
-// 힘/민첩/지능 = (장비합산 + 팔찌옵션 + 카드240 + 물약원정대1850 + 기본스탯476) × (1 + 아바타%/100)
+// 힘/민첩/지능 = (장비합산 + 팔찌옵션 + 카드240 + 물약원정대1850 + 기본스탯476) × (1 + (펫도감1% + 아바타%)/100)
 function getMaxPrimaryStat(equipmentList, braceletText, avatarsData) {
   const CARD_BONUS = 240;
   const POTION_EXPEDITION = 1850;
   const BASE_STAT = 476;
+  const PET_DOGAM_PERCENT = 1;
 
   const eqStr = getStatTotalFromEquipment(equipmentList, '힘');
   const eqDex = getStatTotalFromEquipment(equipmentList, '민첩');
@@ -409,7 +410,8 @@ function getMaxPrimaryStat(equipmentList, braceletText, avatarsData) {
   const totalInt = eqInt + brInt + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
 
   const avatarPercent = getAvatarPrimaryStatPercent(avatarsData);
-  return Math.max(totalStr, totalDex, totalInt) * (1 + avatarPercent / 100);
+  const multiplier = 1 + (PET_DOGAM_PERCENT + avatarPercent) / 100;
+  return Math.max(totalStr, totalDex, totalInt) * multiplier;
 }
 
 // 순수 공격력 = sqrt(힘/민첩/지능(최댓값) × 무기 공격력 / 6)
