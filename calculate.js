@@ -188,22 +188,27 @@ function getChaosStarCoreAttack(arkgridData) {
   return { flat, percent };
 }
 
-// 6개 코어 전체에 박힌 아크그리드 젬들의 "공격력 %" 합산 (무기 공격력 제외)
-function getAllArkgridGemsAttackPercent(arkgridData) {
-  let total = 0;
-  const debugList = [];
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[공격력] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsAttackLevel(arkgridData) {
+  let totalLevel = 0;
   if (arkgridData && arkgridData.Slots) {
     arkgridData.Slots.forEach((slot) => {
       (slot.Gems || []).forEach((gem) => {
         const text = parseTooltip(gem.Tooltip).join(' ');
-        const val = extractPercentExcluding(text, '공격력', '무기 공격력');
-        if (val > 0) debugList.push(`${slot.Name}: ${val}`);
-        total += val;
+        const matches = text.matchAll(/\[공격력\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
       });
     });
   }
-  window.__gemDebug = debugList;
-  return total;
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.0367% = 정확한 공격력 % (API 표시값의 반올림 오차 제거)
+function getAllArkgridGemsAttackPercent(arkgridData) {
+  const level = getAllArkgridGemsAttackLevel(arkgridData);
+  return level * 0.0367;
 }
 
 // 스탯창 공격력 = (기본공격력 + 악세공격력고정 + 코어공격력고정) × (1 + (코어%+귀걸이%+젬%)/100)
