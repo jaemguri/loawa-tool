@@ -122,6 +122,92 @@ function sumCoreSegments(segments, label) {
   });
   return { flat, percent };
 }
+// 특정 라벨은 포함하되 다른 라벨(예: "무기 공격력")은 제외하고 고정값 찾기
+function extractFlatExcluding(text, includeLabel, excludeLabel) {
+  if (!text) return 0;
+  const cleaned = text.replace(new RegExp(excludeLabel + '[^\\d%]{0,6}[\\d,]+(?!\\s*[%.\\d])', 'g'), '');
+  return extractFlat(cleaned, includeLabel);
+}
+
+// 특정 라벨은 포함하되 다른 라벨은 제외하고 퍼센트 찾기
+function extractPercentExcluding(text, includeLabel, excludeLabel) {
+  if (!text) return 0;
+  const cleaned = text.replace(new RegExp(excludeLabel + '[^\\d%]{0,6}[\\d.]+\\s*%', 'g'), '');
+  return extractPercent(cleaned, includeLabel);
+}
+
+// 코어 구간에서 특정 라벨은 포함, 다른 라벨은 제외하고 합산
+function sumCoreSegmentsExcluding(segments, includeLabel, excludeLabel) {
+  let flat = 0;
+  let percent = 0;
+  segments.forEach((seg) => {
+    if (seg.includes(includeLabel) && !seg.includes(excludeLabel)) {
+      extractNumbersFromSentence(seg).forEach((n) => {
+        if (n.isPercent) percent += n.value;
+        else flat += n.value;
+      });
+    }
+  });
+  return { flat, percent };
+}
+
+// 악세서리(목걸이/귀걸이/반지) 연마옵션의 "공격력" 고정값 합산 (무기 공격력 제외)
+function getAccessoryAttackFlat(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => ['목걸이', '귀걸이', '반지'].includes(it.Type)).forEach((it) => {
+    const text = parseTooltip(it.Tooltip).join(' ');
+    total += extractFlatExcluding(text, '공격력', '무기 공격력');
+  });
+  return total;
+}
+
+// 귀걸이 연마옵션의 "공격력 %" 합산 (무기 공격력 제외)
+function getEarringAttackPercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '귀걸이').forEach((it) => {
+    const text = parseTooltip(it.Tooltip).join(' ');
+    total += extractPercentExcluding(text, '공격력', '무기 공격력');
+  });
+  return total;
+}
+
+// 혼돈의 별 코어의 "공격력" 고정값/%값 (무기 공격력 제외)
+function getChaosStarCoreAttack(arkgridData) {
+  let flat = 0;
+  let percent = 0;
+  if (arkgridData && arkgridData.Slots) {
+    const slot = arkgridData.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
+    if (slot) {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      const sums = sumCoreSegmentsExcluding(segments, '공격력', '무기 공격력');
+      flat = sums.flat;
+      percent = sums.percent;
+    }
+  }
+  return { flat, percent };
+}
+
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "공격력 %" 합산 (무기 공격력 제외)
+function getAllArkgridGemsAttackPercent(arkgridData) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        total += extractPercentExcluding(text, '공격력', '무기 공격력');
+      });
+    });
+  }
+  return total;
+}
+
+// 스탯창 공격력 = (기본공격력 + 악세공격력고정 + 코어공격력고정) × (1 + (코어%+귀걸이%+젬%)/100)
+function calculateStatWindowAttackPower(basePower, accessoryFlat, coreFlat, corePercent, earringPercent, gemPercent) {
+  const flatTotal = basePower + accessoryFlat + coreFlat;
+  const percentSum = corePercent + earringPercent + gemPercent;
+  return flatTotal * toMultiplier(percentSum);
+}
 
 // arkpassive 응답에서 특정 카테고리(예: '깨달음')의 레벨을 "N랭크 M레벨" 텍스트에서 추출
 function getArkPassiveLevelFromData(arkpassiveData, category) {

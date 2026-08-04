@@ -140,6 +140,14 @@
           const gemPercent = getGemsBaseAttackPercent(data.gems);
           const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);
           const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent);
+          const accessoryAttackFlat = getAccessoryAttackFlat(data.equipment);
+          const chaosCoreAttack = getChaosStarCoreAttack(data.arkgrid);
+          const earringAttackPercent = getEarringAttackPercent(data.equipment);
+          const arkgridGemsAttackPercent = getAllArkgridGemsAttackPercent(data.arkgrid);
+          const statWindowAttack = calculateStatWindowAttackPower(
+            basePower, accessoryAttackFlat, chaosCoreAttack.flat, chaosCoreAttack.percent,
+            earringAttackPercent, arkgridGemsAttackPercent
+          );
 
           weaponTestHtml = `
             <h3>무기 공격력 계산</h3>
@@ -157,6 +165,11 @@
             <p>보석 기본공격력 %: ${gemPercent}</p>
             <p>세공 기본공격력 %: ${stonePercent}</p>
             <p><b>기본 공격력: ${basePower.toLocaleString()}</b></p>
+            <p>악세 공격력 고정: ${accessoryAttackFlat}</p>
+            <p>혼돈별코어 공격력 고정/%: ${chaosCoreAttack.flat} / ${chaosCoreAttack.percent}</p>
+            <p>귀걸이 공격력%: ${earringAttackPercent}</p>
+            <p>아크그리드 젬 공격력%: ${arkgridGemsAttackPercent}</p>
+            <p><b>스탯창 공격력: ${statWindowAttack.toLocaleString()}</b></p>
           `;
         }
 
