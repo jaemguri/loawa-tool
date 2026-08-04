@@ -544,27 +544,6 @@ function getTotalAllyAttackBuffPercent(equipmentList, braceletOptions, arkgridDa
   );
 }
 
-// 클래스별 "공증 버프" 스킬 보석 이름 (둘 중 레벨 높은 것만 사용)
-const SUPPORT_BUFF_GEM_NAMES = {
-  '도화가': ['묵법: 해그리기', '묵법: 해우물'],
-  '바드': ['음파 진동', '천상의 연주'],
-  '홀리나이트': ['신의 분노', '천상의 축복'],
-  '발키리': ['숭고한 도약', '숭고한 맹세'],
-};
-
-// 공증 버프 보석의 레벨(=지원효과 %)을 찾기 (해당 클래스의 두 스킬 보석 중 최댓값)
-function getSupportBuffGemPercent(gemsData, className) {
-  const targets = SUPPORT_BUFF_GEM_NAMES[className];
-  if (!targets || !gemsData || !gemsData.Gems) return 0;
-  let maxLevel = 0;
-  gemsData.Gems.forEach((gem) => {
-    const name = stripHtml(gem.Name);
-    if (targets.some((t) => name.includes(t))) {
-      if (gem.Level > maxLevel) maxLevel = gem.Level;
-    }
-  });
-  return maxLevel;
-}
 
 // 서포터 버프력 = 기본공격력 × 0.22 × (1 + (아공강% + 겁화보석%)/100) × 공증유효율
 function calculateSupportBuffPower(basePower, allyAttackBuffPercent, buffGemPercent, effectiveRatio) {
