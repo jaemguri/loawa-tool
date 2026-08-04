@@ -135,6 +135,8 @@
           const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
 
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+          const primaryStat = getMaxPrimaryStat(data.profiles.Stats);
+          const purePower = calculatePureAttackPower(primaryStat, calculated);
 
           weaponTestHtml = `
             <h3>무기 공격력 계산</h3>
@@ -147,6 +149,8 @@
             <p>코어 활성화: ${debugCoreActivated}</p>
             <p>깨달음 레벨: ${enlightenmentLevel} → 무기 공격력 %: ${enlightenmentPercent}</p>
             <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
+            <p>힘/민첩/지능(최댓값): ${primaryStat}</p>
+            <p><b>순수 공격력: ${purePower.toLocaleString()}</b></p>
           `;
         }
 

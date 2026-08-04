@@ -260,3 +260,22 @@ function getCoreOptionText(tooltipStr) {
   } catch (e) {}
   return '';
 }
+
+// profiles.Stats 배열에서 힘/민첩/지능 중 가장 큰 값을 찾기
+function getMaxPrimaryStat(profilesStats) {
+  if (!profilesStats) return 0;
+  const targets = ['힘', '민첩', '지능'];
+  let max = 0;
+  profilesStats.forEach((stat) => {
+    if (targets.includes(stat.Type)) {
+      const value = parseFloat(String(stat.Value).replace(/,/g, ''));
+      if (value > max) max = value;
+    }
+  });
+  return max;
+}
+
+// 순수 공격력 = sqrt(힘/민첩/지능(최댓값) × 무기 공격력 / 6)
+function calculatePureAttackPower(primaryStat, weaponAttack) {
+  return Math.sqrt((primaryStat * weaponAttack) / 6);
+}
