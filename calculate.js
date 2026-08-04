@@ -137,35 +137,45 @@ function enlightenmentWeaponAttackPercent(level) {
   return level * 0.1;
 }
 
-// 팔찌 텍스트에서 무기 공격력 관련 고정 수치 합산 (스택형 옵션 포함)
-function getBraceletWeaponAttackFlat(braceletText) {
+// 팔찌 텍스트에서 "조건부/스택형이 아닌" 순수 무기 공격력 고정값만 합산 (역산용)
+function getBraceletWeaponAttackFlatBase(braceletText) {
   if (!braceletText) return 0;
-  let total = 0;
-  let text = braceletText.replace(/무력화 상태의[^.]*\./g, ''); // 무력화 옵션은 없는 것으로 간주
+  const text = braceletText.replace(/무력화 상태의[^.]*\./g, '');
 
-  // 매 초 스택형 (최대 6중첩): 무기공격력 N * 6
-  let m = text.match(/무기\s*공격력이\s*([\d,]+)[^()]*\(최대\s*6\s*중첩\)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 6;
-
-  // 30초마다 스택형 (최대 30중첩): 무기공격력 N * 30
-  m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\s*\(최대\s*30\s*중첩\)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 30;
-
-  // 생명력 50% 이상 조건부 추가 무기공격력 (항상 활성으로 가정)
-  m = text.match(/생명력이\s*50%[^무]*무기\s*공격력이\s*([\d,]+)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, ''));
-
-  // 나머지 "무기공격력이 N 증가한다" 단독 문장들 (위에서 처리한 스택형/조건부는 제외)
   const remaining = text
     .replace(/무기\s*공격력이\s*[\d,]+[^()]*\(최대\s*6\s*중첩\)/g, '')
     .replace(/무기\s*공격력이\s*[\d,]+\s*증가한다\s*\(최대\s*30\s*중첩\)/g, '')
     .replace(/생명력이\s*50%[^.]*\./g, '');
+
+  let total = 0;
   const plainMatches = remaining.matchAll(/무기\s*공격력이\s*([\d,]+)\s*증가한다/g);
   for (const pm of plainMatches) {
     total += parseFloat(pm[1].replace(/,/g, ''));
   }
+  return total;
+}
+
+// 팔찌 텍스트에서 조건부/스택형 무기 공격력만 합산 (실제 효율용, 최대치 가정)
+function getBraceletWeaponAttackFlatConditional(braceletText) {
+  if (!braceletText) return 0;
+  const text = braceletText.replace(/무력화 상태의[^.]*\./g, '');
+  let total = 0;
+
+  let m = text.match(/무기\s*공격력이\s*([\d,]+)[^()]*\(최대\s*6\s*중첩\)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 6;
+
+  m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\s*\(최대\s*30\s*중첩\)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 30;
+
+  m = text.match(/생명력이\s*50%[^무]*무기\s*공격력이\s*([\d,]+)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, ''));
 
   return total;
+}
+
+// 기존 함수는 base + conditional 합(=실제 총합)으로 유지
+function getBraceletWeaponAttackFlat(braceletText) {
+  return getBraceletWeaponAttackFlatBase(braceletText) + getBraceletWeaponAttackFlatConditional(braceletText);
 }
 
 // 팔찌 텍스트를 한 번에 파싱해서, 모든 옵션을 구조화된 객체로 반환
@@ -173,6 +183,7 @@ function getBraceletWeaponAttackFlat(braceletText) {
 function parseBraceletOptions(braceletText) {
   const result = {
     weaponAttackFlat: 0,
+    weaponAttackFlatBase: 0,
     critRatePercent: 0,
     critDamagePercent: 0,
     critHitExtraDamagePercent: 0,
@@ -196,6 +207,7 @@ function parseBraceletOptions(braceletText) {
   const text = braceletText.replace(/무력화 상태의[^.]*\./g, ''); // 무력화 옵션은 없는 것으로 간주
 
   result.weaponAttackFlat = getBraceletWeaponAttackFlat(text);
+  result.weaponAttackFlatBase = getBraceletWeaponAttackFlatBase(text);
   result.critRatePercent = extractPercent(text, '치명타 적중률');
   result.critDamagePercent = extractPercent(text, '치명타 피해');
   result.enemyDamagePercent = extractPercent(text, '적에게 주는 피해');
