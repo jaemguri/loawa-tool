@@ -37,10 +37,10 @@ function extractPercent(text, label) {
   return match ? parseFloat(match[1]) : 0;
 }
 
-// 텍스트에서 "라벨 +숫자" (퍼센트 아닌 고정값) 패턴 찾기 (예: "무기 공격력 +195")
+// 텍스트에서 "라벨...숫자" 패턴 찾기 (라벨과 숫자 사이에 조사/공백이 있어도 인식)
 function extractFlat(text, label) {
   if (!text) return 0;
-  const regex = new RegExp(label + '\\s*\\+?([\\d,]+)(?!\\s*[%.])');
+  const regex = new RegExp(label + '[^\\d%]{0,6}([\\d,]+)(?!\\s*[%.\\d])');
   const match = text.match(regex);
   return match ? parseFloat(match[1].replace(/,/g, '')) : 0;
 }
@@ -71,4 +71,111 @@ function getArkPassiveLevelFromData(arkpassiveData, category) {
 // 깨달음 레벨 → 무기 공격력 % 증가 (n * 0.1%)
 function enlightenmentWeaponAttackPercent(level) {
   return level * 0.1;
+}
+
+// 팔찌 텍스트에서 무기 공격력 관련 고정 수치 합산 (스택형 옵션 포함)
+function getBraceletWeaponAttackFlat(braceletText) {
+  if (!braceletText) return 0;
+  let total = 0;
+  let text = braceletText.replace(/무력화 상태의[^.]*\./g, ''); // 무력화 옵션은 없는 것으로 간주
+
+  // 매 초 스택형 (최대 6중첩): 무기공격력 N * 6
+  let m = text.match(/무기\s*공격력이\s*([\d,]+)[^()]*\(최대\s*6\s*중첩\)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 6;
+
+  // 30초마다 스택형 (최대 30중첩): 무기공격력 N * 30
+  m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\s*\(최대\s*30\s*중첩\)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 30;
+
+  // 생명력 50% 이상 조건부 추가 무기공격력 (항상 활성으로 가정)
+  m = text.match(/생명력이\s*50%[^무]*무기\s*공격력이\s*([\d,]+)/);
+  if (m) total += parseFloat(m[1].replace(/,/g, ''));
+
+  // 나머지 "무기공격력이 N 증가한다" 단독 문장들 (위에서 처리한 스택형/조건부는 제외)
+  const remaining = text
+    .replace(/무기\s*공격력이\s*[\d,]+[^()]*\(최대\s*6\s*중첩\)/g, '')
+    .replace(/무기\s*공격력이\s*[\d,]+\s*증가한다\s*\(최대\s*30\s*중첩\)/g, '')
+    .replace(/생명력이\s*50%[^.]*\./g, '');
+  const plainMatches = remaining.matchAll(/무기\s*공격력이\s*([\d,]+)\s*증가한다/g);
+  for (const pm of plainMatches) {
+    total += parseFloat(pm[1].replace(/,/g, ''));
+  }
+
+  return total;
+}
+
+// 팔찌 텍스트를 한 번에 파싱해서, 모든 옵션을 구조화된 객체로 반환
+// (무기 공격력뿐 아니라 다른 계산식에서도 이 결과를 재사용)
+function parseBraceletOptions(braceletText) {
+  const result = {
+    weaponAttackFlat: 0,
+    critRatePercent: 0,
+    critDamagePercent: 0,
+    critHitExtraDamagePercent: 0,
+    enemyDamagePercent: 0,
+    additionalDamagePercent: 0,
+    demonDamagePercent: 0,
+    cooldownPenaltyPercent: 0,
+    backAttackDamagePercent: 0,
+    headAttackDamagePercent: 0,
+    nonDirectionalDamagePercent: 0,
+    defenseReductionPercent: 0,
+    critResistReductionPercent: 0,
+    critDmgResistReductionPercent: 0,
+    protectedTargetDamagePercent: 0,
+    allyShieldHealPercent: 0,
+    allyAttackBuffPercent: 0,
+    allyDamageBuffPercent: 0,
+  };
+  if (!braceletText) return result;
+
+  const text = braceletText.replace(/무력화 상태의[^.]*\./g, ''); // 무력화 옵션은 없는 것으로 간주
+
+  result.weaponAttackFlat = getBraceletWeaponAttackFlat(text);
+  result.critRatePercent = extractPercent(text, '치명타 적중률');
+  result.critDamagePercent = extractPercent(text, '치명타 피해');
+  result.enemyDamagePercent = extractPercent(text, '적에게 주는 피해');
+  result.additionalDamagePercent = extractPercent(text, '추가 피해');
+
+  let m;
+  m = text.match(/치명타로 적중 시 적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.critHitExtraDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/악마 및 대악마 계열 피해량이\s*([\d.]+)\s*%/);
+  if (m) result.demonDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/재사용 대기시간이\s*([\d.]+)\s*%\s*증가/);
+  if (m) result.cooldownPenaltyPercent = parseFloat(m[1]);
+
+  m = text.match(/백어택 스킬이 적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.backAttackDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/헤드어택 스킬이 적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.headAttackDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/방향성 공격이 아닌 스킬이 적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.nonDirectionalDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/방어력을\s*([\d.]+)\s*%\s*감소/);
+  if (m) result.defenseReductionPercent = parseFloat(m[1]);
+
+  m = text.match(/치명타 저항력을\s*([\d.]+)\s*%\s*감소/);
+  if (m) result.critResistReductionPercent = parseFloat(m[1]);
+
+  m = text.match(/치명타 피해 저항력을\s*([\d.]+)\s*%\s*감소/);
+  if (m) result.critDmgResistReductionPercent = parseFloat(m[1]);
+
+  m = text.match(/보호 효과가 적용된 대상이[^%]*적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.protectedTargetDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/파티원 보호 및 회복효과가\s*([\d.]+)\s*%/);
+  if (m) result.allyShieldHealPercent = parseFloat(m[1]);
+
+  m = text.match(/아군 공격력 강화 효과(?:가|이)\s*([\d.]+)\s*%/);
+  if (m) result.allyAttackBuffPercent = parseFloat(m[1]);
+
+  m = text.match(/아군 피해량 강화 효과(?:가|이)\s*([\d.]+)\s*%/);
+  if (m) result.allyDamageBuffPercent = parseFloat(m[1]);
+
+  return result;
 }

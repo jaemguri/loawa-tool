@@ -100,7 +100,9 @@
 
           const braceletItem = (data.equipment || []).find((it) => it.Type === '팔찌');
           const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
-          const braceletFlat = extractFlat(braceletText, '무기 공격력');
+          const braceletOptions = parseBraceletOptions(braceletText);
+          const braceletFlat = braceletOptions.weaponAttackFlat;
+          
 
           const earringItems = (data.equipment || []).filter((it) => it.Type === '귀걸이');
           let earringPercent = 0;
