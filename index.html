@@ -17,9 +17,36 @@
     const charNameInput = document.getElementById('charName');
     const resultDiv = document.getElementById('result');
 
+    // 태그(<FONT>, <BR> 등) 걷어내고 순수 텍스트만 남기는 함수
+    function stripHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    // 게임 툴팁(JSON 문자열)을 읽기 쉬운 줄바꿈 텍스트로 바꿔주는 함수
+    function parseTooltip(tooltipStr) {
+      const lines = [];
+      try {
+        const obj = JSON.parse(tooltipStr);
+        Object.values(obj).forEach((el) => {
+          if (!el) return;
+          if (typeof el.value === 'string') {
+            const text = stripHtml(el.value);
+            if (text) lines.push(text);
+          } else if (el.value && typeof el.value === 'object' && el.value.Element_000 !== undefined) {
+            const label = stripHtml(el.value.Element_000);
+            const content = stripHtml(el.value.Element_001 || '');
+            lines.push(`[${label}] ${content}`);
+          }
+        });
+      } catch (e) {
+        // 파싱 실패하면 그냥 빈 배열 반환
+      }
+      return lines;
+    }
+
     searchBtn.addEventListener('click', async () => {
       const name = charNameInput.value.trim();
-
       if (!name) {
         resultDiv.textContent = '캐릭터명을 입력해주세요.';
         return;
@@ -36,13 +63,33 @@
           return;
         }
 
-        // 우선은 받아온 데이터를 그대로 화면에 표시해서 확인
-        resultDiv.innerHTML = `
-          <h2>${data.CharacterName} (${data.ServerName})</h2>
-          <p>클래스: ${data.CharacterClassName}</p>
-          <p>아이템 레벨: ${data.ItemAvgLevel}</p>
-          <p>길드: ${data.GuildName || '없음'}</p>
-        `;
+        let html = '';
+
+        // ① 기본 스탯
+        html += `<h2>${data.profiles.CharacterName} (${data.profiles.ServerName})</h2>`;
+        html += `<p>클래스: ${data.profiles.CharacterClassName} / 아이템레벨: ${data.profiles.ItemAvgLevel}</p>`;
+        html += `<pre>${JSON.stringify(data.profiles.Stats, null, 2)}</pre>`;
+
+        // ② 장비 (무기, 악세서리 등)
+        html += `<h3>장비</h3>`;
+        (data.equipment || []).forEach((item) => {
+          html += `<p><b>${item.Type} - ${stripHtml(item.Name)}</b></p>`;
+          html += `<pre>${parseTooltip(item.Tooltip).join('\n')}</pre>`;
+        });
+
+        // ③ 아크그리드
+        html += `<h3>아크그리드</h3>`;
+        if (data.arkgrid && data.arkgrid.Slots) {
+          data.arkgrid.Slots.forEach((slot) => {
+            html += `<p><b>${slot.Name} (Point: ${slot.Point})</b></p>`;
+            html += `<pre>${parseTooltip(slot.Tooltip).join('\n')}</pre>`;
+            (slot.Gems || []).forEach((gem) => {
+              html += `<pre>[젬-${gem.Grade}] ${parseTooltip(gem.Tooltip).join(' / ')}</pre>`;
+            });
+          });
+        }
+
+        resultDiv.innerHTML = html;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
       }
