@@ -291,3 +291,27 @@ function getMaxPrimaryStat(profilesStats) {
 function calculatePureAttackPower(primaryStat, weaponAttack) {
   return Math.sqrt((primaryStat * weaponAttack) / 6);
 }
+
+// 전투 스킬 보석들의 "기본 공격력 N% 증가" 효과를 전부 합산
+function getGemsBaseAttackPercent(gemsData) {
+  if (!gemsData || !gemsData.Gems) return 0;
+  let total = 0;
+  gemsData.Gems.forEach((gem) => {
+    const text = parseTooltip(gem.Tooltip).join(' ');
+    total += extractPercent(text, '기본 공격력');
+  });
+  return total;
+}
+
+// 어빌리티 스톤의 세공 단계 보너스 중 "기본 공격력 N%" 추출
+function getAbilityStoneBaseAttackPercent(equipmentList) {
+  const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
+  if (!stone) return 0;
+  const text = parseTooltip(stone.Tooltip).join(' ');
+  return extractPercent(text, '기본 공격력');
+}
+
+// 기본 공격력 = 순수 공격력 × (1 + (보석% + 세공%)/100)
+function calculateBaseAttackPower(purePower, gemPercent, stonePercent) {
+  return purePower * (1 + (gemPercent + stonePercent) / 100);
+}

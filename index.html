@@ -137,6 +137,9 @@
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
           const primaryStat = getMaxPrimaryStat(data.profiles.Stats);
           const purePower = calculatePureAttackPower(primaryStat, calculated);
+          const gemPercent = getGemsBaseAttackPercent(data.gems);
+          const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);
+          const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent);
 
           weaponTestHtml = `
             <h3>무기 공격력 계산</h3>
@@ -151,6 +154,9 @@
             <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
             <p>힘/민첩/지능(최댓값): ${primaryStat}</p>
             <p><b>순수 공격력: ${purePower.toLocaleString()}</b></p>
+            <p>보석 기본공격력 %: ${gemPercent}</p>
+            <p>세공 기본공격력 %: ${stonePercent}</p>
+            <p><b>기본 공격력: ${basePower.toLocaleString()}</b></p>
           `;
         }
 
