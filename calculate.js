@@ -482,17 +482,17 @@ const SUPPORT_BUFF_GEM_NAMES = {
 };
 
 // 공증 버프 보석의 레벨(=지원효과 %)을 찾기 (해당 클래스의 두 스킬 보석 중 최댓값)
+// 공백 차이(예: "묵법 : 해그리기" vs "묵법: 해그리기")에 영향받지 않도록 공백 제거 후 비교
 function getSupportBuffGemPercent(gemsData, className) {
   const targets = SUPPORT_BUFF_GEM_NAMES[className];
   if (!targets || !gemsData || !gemsData.Gems) return 0;
   let maxLevel = 0;
   gemsData.Gems.forEach((gem) => {
-    const name = stripHtml(gem.Name);
-    if (targets.some((t) => name.includes(t))) {
-      if (gem.Level > maxLevel) maxLevel = gem.Level;
-    }
+    const name = stripHtml(gem.Name).replace(/\s+/g, '');
+    const matched = targets.some((t) => name.includes(t.replace(/\s+/g, '')));
+    if (matched && gem.Level > maxLevel) maxLevel = gem.Level;
   });
-  return maxLevel; // 보석 레벨 1~10 = 지원효과 1~10%
+  return maxLevel;
 }
 
 // 악세서리(목걸이/귀걸이/반지)의 "아군 공격력 강화" % 합산
