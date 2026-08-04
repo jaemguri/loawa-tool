@@ -113,6 +113,8 @@
 
           let coreFlat = 0;
           let corePercent = 0;
+          let debugCoreRaw = '';
+          let debugCoreActivated = '';
           if (data.arkgrid && data.arkgrid.Slots) {
             const chaosStarSlot = data.arkgrid.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
             if (chaosStarSlot) {
@@ -120,6 +122,8 @@
               const activatedText = getActivatedCoreEffects(strippedCoreOption, chaosStarSlot.Point);
               coreFlat = extractFlat(activatedText, '무기 공격력');
               corePercent = extractPercent(activatedText, '무기 공격력');
+              debugCoreRaw = strippedCoreOption;
+              debugCoreActivated = activatedText;
             }
           }
 
@@ -138,6 +142,8 @@
             <p>코어 고정값: ${coreFlat}</p>
             <p>귀걸이 %: ${earringPercent}</p>
             <p>코어 %: ${corePercent}</p>
+            <p>코어 원본: ${debugCoreRaw}</p>
+            <p>코어 활성화: ${debugCoreActivated}</p>
             <p>깨달음 레벨: ${enlightenmentLevel} → 무기 공격력 %: ${enlightenmentPercent}</p>
             <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
           `;
