@@ -179,3 +179,20 @@ function parseBraceletOptions(braceletText) {
 
   return result;
 }
+
+// 툴팁 JSON에서 "코어 옵션" 이름표가 붙은 항목을 번호(Element_006 등)와 상관없이 찾아서 반환
+function getCoreOptionText(tooltipStr) {
+  try {
+    const obj = JSON.parse(tooltipStr);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.value && typeof el.value === 'object' && el.value.Element_000) {
+        const label = stripHtml(el.value.Element_000);
+        if (label.includes('코어 옵션')) {
+          return stripHtml(el.value.Element_001 || '');
+        }
+      }
+    }
+  } catch (e) {}
+  return '';
+}

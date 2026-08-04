@@ -116,14 +116,10 @@
           if (data.arkgrid && data.arkgrid.Slots) {
             const chaosStarSlot = data.arkgrid.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
             if (chaosStarSlot) {
-              try {
-                const obj = JSON.parse(chaosStarSlot.Tooltip);
-                const coreOptionRaw = obj.Element_006 && obj.Element_006.value && obj.Element_006.value.Element_001;
-                const strippedCoreOption = stripHtml(coreOptionRaw);
-                const activatedText = getActivatedCoreEffects(strippedCoreOption, chaosStarSlot.Point);
-                coreFlat = extractFlat(activatedText, '무기 공격력');
-                corePercent = extractPercent(activatedText, '무기 공격력');
-              } catch (e) {}
+              const strippedCoreOption = getCoreOptionText(chaosStarSlot.Tooltip);
+              const activatedText = getActivatedCoreEffects(strippedCoreOption, chaosStarSlot.Point);
+              coreFlat = extractFlat(activatedText, '무기 공격력');
+              corePercent = extractPercent(activatedText, '무기 공격력');
             }
           }
 
