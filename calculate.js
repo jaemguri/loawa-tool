@@ -28,3 +28,33 @@ function calculateErrorRate(calculated, actual) {
   if (!actual) return null;
   return (((calculated - actual) / actual) * 100).toFixed(2);
 }
+
+// 텍스트에서 "라벨 +숫자%" 패턴 찾기 (예: "무기 공격력 +1.9%")
+function extractPercent(text, label) {
+  if (!text) return 0;
+  const regex = new RegExp(label + '\\s*\\+?([\\d.]+)\\s*%');
+  const match = text.match(regex);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+// 텍스트에서 "라벨 +숫자" (퍼센트 아닌 고정값) 패턴 찾기 (예: "무기 공격력 +195")
+function extractFlat(text, label) {
+  if (!text) return 0;
+  const regex = new RegExp(label + '\\s*\\+?([\\d,]+)(?!\\s*[%.])');
+  const match = text.match(regex);
+  return match ? parseFloat(match[1].replace(/,/g, '')) : 0;
+}
+
+// 아크그리드 코어 옵션 텍스트에서, 현재 투자한 포인트(currentPoint) 이하로
+// 활성화된 [XXP] 구간의 효과 텍스트만 모아서 반환
+function getActivatedCoreEffects(coreOptionText, currentPoint) {
+  if (!coreOptionText) return '';
+  const parts = coreOptionText.split(/\[(\d+)P\]/);
+  let combined = '';
+  for (let i = 1; i < parts.length; i += 2) {
+    const threshold = parseInt(parts[i], 10);
+    const text = parts[i + 1] || '';
+    if (threshold <= currentPoint) combined += ' ' + text;
+  }
+  return combined;
+}
