@@ -191,14 +191,18 @@ function getChaosStarCoreAttack(arkgridData) {
 // 6개 코어 전체에 박힌 아크그리드 젬들의 "공격력 %" 합산 (무기 공격력 제외)
 function getAllArkgridGemsAttackPercent(arkgridData) {
   let total = 0;
+  const debugList = [];
   if (arkgridData && arkgridData.Slots) {
     arkgridData.Slots.forEach((slot) => {
       (slot.Gems || []).forEach((gem) => {
         const text = parseTooltip(gem.Tooltip).join(' ');
-        total += extractPercentExcluding(text, '공격력', '무기 공격력');
+        const val = extractPercentExcluding(text, '공격력', '무기 공격력');
+        if (val > 0) debugList.push(`${slot.Name}: ${val}`);
+        total += val;
       });
     });
   }
+  window.__gemDebug = debugList;
   return total;
 }
 

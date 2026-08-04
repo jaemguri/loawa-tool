@@ -136,6 +136,13 @@
           const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
 
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+          const eqStrDebug = getStatTotalFromEquipment(data.equipment, '힘');
+          const eqDexDebug = getStatTotalFromEquipment(data.equipment, '민첩');
+          const eqIntDebug = getStatTotalFromEquipment(data.equipment, '지능');
+          const brStrDebug = extractFlat(braceletText, '힘');
+          const brDexDebug = extractFlat(braceletText, '민첩');
+          const brIntDebug = extractFlat(braceletText, '지능');
+          const avatarPercentDebug = getAvatarPrimaryStatPercent(data.avatars);
           const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars);
           const purePower = calculatePureAttackPower(primaryStat, calculated);
           const gemPercent = getGemsBaseAttackPercent(data.gems);
@@ -161,6 +168,9 @@
             <p>코어 활성화: ${debugCoreActivated}</p>
             <p>깨달음 레벨: ${enlightenmentLevel} → 무기 공격력 %: ${enlightenmentPercent}</p>
             <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
+            <p>장비 힘/민첩/지능: ${eqStrDebug} / ${eqDexDebug} / ${eqIntDebug}</p>
+            <p>팔찌 힘/민첩/지능: ${brStrDebug} / ${brDexDebug} / ${brIntDebug}</p>
+            <p>아바타 %: ${avatarPercentDebug}</p>
             <p>힘/민첩/지능(최댓값): ${primaryStat}</p>
             <p><b>순수 공격력: ${purePower.toLocaleString()}</b></p>
             <p>보석 기본공격력 %: ${gemPercent}</p>
