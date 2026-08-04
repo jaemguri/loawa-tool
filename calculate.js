@@ -43,33 +43,41 @@ function extractNumbersFromSentence(sentence) {
   return result;
 }
 
-// 텍스트를 문장 단위로 나눠서, 라벨이 포함된 문장의 고정값들을 전부 합산
+// 문장 하나에서 숫자(고정값/퍼센트)를 전부 뽑아내는 헬퍼
+function extractNumbersFromSentence(sentence) {
+  const regex = /([\d][\d,]*(?:\.\d+)?)\s*(%)?/g;
+  const result = [];
+  let match;
+  while ((match = regex.exec(sentence)) !== null) {
+    result.push({
+      value: parseFloat(match[1].replace(/,/g, '')),
+      isPercent: !!match[2],
+    });
+  }
+  return result;
+}
+
+// 라벨 바로 근처(가까운 거리)에 있는 고정값만 전부 찾아 합산 (다른 스탯과 안 섞임)
 function extractFlat(text, label) {
   if (!text) return 0;
-  const sentences = text.split(/(?<=[.다])\s*/);
+  const regex = new RegExp(label + '[^\\d%]{0,6}([\\d,]+)(?!\\s*[%.\\d])', 'g');
   let total = 0;
-  sentences.forEach((sentence) => {
-    if (sentence.includes(label)) {
-      extractNumbersFromSentence(sentence).forEach((n) => {
-        if (!n.isPercent) total += n.value;
-      });
-    }
-  });
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    total += parseFloat(m[1].replace(/,/g, ''));
+  }
   return total;
 }
 
-// 텍스트를 문장 단위로 나눠서, 라벨이 포함된 문장의 퍼센트값들을 전부 합산
+// 라벨 바로 근처에 있는 퍼센트만 전부 찾아 합산
 function extractPercent(text, label) {
   if (!text) return 0;
-  const sentences = text.split(/(?<=[.다])\s*/);
+  const regex = new RegExp(label + '[^\\d%]{0,6}([\\d.]+)\\s*%', 'g');
   let total = 0;
-  sentences.forEach((sentence) => {
-    if (sentence.includes(label)) {
-      extractNumbersFromSentence(sentence).forEach((n) => {
-        if (n.isPercent) total += n.value;
-      });
-    }
-  });
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    total += parseFloat(m[1]);
+  }
   return total;
 }
 
@@ -85,6 +93,34 @@ function getActivatedCoreEffects(coreOptionText, currentPoint) {
     if (threshold <= currentPoint) combined += ' ' + text;
   }
   return combined;
+}
+
+// 아크그리드 코어 옵션 텍스트에서, 활성화된 [XXP] 구간들을 "배열"로 반환 (합치지 않음)
+function getActivatedCoreSegments(coreOptionText, currentPoint) {
+  if (!coreOptionText) return [];
+  const parts = coreOptionText.split(/\[(\d+)P\]/);
+  const segments = [];
+  for (let i = 1; i < parts.length; i += 2) {
+    const threshold = parseInt(parts[i], 10);
+    const segText = parts[i + 1] || '';
+    if (threshold <= currentPoint) segments.push(segText);
+  }
+  return segments;
+}
+
+// 코어 구간 배열에서, 라벨이 포함된 구간의 고정값/퍼센트를 각각 합산
+function sumCoreSegments(segments, label) {
+  let flat = 0;
+  let percent = 0;
+  segments.forEach((seg) => {
+    if (seg.includes(label)) {
+      extractNumbersFromSentence(seg).forEach((n) => {
+        if (n.isPercent) percent += n.value;
+        else flat += n.value;
+      });
+    }
+  });
+  return { flat, percent };
 }
 
 // arkpassive 응답에서 특정 카테고리(예: '깨달음')의 레벨을 "N랭크 M레벨" 텍스트에서 추출

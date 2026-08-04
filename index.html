@@ -119,9 +119,10 @@
             const chaosStarSlot = data.arkgrid.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
             if (chaosStarSlot) {
               const strippedCoreOption = getCoreOptionText(chaosStarSlot.Tooltip);
-              const activatedText = getActivatedCoreEffects(strippedCoreOption, chaosStarSlot.Point);
-              coreFlat = extractFlat(activatedText, '무기 공격력');
-              corePercent = extractPercent(activatedText, '무기 공격력');
+              const segments = getActivatedCoreSegments(strippedCoreOption, chaosStarSlot.Point);
+              const coreSums = sumCoreSegments(segments, '무기 공격력');
+              coreFlat = coreSums.flat;
+              corePercent = coreSums.percent;
               debugCoreRaw = strippedCoreOption;
               debugCoreActivated = activatedText;
             }
