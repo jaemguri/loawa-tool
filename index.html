@@ -86,7 +86,8 @@
         );
 
         // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
-        const adrenalineBonus = hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0;
+        const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
+        const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
         const finalDamage = calculateFinalDamage(
           dealerStats.basePower,
           dealerStats.accessoryAttackFlat,

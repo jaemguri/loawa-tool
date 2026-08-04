@@ -635,8 +635,39 @@ function calculateCharacterStats(data) {
 }
 
 // 각인 목록(engravings 응답) 안에 "아드레날린" 각인이 있는지 확인
-// (정확한 필드 구조를 몰라도 안전하게 판별하기 위해 전체를 문자열로 변환해서 검사)
 function hasAdrenalineEngraving(engravingsData) {
   if (!engravingsData) return false;
   return JSON.stringify(engravingsData).includes('아드레날린');
+}
+
+// 아드레날린 각인 레벨(1~4)별 추가 보너스 %
+const ADRENALINE_STONE_BONUS = { 1: 0.48, 2: 0.60, 3: 0.83, 4: 0.95 };
+
+// 어빌리티 스톤의 "무작위 각인 효과"에서 "아드레날린 Lv.N"을 찾아 대응하는 보너스 % 반환
+function getAdrenalineStoneBonus(equipmentList) {
+  const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
+  if (!stone) return 0;
+
+  try {
+    const obj = JSON.parse(stone.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'IndentStringGroup' && el.value) {
+        for (const groupKey of Object.keys(el.value)) {
+          const group = el.value[groupKey];
+          const contentStr = group.contentStr;
+          if (!contentStr) continue;
+          for (const itemKey of Object.keys(contentStr)) {
+            const line = stripHtml(contentStr[itemKey].contentStr || '');
+            if (line.includes('아드레날린')) {
+              const match = line.match(/Lv\.(\d)/);
+              if (match) return ADRENALINE_STONE_BONUS[parseInt(match[1], 10)] || 0;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  return 0;
 }
