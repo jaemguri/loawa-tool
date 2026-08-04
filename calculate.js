@@ -481,18 +481,27 @@ const SUPPORT_BUFF_GEM_NAMES = {
   '발키리': ['숭고한 도약', '숭고한 맹세'],
 };
 
-// 공증 버프 보석의 레벨(=지원효과 %)을 찾기 (해당 클래스의 두 스킬 보석 중 최댓값)
-// 공백 차이(예: "묵법 : 해그리기" vs "묵법: 해그리기")에 영향받지 않도록 공백 제거 후 비교
+// 공증 버프 스킬(도화가: 묵법:해그리기/해우물 등)의 "지원 효과 N%"를 gems.Effects.Skills에서 찾기 (둘 중 최댓값)
 function getSupportBuffGemPercent(gemsData, className) {
   const targets = SUPPORT_BUFF_GEM_NAMES[className];
-  if (!targets || !gemsData || !gemsData.Gems) return 0;
-  let maxLevel = 0;
-  gemsData.Gems.forEach((gem) => {
-    const name = stripHtml(gem.Name).replace(/\s+/g, '');
+  if (!targets || !gemsData || !gemsData.Effects || !gemsData.Effects.Skills) return 0;
+
+  let maxPercent = 0;
+  gemsData.Effects.Skills.forEach((skill) => {
+    const name = (skill.Name || '').replace(/\s+/g, '');
     const matched = targets.some((t) => name.includes(t.replace(/\s+/g, '')));
-    if (matched && gem.Level > maxLevel) maxLevel = gem.Level;
+    if (!matched) return;
+
+    (skill.Description || []).forEach((desc) => {
+      const m = desc.match(/지원\s*효과\s*([\d.]+)\s*%/);
+      if (m) {
+        const value = parseFloat(m[1]);
+        if (value > maxPercent) maxPercent = value;
+      }
+    });
   });
-  return maxLevel;
+
+  return maxPercent;
 }
 
 // 악세서리(목걸이/귀걸이/반지)의 "아군 공격력 강화" % 합산
