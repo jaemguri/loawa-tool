@@ -12,6 +12,7 @@
   <button id="searchBtn">조회하기</button>
 
   <div id="result"></div>
+  <script src="calculate.js"></script>
   <script>
     const searchBtn = document.getElementById('searchBtn');
     const charNameInput = document.getElementById('charName');
@@ -89,6 +90,33 @@
           });
         }
 
+        // --- 무기 공격력 계산 테스트 ---
+        const weaponItem = (data.equipment || []).find((item) => item.Type === '무기');
+        let weaponTestHtml = '';
+        if (weaponItem) {
+          const levelMatch = stripHtml(weaponItem.Name).match(/\+(\d+)/);
+          const weaponLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
+
+          const flatBonusSum = 0;
+          const percentBonusSum = 0;
+
+          const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+
+          const tooltipLines = parseTooltip(weaponItem.Tooltip);
+          const actualLine = tooltipLines.find((l) => l.includes('무기 공격력'));
+          const actualMatch = actualLine ? actualLine.match(/무기 공격력\s*\+?([\d,]+)/) : null;
+          const actual = actualMatch ? parseInt(actualMatch[1].replace(/,/g, ''), 10) : null;
+
+          const errorRate = calculateErrorRate(calculated, actual);
+
+          weaponTestHtml = `
+            <h3>무기 공격력 계산 테스트</h3>
+            <p>무기 레벨: ${weaponLevel}</p>
+            <p>계산값: ${calculated.toLocaleString()}</p>
+            <p>API 실제값: ${actual ? actual.toLocaleString() : '?'}</p>
+            <p>오차수준: ${errorRate !== null ? errorRate + '%' : '비교 불가'}</p>
+          `;
+        }
         resultDiv.innerHTML = html;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
