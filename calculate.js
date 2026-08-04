@@ -577,3 +577,71 @@ function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPow
   const percentSum = corePercent + earringPercent + gemPercent;
   return flatTotal * toMultiplier(percentSum);
 }
+
+// 캐릭터 데이터(profiles, equipment, arkgrid, arkpassive, gems, avatars) 하나를 받아서
+// 무기공격력 → 순수공격력 → 기본공격력 → 스탯창공격력까지 전부 계산해서 객체로 반환
+function calculateCharacterStats(data) {
+  const weaponItem = (data.equipment || []).find((item) => item.Type === '무기');
+  if (!weaponItem) return null;
+
+  const levelMatch = stripHtml(weaponItem.Name).match(/\+(\d+)/);
+  const weaponLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
+
+  const braceletItem = (data.equipment || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  const braceletOptions = parseBraceletOptions(braceletText);
+  const braceletFlat = braceletOptions.weaponAttackFlat;
+
+  const earringItems = (data.equipment || []).filter((it) => it.Type === '귀걸이');
+  let earringWeaponPercent = 0;
+  earringItems.forEach((it) => {
+    const text = parseTooltip(it.Tooltip).join(' ');
+    earringWeaponPercent += extractPercent(text, '무기 공격력');
+  });
+
+  let coreFlat = 0;
+  let corePercentWeapon = 0;
+  if (data.arkgrid && data.arkgrid.Slots) {
+    const chaosStarSlot = data.arkgrid.Slots.find((s) => s.Name.includes('혼돈의 별 코어'));
+    if (chaosStarSlot) {
+      const raw = getCoreOptionText(chaosStarSlot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, chaosStarSlot.Point);
+      const sums = sumCoreSegments(segments, '무기 공격력');
+      coreFlat = sums.flat;
+      corePercentWeapon = sums.percent;
+    }
+  }
+
+  const enlightenmentLevel = getArkPassiveLevelFromData(data.arkpassive, '깨달음');
+  const enlightenmentPercent = enlightenmentWeaponAttackPercent(enlightenmentLevel);
+
+  const flatBonusSum = braceletFlat + coreFlat;
+  const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent;
+  const weaponAttack = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+
+  const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars);
+  const purePower = calculatePureAttackPower(primaryStat, weaponAttack);
+
+  const gemPercent = getGemsBaseAttackPercent(data.gems);
+  const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);
+  const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent);
+
+  const accessoryAttackFlat = getAccessoryAttackFlat(data.equipment);
+  const chaosCoreAttack = getChaosStarCoreAttack(data.arkgrid);
+  const earringAttackPercent = getEarringAttackPercent(data.equipment);
+  const arkgridGemsAttackPercent = getAllArkgridGemsAttackPercent(data.arkgrid);
+  const statWindowAttack = calculateStatWindowAttackPower(
+    basePower, accessoryAttackFlat, chaosCoreAttack.flat, chaosCoreAttack.percent,
+    earringAttackPercent, arkgridGemsAttackPercent
+  );
+
+  return {
+    characterName: data.profiles.CharacterName,
+    serverName: data.profiles.ServerName,
+    className: data.profiles.CharacterClassName,
+    weaponAttack, primaryStat, purePower, basePower,
+    accessoryAttackFlat, chaosCoreAttack, earringAttackPercent, arkgridGemsAttackPercent,
+    statWindowAttack,
+    braceletOptions,
+  };
+}
