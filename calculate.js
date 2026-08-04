@@ -368,13 +368,16 @@ function getCoreOptionText(tooltipStr) {
   return '';
 }
 
-// 모든 장비의 "기본 효과"에서 특정 스탯(힘/민첩/지능)을 다 더해서 총합 계산
+// 모든 장비(팔찌 제외)의 "기본 효과"에서 특정 스탯(힘/민첩/지능)을 다 더해서 총합 계산
+// (팔찌는 별도로 계산해서 더하므로 여기서 제외해 중복 방지)
 function getStatTotalFromEquipment(equipmentList, statName) {
   let total = 0;
-  (equipmentList || []).forEach((item) => {
-    const text = parseTooltip(item.Tooltip).join(' ');
-    total += extractFlat(text, statName);
-  });
+  (equipmentList || [])
+    .filter((item) => item.Type !== '팔찌')
+    .forEach((item) => {
+      const text = parseTooltip(item.Tooltip).join(' ');
+      total += extractFlat(text, statName);
+    });
   return total;
 }
 
