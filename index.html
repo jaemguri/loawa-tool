@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>로아와 도구 - 캐릭터 정보 조회</title>
+  <title>로아 듀오 시뮬레이터 - 캐릭터 정보 조회</title>
 </head>
 <body>
   <h1>내 캐릭터 정보 조회</h1>
@@ -125,24 +125,37 @@
             }
           }
 
+          const enlightenmentLevel = getArkPassiveLevel(data.equipment, '깨달음');
+          const enlightenmentPercent = enlightenmentWeaponAttackPercent(enlightenmentLevel);
+
           const flatBonusSum = braceletFlat + coreFlat;
-          const percentBonusSum = earringPercent + corePercent;
+          const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
 
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
 
-          const tooltipLines = parseTooltip(weaponItem.Tooltip);
-          const actualLine = tooltipLines.find((l) => l.includes('무기 공격력'));
-          const actualMatch = actualLine ? actualLine.match(/무기 공격력\s*\+?([\d,]+)/) : null;
-          const actual = actualMatch ? parseInt(actualMatch[1].replace(/,/g, ''), 10) : null;
-
-          const errorRate = calculateErrorRate(calculated, actual);
+          weaponTestHtml = `
+            <h3>무기 공격력 계산</h3>
+            <p>무기 레벨: ${weaponLevel}</p>
+            <p>팔찌 고정값: ${braceletFlat}</p>
+            <p>코어 고정값: ${coreFlat}</p>
+            <p>귀걸이 %: ${earringPercent}</p>
+            <p>코어 %: ${corePercent}</p>
+            <p>깨달음 레벨: ${enlightenmentLevel} → 무기 공격력 %: ${enlightenmentPercent}</p>
+            <p><b>최종 계산값: ${calculated.toLocaleString()}</b></p>
+          `;
+        }
 
           weaponTestHtml = `
-            <h3>무기 공격력 계산 테스트</h3>
+            <h3>무기 공격력 계산 테스트 (디버그)</h3>
             <p>무기 레벨: ${weaponLevel}</p>
+            <p>표 기본값: ${WEAPON_LEVEL_TABLE[weaponLevel]}</p>
+            <p>팔찌 고정값(braceletFlat): ${braceletFlat}</p>
+            <p>코어 고정값(coreFlat): ${coreFlat}</p>
+            <p>귀걸이 % 합(earringPercent): ${earringPercent}</p>
+            <p>코어 %(corePercent): ${corePercent}</p>
+            <p>flatBonusSum: ${flatBonusSum}</p>
+            <p>percentBonusSum: ${percentBonusSum}</p>
             <p>계산값: ${calculated.toLocaleString()}</p>
-            <p>API 실제값: ${actual ? actual.toLocaleString() : '?'}</p>
-            <p>오차수준: ${errorRate !== null ? errorRate + '%' : '비교 불가'}</p>
           `;
         }
         resultDiv.innerHTML = weaponTestHtml + html;

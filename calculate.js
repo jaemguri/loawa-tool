@@ -58,3 +58,20 @@ function getActivatedCoreEffects(coreOptionText, currentPoint) {
   }
   return combined;
 }
+
+// 특정 아크 패시브 카테고리(예: '깨달음')의 총 레벨을 장비 전체에서 합산
+function getArkPassiveLevel(equipmentList, category) {
+  let total = 0;
+  (equipmentList || []).forEach((item) => {
+    const text = parseTooltip(item.Tooltip).join(' ');
+    const regex = new RegExp(category + '\\s*\\+([\\d.]+)');
+    const match = text.match(regex);
+    if (match) total += parseFloat(match[1]);
+  });
+  return total;
+}
+
+// 깨달음 레벨 → 무기 공격력 % 증가 (n * 0.1%)
+function enlightenmentWeaponAttackPercent(level) {
+  return level * 0.1;
+}
