@@ -29,20 +29,48 @@ function calculateErrorRate(calculated, actual) {
   return (((calculated - actual) / actual) * 100).toFixed(2);
 }
 
-// 텍스트에서 "라벨 +숫자%" 패턴 찾기 (예: "무기 공격력 +1.9%")
-function extractPercent(text, label) {
-  if (!text) return 0;
-  const regex = new RegExp(label + '\\s*\\+?([\\d.]+)\\s*%');
-  const match = text.match(regex);
-  return match ? parseFloat(match[1]) : 0;
+// 문장 하나에서 숫자(고정값/퍼센트)를 전부 뽑아내는 헬퍼
+function extractNumbersFromSentence(sentence) {
+  const regex = /([\d][\d,]*(?:\.\d+)?)\s*(%)?/g;
+  const result = [];
+  let match;
+  while ((match = regex.exec(sentence)) !== null) {
+    result.push({
+      value: parseFloat(match[1].replace(/,/g, '')),
+      isPercent: !!match[2],
+    });
+  }
+  return result;
 }
 
-// 텍스트에서 "라벨...숫자" 패턴 찾기 (라벨과 숫자 사이에 조사/공백이 있어도 인식)
+// 텍스트를 문장 단위로 나눠서, 라벨이 포함된 문장의 고정값들을 전부 합산
 function extractFlat(text, label) {
   if (!text) return 0;
-  const regex = new RegExp(label + '[^\\d%]{0,6}([\\d,]+)(?!\\s*[%.\\d])');
-  const match = text.match(regex);
-  return match ? parseFloat(match[1].replace(/,/g, '')) : 0;
+  const sentences = text.split(/(?<=[.다])\s*/);
+  let total = 0;
+  sentences.forEach((sentence) => {
+    if (sentence.includes(label)) {
+      extractNumbersFromSentence(sentence).forEach((n) => {
+        if (!n.isPercent) total += n.value;
+      });
+    }
+  });
+  return total;
+}
+
+// 텍스트를 문장 단위로 나눠서, 라벨이 포함된 문장의 퍼센트값들을 전부 합산
+function extractPercent(text, label) {
+  if (!text) return 0;
+  const sentences = text.split(/(?<=[.다])\s*/);
+  let total = 0;
+  sentences.forEach((sentence) => {
+    if (sentence.includes(label)) {
+      extractNumbersFromSentence(sentence).forEach((n) => {
+        if (n.isPercent) total += n.value;
+      });
+    }
+  });
+  return total;
 }
 
 // 아크그리드 코어 옵션 텍스트에서, 현재 투자한 포인트(currentPoint) 이하로
