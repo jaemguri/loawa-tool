@@ -12,5 +12,41 @@
   <button id="searchBtn">조회하기</button>
 
   <div id="result"></div>
+  <script>
+    const searchBtn = document.getElementById('searchBtn');
+    const charNameInput = document.getElementById('charName');
+    const resultDiv = document.getElementById('result');
+
+    searchBtn.addEventListener('click', async () => {
+      const name = charNameInput.value.trim();
+
+      if (!name) {
+        resultDiv.textContent = '캐릭터명을 입력해주세요.';
+        return;
+      }
+
+      resultDiv.textContent = '조회 중...';
+
+      try {
+        const response = await fetch(`/api/character?name=${encodeURIComponent(name)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          resultDiv.textContent = data.error || '조회에 실패했습니다.';
+          return;
+        }
+
+        // 우선은 받아온 데이터를 그대로 화면에 표시해서 확인
+        resultDiv.innerHTML = `
+          <h2>${data.CharacterName} (${data.ServerName})</h2>
+          <p>클래스: ${data.CharacterClassName}</p>
+          <p>아이템 레벨: ${data.ItemAvgLevel}</p>
+          <p>길드: ${data.GuildName || '없음'}</p>
+        `;
+      } catch (error) {
+        resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
+      }
+    });
+  </script>
 </body>
 </html>
