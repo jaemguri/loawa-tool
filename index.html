@@ -136,7 +136,7 @@
           const percentBonusSum = earringPercent + corePercent + enlightenmentPercent;
 
           const calculated = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
-          const primaryStat = getMaxPrimaryStat(data.equipment);
+          const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars);
           const purePower = calculatePureAttackPower(primaryStat, calculated);
           const gemPercent = getGemsBaseAttackPercent(data.gems);
           const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);

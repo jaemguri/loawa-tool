@@ -369,12 +369,38 @@ function getStatTotalFromEquipment(equipmentList, statName) {
   return total;
 }
 
-// 힘/민첩/지능 총합 중 가장 큰 값을 찾기 (직업 판별 없이 자동 선택)
-function getMaxPrimaryStat(equipmentList) {
-  const str = getStatTotalFromEquipment(equipmentList, '힘');
-  const dex = getStatTotalFromEquipment(equipmentList, '민첩');
-  const int = getStatTotalFromEquipment(equipmentList, '지능');
-  return Math.max(str, dex, int);
+// 아바타 중 실제 적용되는(덧입기에 가려지지 않은) 것들의 힘/민첩/지능 % 합산, 최대 8%
+function getAvatarPrimaryStatPercent(avatarsData) {
+  let total = 0;
+  (avatarsData || []).forEach((item) => {
+    const text = parseTooltip(item.Tooltip).join(' ');
+    if (text.includes('적용되지 않는 상태')) return; // 덧입기에 가려짐
+    const m = text.match(/(힘|민첩|지능)\s*\+?([\d.]+)\s*%/);
+    if (m) total += parseFloat(m[2]);
+  });
+  return Math.min(total, 8);
+}
+
+// 힘/민첩/지능 = (장비합산 + 팔찌옵션 + 카드240 + 물약원정대1850 + 기본스탯476) × (1 + 아바타%/100)
+function getMaxPrimaryStat(equipmentList, braceletText, avatarsData) {
+  const CARD_BONUS = 240;
+  const POTION_EXPEDITION = 1850;
+  const BASE_STAT = 476;
+
+  const eqStr = getStatTotalFromEquipment(equipmentList, '힘');
+  const eqDex = getStatTotalFromEquipment(equipmentList, '민첩');
+  const eqInt = getStatTotalFromEquipment(equipmentList, '지능');
+
+  const brStr = extractFlat(braceletText, '힘');
+  const brDex = extractFlat(braceletText, '민첩');
+  const brInt = extractFlat(braceletText, '지능');
+
+  const totalStr = eqStr + brStr + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+  const totalDex = eqDex + brDex + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+  const totalInt = eqInt + brInt + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+
+  const avatarPercent = getAvatarPrimaryStatPercent(avatarsData);
+  return Math.max(totalStr, totalDex, totalInt) * (1 + avatarPercent / 100);
 }
 
 // 순수 공격력 = sqrt(힘/민첩/지능(최댓값) × 무기 공격력 / 6)
