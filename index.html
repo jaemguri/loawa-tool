@@ -145,19 +145,6 @@
           `;
         }
 
-          weaponTestHtml = `
-            <h3>무기 공격력 계산 테스트 (디버그)</h3>
-            <p>무기 레벨: ${weaponLevel}</p>
-            <p>표 기본값: ${WEAPON_LEVEL_TABLE[weaponLevel]}</p>
-            <p>팔찌 고정값(braceletFlat): ${braceletFlat}</p>
-            <p>코어 고정값(coreFlat): ${coreFlat}</p>
-            <p>귀걸이 % 합(earringPercent): ${earringPercent}</p>
-            <p>코어 %(corePercent): ${corePercent}</p>
-            <p>flatBonusSum: ${flatBonusSum}</p>
-            <p>percentBonusSum: ${percentBonusSum}</p>
-            <p>계산값: ${calculated.toLocaleString()}</p>
-          `;
-        }
         resultDiv.innerHTML = weaponTestHtml + html;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
