@@ -359,18 +359,22 @@ function getCoreOptionText(tooltipStr) {
   return '';
 }
 
-// profiles.Stats 배열에서 힘/민첩/지능 중 가장 큰 값을 찾기
-function getMaxPrimaryStat(profilesStats) {
-  if (!profilesStats) return 0;
-  const targets = ['힘', '민첩', '지능'];
-  let max = 0;
-  profilesStats.forEach((stat) => {
-    if (targets.includes(stat.Type)) {
-      const value = parseFloat(String(stat.Value).replace(/,/g, ''));
-      if (value > max) max = value;
-    }
+// 모든 장비의 "기본 효과"에서 특정 스탯(힘/민첩/지능)을 다 더해서 총합 계산
+function getStatTotalFromEquipment(equipmentList, statName) {
+  let total = 0;
+  (equipmentList || []).forEach((item) => {
+    const text = parseTooltip(item.Tooltip).join(' ');
+    total += extractFlat(text, statName);
   });
-  return max;
+  return total;
+}
+
+// 힘/민첩/지능 총합 중 가장 큰 값을 찾기 (직업 판별 없이 자동 선택)
+function getMaxPrimaryStat(equipmentList) {
+  const str = getStatTotalFromEquipment(equipmentList, '힘');
+  const dex = getStatTotalFromEquipment(equipmentList, '민첩');
+  const int = getStatTotalFromEquipment(equipmentList, '지능');
+  return Math.max(str, dex, int);
 }
 
 // 순수 공격력 = sqrt(힘/민첩/지능(최댓값) × 무기 공격력 / 6)
@@ -389,15 +393,42 @@ function getGemsBaseAttackPercent(gemsData) {
   return total;
 }
 
-// 어빌리티 스톤의 세공 단계 보너스 중 "기본 공격력 N%" 추출
+// 어빌리티 스톤의 "무작위 각인 효과" 안 "레벨 보너스"에서 기본 공격력 % 추출
 function getAbilityStoneBaseAttackPercent(equipmentList) {
   const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
   if (!stone) return 0;
-  const text = parseTooltip(stone.Tooltip).join(' ');
-  return extractPercent(text, '기본 공격력');
+
+  try {
+    const obj = JSON.parse(stone.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'IndentStringGroup' && el.value) {
+        for (const groupKey of Object.keys(el.value)) {
+          const group = el.value[groupKey];
+          const contentStr = group.contentStr;
+          if (!contentStr) continue;
+          for (const itemKey of Object.keys(contentStr)) {
+            const line = stripHtml(contentStr[itemKey].contentStr || '');
+            if (line.includes('레벨 보너스')) {
+              const match = line.match(/기본\s*공격력\s*\+?([\d.]+)\s*%/);
+              if (match) return parseFloat(match[1]);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  return 0;
 }
 
 // 기본 공격력 = 순수 공격력 × (1 + (보석% + 세공%)/100)
 function calculateBaseAttackPower(purePower, gemPercent, stonePercent) {
   return purePower * (1 + (gemPercent + stonePercent) / 100);
+}
+
+// 소수점 부동소수점 오차 제거용 - 원하는 자릿수로 반올림
+function roundTo(value, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
 }
