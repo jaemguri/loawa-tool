@@ -50,7 +50,7 @@
     searchBtn.addEventListener('click', async () => {
       const dealerName = dealerNameInput.value.trim();
       const supportName = supportNameInput.value.trim();
-      const effectiveRatio = (parseFloat(effectiveRatioInput.value) || 0) / 100;
+      const effectiveRatio = 1; // 공증 유효율 임시 고정 (나중에 시뮬레이터에서 다시 활성화 예정)
 
       if (!dealerName || !supportName) {
         resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
@@ -86,6 +86,7 @@
         );
 
         // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
+        const adrenalineBonus = hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0;
         const finalDamage = calculateFinalDamage(
           dealerStats.basePower,
           dealerStats.accessoryAttackFlat,
@@ -93,7 +94,8 @@
           supportBuffPower,
           dealerStats.chaosCoreAttack.percent,
           dealerStats.earringAttackPercent,
-          dealerStats.arkgridGemsAttackPercent
+          dealerStats.arkgridGemsAttackPercent,
+          adrenalineBonus
         );
 
         resultDiv.innerHTML = `

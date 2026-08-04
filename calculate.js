@@ -559,10 +559,10 @@ function calculateSupportBuffPower(basePower, allyAttackBuffPercent, buffGemPerc
   return basePower * 0.22 * (1 + (allyAttackBuffPercent + buffGemPercent) / 100) * effectiveRatio;
 }
 
-// 최종 데미지 = (기본공격력 + 악세공격력고정 + 코어공격력고정 + 서포터버프력) × (1+(코어%+귀걸이%+젬%)/100)
-function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPower, corePercent, earringPercent, gemPercent) {
+// 최종 데미지 = (기본공격력 + 악세공격력고정 + 코어공격력고정 + 서포터버프력) × (1+(코어%+귀걸이%+젬%+아드레날린보너스)/100)
+function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPower, corePercent, earringPercent, gemPercent, adrenalineBonus) {
   const flatTotal = basePower + accessoryFlat + coreFlat + supportBuffPower;
-  const percentSum = corePercent + earringPercent + gemPercent;
+  const percentSum = corePercent + earringPercent + gemPercent + (adrenalineBonus || 0);
   return flatTotal * toMultiplier(percentSum);
 }
 
@@ -632,4 +632,11 @@ function calculateCharacterStats(data) {
     statWindowAttack,
     braceletOptions,
   };
+}
+
+// 각인 목록(engravings 응답) 안에 "아드레날린" 각인이 있는지 확인
+// (정확한 필드 구조를 몰라도 안전하게 판별하기 위해 전체를 문자열로 변환해서 검사)
+function hasAdrenalineEngraving(engravingsData) {
+  if (!engravingsData) return false;
+  return JSON.stringify(engravingsData).includes('아드레날린');
 }
