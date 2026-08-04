@@ -125,7 +125,7 @@
             }
           }
 
-          const enlightenmentLevel = getArkPassiveLevel(data.equipment, '깨달음');
+          const enlightenmentLevel = getArkPassiveLevelFromData(data.arkpassive, '깨달음');
           const enlightenmentPercent = enlightenmentWeaponAttackPercent(enlightenmentLevel);
 
           const flatBonusSum = braceletFlat + coreFlat;
