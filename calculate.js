@@ -472,3 +472,108 @@ function roundTo(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
+
+// 클래스별 "공증 버프" 스킬 보석 이름 목록 (둘 중 레벨 높은 것만 사용)
+const SUPPORT_BUFF_GEM_NAMES = {
+  '도화가': ['묵법: 해그리기', '묵법: 해우물'],
+  '바드': ['음파 진동', '천상의 연주'],
+  '홀리나이트': ['신의 분노', '천상의 축복'],
+  '발키리': ['숭고한 도약', '숭고한 맹세'],
+};
+
+// 공증 버프 보석의 레벨(=지원효과 %)을 찾기 (해당 클래스의 두 스킬 보석 중 최댓값)
+function getSupportBuffGemPercent(gemsData, className) {
+  const targets = SUPPORT_BUFF_GEM_NAMES[className];
+  if (!targets || !gemsData || !gemsData.Gems) return 0;
+  let maxLevel = 0;
+  gemsData.Gems.forEach((gem) => {
+    const name = stripHtml(gem.Name);
+    if (targets.some((t) => name.includes(t))) {
+      if (gem.Level > maxLevel) maxLevel = gem.Level;
+    }
+  });
+  return maxLevel; // 보석 레벨 1~10 = 지원효과 1~10%
+}
+
+// 악세서리(목걸이/귀걸이/반지)의 "아군 공격력 강화" % 합산
+function getAccessoryAllyAttackBuffPercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => ['목걸이', '귀걸이', '반지'].includes(it.Type)).forEach((it) => {
+    const text = parseTooltip(it.Tooltip).join(' ');
+    total += extractPercent(text, '아군 공격력 강화');
+  });
+  return total;
+}
+
+// 6개 코어 전체의 "아군 공격력 강화" % 합산 (활성화된 [XXP] 구간만)
+function getAllyAttackBuffFromArkgridCores(arkgridData) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      total += sumCoreSegments(segments, '아군 공격력 강화').percent;
+    });
+  }
+  return total;
+}
+
+// 6개 코어 전체에 박힌 젬들의 "아군 공격력 강화" % 합산
+function getAllyAttackBuffFromArkgridGems(arkgridData) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        total += extractPercent(text, '아군 공격력 강화');
+      });
+    });
+  }
+  return total;
+}
+
+// 팔찌+악세+아크그리드(코어/젬)+아크패시브(선각자22+기원22, 고정) 전체의 아군 공격력 강화 % 총합
+function getTotalAllyAttackBuffPercent(equipmentList, braceletOptions, arkgridData) {
+  const ARKPASSIVE_FIXED = 44; // 선각자 22 + 기원 22
+  return (
+    (braceletOptions?.allyAttackBuffPercent || 0) +
+    getAccessoryAllyAttackBuffPercent(equipmentList) +
+    getAllyAttackBuffFromArkgridCores(arkgridData) +
+    getAllyAttackBuffFromArkgridGems(arkgridData) +
+    ARKPASSIVE_FIXED
+  );
+}
+
+// 클래스별 "공증 버프" 스킬 보석 이름 (둘 중 레벨 높은 것만 사용)
+const SUPPORT_BUFF_GEM_NAMES = {
+  '도화가': ['묵법: 해그리기', '묵법: 해우물'],
+  '바드': ['음파 진동', '천상의 연주'],
+  '홀리나이트': ['신의 분노', '천상의 축복'],
+  '발키리': ['숭고한 도약', '숭고한 맹세'],
+};
+
+// 공증 버프 보석의 레벨(=지원효과 %)을 찾기 (해당 클래스의 두 스킬 보석 중 최댓값)
+function getSupportBuffGemPercent(gemsData, className) {
+  const targets = SUPPORT_BUFF_GEM_NAMES[className];
+  if (!targets || !gemsData || !gemsData.Gems) return 0;
+  let maxLevel = 0;
+  gemsData.Gems.forEach((gem) => {
+    const name = stripHtml(gem.Name);
+    if (targets.some((t) => name.includes(t))) {
+      if (gem.Level > maxLevel) maxLevel = gem.Level;
+    }
+  });
+  return maxLevel;
+}
+
+// 서포터 버프력 = 기본공격력 × 0.22 × (1 + (아공강% + 겁화보석%)/100) × 공증유효율
+function calculateSupportBuffPower(basePower, allyAttackBuffPercent, buffGemPercent, effectiveRatio) {
+  return basePower * 0.22 * (1 + (allyAttackBuffPercent + buffGemPercent) / 100) * effectiveRatio;
+}
+
+// 최종 데미지 = (기본공격력 + 악세공격력고정 + 코어공격력고정 + 서포터버프력) × (1+(코어%+귀걸이%+젬%)/100)
+function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPower, corePercent, earringPercent, gemPercent) {
+  const flatTotal = basePower + accessoryFlat + coreFlat + supportBuffPower;
+  const percentSum = corePercent + earringPercent + gemPercent;
+  return flatTotal * toMultiplier(percentSum);
+}
