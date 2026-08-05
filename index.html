@@ -12,6 +12,10 @@
   <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
   <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <button id="searchBtn">조회하기</button>
+<p>
+    <label><input type="checkbox" id="backSameol"> 백 사멸</label>
+    <label><input type="checkbox" id="headSameol"> 헤드 사멸</label>
+  </p>
 
   <div id="result"></div>
 
@@ -22,7 +26,10 @@
     const supportNameInput = document.getElementById('supportName');
     const effectiveRatioInput = document.getElementById('effectiveRatio');
     const resultDiv = document.getElementById('result');
+    const backSameolInput = document.getElementById('backSameol');
+    const headSameolInput = document.getElementById('headSameol');
 
+    
     function stripHtml(str) {
       if (!str) return '';
       return String(str).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -50,7 +57,7 @@
     searchBtn.addEventListener('click', async () => {
       const dealerName = dealerNameInput.value.trim();
       const supportName = supportNameInput.value.trim();
-      const effectiveRatio = 1; // 공증 유효율 임시 고정 (나중에 시뮬레이터에서 다시 활성화 예정)
+      const effectiveRatio = 1; // 공증 유효율 임시 고정 (나중에 시뮬레이터에서 다시 활성화 예정
 
       if (!dealerName || !supportName) {
         resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
@@ -100,7 +107,10 @@
           adrenalineBonus
         );
 // 치명타 계산 (실험용)
-        const critResult = calculateCritMultiplier(data.dealer, data.support);
+        const backSameolChecked = backSameolInput.checked;
+        const headSameolChecked = headSameolInput.checked;
+        const critResult = calculateCritMultiplier(data.dealer, data.support, backSameolChecked);
+        const enemyDamageBonusFromSameol = (backSameolChecked ? 5 : 0) + (headSameolChecked ? 20 : 0);
 
         // 추가 피해 계산 (실험용)
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
@@ -122,6 +132,7 @@
           ${extraDamageResult.qualityTooLow
             ? '<p style="color:red;">무기 품질 70% 미만은 표시 불가</p>'
             : `<p>추가 피해 배율: ${extraDamageResult.multiplier.toFixed(4)}</p>
+               <p>사멸 옵션으로 인한 적에게 주는 피해 보너스: ${enemyDamageBonusFromSameol}% (나중에 적용 예정)</p>
                <pre>${JSON.stringify(extraDamageResult.extraDamageBreakdown, null, 2)}</pre>`
           }
           

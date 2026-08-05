@@ -875,7 +875,7 @@ function adrenalineCritRateBonus(level) {
 }
 
 // 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산 (항목별 breakdown 포함)
-function calculateCritMultiplier(dealerData, supportData) {
+function calculateCritMultiplier(dealerData, supportData, backSameolChecked) {
   const equipment = dealerData.equipment;
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -899,6 +899,7 @@ function calculateCritMultiplier(dealerData, supportData) {
     딜러팔찌: dealerBracelet.critRatePercent,
     서폿팔찌_치적저항감소: supportBracelet.critResistReductionPercent,
     치명스탯: critStatRate,
+    백사멸: backSameolChecked ? 10 : 0,
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
@@ -931,11 +932,14 @@ function calculateCritMultiplier(dealerData, supportData) {
   Object.values(onHitBreakdown).forEach((p) => { onHitMultiplier *= toMultiplier(p); });
 
   const rate = Math.min(critRatePercent, 100) / 100;
-  const avgDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
+  const critDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
+  const sharpWeaponPenalty = getSharpWeaponDamagePenaltyMultiplier(dealerData.engravings);
+  const avgDamageMultiplier = critDamageMultiplier * sharpWeaponPenalty;
 
   return {
     critRatePercent, critDamagePercent, avgDamageMultiplier,
     critRateBreakdown, critDamageBreakdown, onHitBreakdown,
+    sharpWeaponPenalty,
   };
 }
 
@@ -1050,4 +1054,14 @@ function calculateExtraDamageMultiplier(dealerData) {
   const multiplier = 1 + sumPercent / 100;
 
   return { multiplier, extraDamageBreakdown, qualityTooLow };
+}
+
+// 예리한 둔기 채용 시 "일정 확률(10%)로 20% 감소된 피해"의 기댓값 배율
+// 확률과 감소율은 고정값으로 가정 (실제 각인 효과는 확률 표기가 없어 10%로 고정)
+function getSharpWeaponDamagePenaltyMultiplier(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '예리한 둔기');
+  if (!eng) return 1;
+  const PROBABILITY = 0.10;
+  const REDUCTION = 0.20;
+  return 1 - PROBABILITY * REDUCTION;
 }
