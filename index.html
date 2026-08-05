@@ -115,14 +115,13 @@
           <p>곱연산 항목: </p>
           <pre>${JSON.stringify(critResult.onHitBreakdown, null, 2)}</pre>
           <p>치명타 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
-
+          <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
+          
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
           <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
           <p>공증 버프 보석%: ${buffGemPercent}</p>
           <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
-
-          <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
           
           <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
         `;

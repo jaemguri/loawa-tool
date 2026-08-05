@@ -330,10 +330,10 @@ function parseBraceletOptions(braceletText) {
   m = text.match(/방어력을\s*([\d.]+)\s*%\s*감소/);
   if (m) result.defenseReductionPercent = parseFloat(m[1]);
 
-  m = text.match(/치명타 저항력을\s*([\d.]+)\s*%\s*감소/);
+  m = text.match(/치명타 저항(?:력)?(?:을|이)\s*(?:감소\s*)?([\d.]+)\s*%(?:\s*감소)?/);
   if (m) result.critResistReductionPercent = parseFloat(m[1]);
 
-  m = text.match(/치명타 피해 저항력을\s*([\d.]+)\s*%\s*감소/);
+  m = text.match(/치명타 피해 저항(?:력)?(?:을|이)\s*(?:감소\s*)?([\d.]+)\s*%(?:\s*감소)?/);
   if (m) result.critDmgResistReductionPercent = parseFloat(m[1]);
 
   m = text.match(/보호 효과가 적용된 대상이[^%]*적에게 주는 피해가\s*([\d.]+)\s*%/);
