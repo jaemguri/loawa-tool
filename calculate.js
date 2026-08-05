@@ -1239,6 +1239,19 @@ function getNecklaceEnemyDamagePercent(equipmentList) {
   return total;
 }
 
+// "진화형 피해가 X% 증가" 형태만 정확히 잡는 전용 추출 함수
+// ("~최대 X%까지 적용" 같은 다른 문구는 제외)
+function extractEvolutionDamageIncreasePercent(text) {
+  if (!text) return 0;
+  const regex = /진화형\s*피해가\s*([\d.]+)\s*%\s*증가/g;
+  let total = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    total += parseFloat(m[1]);
+  }
+  return total;
+}
+
 // 아크패시브(진화)의 "진화형 피해" % 합산 + 항목별 breakdown (디버깅용)
 function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   if (!arkpassiveData || !arkpassiveData.Effects) return 0;
@@ -1249,7 +1262,7 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
       try {
         const obj = JSON.parse(e.ToolTip);
         const text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
-        total += extractPercent(text, '진화형 피해');
+        total += extractEvolutionDamageIncreasePercent(text);
       } catch (err) {}
     });
   return total;
@@ -1266,7 +1279,7 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
         const obj = JSON.parse(e.ToolTip);
         const nameObj = obj.Element_000 ? stripHtml(obj.Element_000.value) : '이름없음';
         const text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
-        const percent = extractPercent(text, '진화형 피해');
+        const percent = extractEvolutionDamageIncreasePercent(text);
         if (percent > 0) result[nameObj] = (result[nameObj] || 0) + percent;
       } catch (err) {}
     });
