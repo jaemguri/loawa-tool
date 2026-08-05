@@ -1251,8 +1251,15 @@ function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
   const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('뭉툭한 가시'));
   if (!eng) return 0;
 
-  const text = stripHtml(eng.Description || '');
-  const thresholdMatch = text.match(/확률이\s*최대\s*([\d.]+)\s*%로\s*제한/);
+  let text = '';
+  try {
+    const obj = JSON.parse(eng.ToolTip);
+    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+  } catch (e) {
+    return 0;
+  }
+
+  const thresholdMatch = text.match(/확률이\s*최대\s*([\d.]+)\s*%\s*로\s*제한/);
   const rateMatch = text.match(/확률의\s*([\d.]+)\s*%가\s*진화형\s*피해로\s*전환/);
   const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%까지/);
   const baseFlatMatch = text.match(/진화형\s*피해가\s*([\d.]+)\s*%\s*증가/);
