@@ -1065,3 +1065,220 @@ function getSharpWeaponDamagePenaltyMultiplier(engravingsData) {
   const REDUCTION = 0.20;
   return 1 - PROBABILITY * REDUCTION;
 }
+
+// 각인 Description에서 적에게 주는 피해 증가 % 추출 (범용)
+// - "받는 피해" 문구는 제외 (패널티이므로)
+// - 백/헤드어택 성공 시 추가 보너스 문구는 제외 (추가 피해 쪽에서 이미 사용)
+// - 이동속도 기반(돌격대장) 문구는 제외 (별도 공식으로 처리)
+function extractEngravingEnemyDamagePercent(description) {
+  if (!description) return 0;
+  let text = stripHtml(description);
+
+  text = text.replace(/받는\s*피해가\s*[\d.]+\s*%\s*(증가|감소)/g, '');
+  text = text.replace(/(?:백어택|헤드어택)[^.]*성공\s*시\s*피해량이\s*추가로\s*[\d.]+\s*%\s*증가/g, '');
+  text = text.replace(/이동속도\s*증가량의\s*[\d.]+\s*%[^.]*\./g, '');
+
+  let total = 0;
+  const matches = text.matchAll(/(?:주는\s*피해|피해량|피해)(?:가|이)?\s*([\d.]+)\s*%\s*증가/g);
+  for (const m of matches) {
+    total += parseFloat(m[1]);
+  }
+  return total;
+}
+
+// 딜러의 모든 각인(ArkPassiveEffects)을 이름별로 그룹핑해서 적에게 주는 피해 % 합산 (같은 이름끼리 합연산)
+// 돌격대장은 별도 공식(이동속도 기반)으로 처리하므로 여기선 제외
+function getEngravingEnemyDamageByName(engravingsData) {
+  const result = {};
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return result;
+
+  engravingsData.ArkPassiveEffects.forEach((eng) => {
+    if (eng.Name === '돌격대장') return;
+    const percent = extractEngravingEnemyDamagePercent(eng.Description);
+    if (percent > 0) {
+      result[eng.Name] = (result[eng.Name] || 0) + percent;
+    }
+  });
+  return result;
+}
+
+// 돌격대장의 "이동속도 증가량의 X%" → 실제 적주피 % (이동속도 40% 고정 가정)
+function getChargeCaptainEnemyDamagePercent(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '돌격대장');
+  if (!eng) return 0;
+  const text = stripHtml(eng.Description || '');
+  const m = text.match(/이동속도\s*증가량의\s*([\d.]+)\s*%/);
+  if (!m) return 0;
+  const MOVE_SPEED_FIXED = 40;
+  return (parseFloat(m[1]) * MOVE_SPEED_FIXED) / 100;
+}
+
+// 각인 전체(돌격대장 포함)의 적에게 주는 피해 곱연산 배율
+// 같은 이름 각인끼리는 이미 합산되어 있고(그룹별), 이름이 다른 각인끼리는 여기서 곱연산
+function getEngravingEnemyDamageMultiplier(engravingsData) {
+  const byName = getEngravingEnemyDamageByName(engravingsData);
+  let multiplier = 1;
+  Object.values(byName).forEach((p) => { multiplier *= toMultiplier(p); });
+
+  const chargeCaptainPercent = getChargeCaptainEnemyDamagePercent(engravingsData);
+  multiplier *= toMultiplier(chargeCaptainPercent);
+
+  return { multiplier, byName, chargeCaptainPercent };
+}
+
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[보스 피해] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsBossDamageLevel(arkgridData) {
+  let totalLevel = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        const matches = text.matchAll(/\[보스\s*피해\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
+      });
+    });
+  }
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.08334% = 아크그리드 젬의 보스 피해 %
+function getAllArkgridGemsBossDamagePercent(arkgridData) {
+  const level = getAllArkgridGemsBossDamageLevel(arkgridData);
+  return level * 0.08334;
+}
+
+// 툴팁 JSON에서 "코어 타입" 이름표가 붙은 항목(예: "혼돈 - 해")을 찾아서 반환
+function getCoreTypeText(tooltipStr) {
+  try {
+    const obj = JSON.parse(tooltipStr);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.value && typeof el.value === 'object' && el.value.Element_000) {
+        const label = stripHtml(el.value.Element_000);
+        if (label.includes('코어 타입')) {
+          return stripHtml(el.value.Element_001 || '');
+        }
+      }
+    }
+  } catch (e) {}
+  return '';
+}
+
+// 코어 구간 텍스트에서 "치명타 시 적에게 주는 피해" 문구를 제외하고
+// 순수 "적에게 주는 피해" %만 추출 (혼돈 코어 적주피 계산 전용)
+function extractChaosCoreEnemyDamagePercent(segmentText) {
+  if (!segmentText) return 0;
+  const cleaned = segmentText.replace(/치명타\s*시\s*적에게\s*주는\s*피해가\s*[\d.]+\s*%[^.]*\./g, '');
+  return extractPercent(cleaned, '적에게 주는 피해');
+}
+
+// 혼돈 코어들 각각의 "적에게 주는 피해" % (활성화된 구간만, 치명타 조건부 제외), 코어 이름별로 반환
+function getChaosCoreEnemyDamageByCore(arkgridData) {
+  const result = {};
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const typeText = getCoreTypeText(slot.Tooltip);
+      if (!typeText.includes('혼돈')) return;
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      let percent = 0;
+      segments.forEach((seg) => {
+        percent += extractChaosCoreEnemyDamagePercent(seg);
+      });
+      if (percent > 0) result[slot.Name] = (result[slot.Name] || 0) + percent;
+    });
+  }
+  return result;
+}
+
+// 혼돈 코어들의 적에게 주는 피해 곱연산 배율
+function getChaosCoreEnemyDamageMultiplier(arkgridData) {
+  const byCore = getChaosCoreEnemyDamageByCore(arkgridData);
+  let multiplier = 1;
+  Object.values(byCore).forEach((p) => { multiplier *= toMultiplier(p); });
+  return { multiplier, byCore };
+}
+
+// 질서 코어 중 18P 이상 투자된 코어를 해/달 그룹별로 찾아 고정 0.15%씩 합산
+function getOrderCoreEnemyDamageByGroup(arkgridData) {
+  const result = { 해: 0, 달: 0 };
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const typeText = getCoreTypeText(slot.Tooltip);
+      if (!typeText.includes('질서')) return;
+      if ((slot.Point || 0) < 18) return;
+      if (typeText.includes('해')) result.해 += 0.15;
+      else if (typeText.includes('달')) result.달 += 0.15;
+    });
+  }
+  return result;
+}
+
+// 질서 코어 해/달 그룹간 곱연산 배율
+function getOrderCoreEnemyDamageMultiplier(arkgridData) {
+  const byGroup = getOrderCoreEnemyDamageByGroup(arkgridData);
+  const multiplier = toMultiplier(byGroup.해) * toMultiplier(byGroup.달);
+  return { multiplier, byGroup };
+}
+
+// 목걸이의 "적에게 주는 피해" % 합산
+function getNecklaceEnemyDamagePercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '목걸이').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '적에게 주는 피해');
+  });
+  return total;
+}
+
+// 아크패시브(진화)의 "진화형 피해" % 합산
+function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
+  return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '진화형 피해');
+}
+
+// 백/헤드 사멸 체크박스의 적에게 주는 피해 보너스 %
+function getSameolEnemyDamagePercent(backChecked, headChecked) {
+  return (backChecked ? 5 : 0) + (headChecked ? 20 : 0);
+}
+
+// 딜러 데이터 + 사멸 체크박스 상태를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
+function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameolChecked) {
+  const equipment = dealerData.equipment;
+  const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  const dealerBracelet = parseBraceletOptions(braceletText);
+
+  const necklacePercent = getNecklaceEnemyDamagePercent(equipment);
+  const engravingResult = getEngravingEnemyDamageMultiplier(dealerData.engravings);
+  const bossGemPercent = getAllArkgridGemsBossDamagePercent(dealerData.arkgrid);
+  const chaosCoreResult = getChaosCoreEnemyDamageMultiplier(dealerData.arkgrid);
+  const orderCoreResult = getOrderCoreEnemyDamageMultiplier(dealerData.arkgrid);
+  const evolutionDamagePercent = getArkPassiveEvolutionDamagePercent(dealerData.arkpassive);
+  const sameolPercent = getSameolEnemyDamagePercent(backSameolChecked, headSameolChecked);
+
+  const multiplier =
+    toMultiplier(necklacePercent) *
+    engravingResult.multiplier *
+    toMultiplier(bossGemPercent) *
+    chaosCoreResult.multiplier *
+    orderCoreResult.multiplier *
+    toMultiplier(dealerBracelet.enemyDamagePercent) *
+    toMultiplier(evolutionDamagePercent) *
+    toMultiplier(sameolPercent);
+
+  return {
+    multiplier,
+    breakdown: {
+      목걸이: necklacePercent,
+      각인: engravingResult.byName,
+      돌격대장: engravingResult.chargeCaptainPercent,
+      아크그리드젬_보스피해: bossGemPercent,
+      아크그리드코어_혼돈: chaosCoreResult.byCore,
+      아크그리드코어_질서: orderCoreResult.byGroup,
+      딜러팔찌: dealerBracelet.enemyDamagePercent,
+      아크패시브_진화형피해: evolutionDamagePercent,
+      사멸옵션: sameolPercent,
+    },
+  };
+}

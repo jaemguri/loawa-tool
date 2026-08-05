@@ -110,10 +110,12 @@
         const backSameolChecked = backSameolInput.checked;
         const headSameolChecked = headSameolInput.checked;
         const critResult = calculateCritMultiplier(data.dealer, data.support, backSameolChecked);
-        const enemyDamageBonusFromSameol = (backSameolChecked ? 5 : 0) + (headSameolChecked ? 20 : 0);
 
         // 추가 피해 계산 (실험용)
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
+
+        // 적에게 주는 피해 계산 (실험용)
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, backSameolChecked, headSameolChecked);
 
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
@@ -132,9 +134,10 @@
           ${extraDamageResult.qualityTooLow
             ? '<p style="color:red;">무기 품질 70% 미만은 표시 불가</p>'
             : `<p>추가 피해 배율: ${extraDamageResult.multiplier.toFixed(4)}</p>
-               <p>사멸 옵션으로 인한 적에게 주는 피해 보너스: ${enemyDamageBonusFromSameol}% (나중에 적용 예정)</p>
                <pre>${JSON.stringify(extraDamageResult.extraDamageBreakdown, null, 2)}</pre>`
           }
+          <p>적에게 주는 피해 배율: ${enemyDamageResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
           
           
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
