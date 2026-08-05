@@ -1239,9 +1239,38 @@ function getNecklaceEnemyDamagePercent(equipmentList) {
   return total;
 }
 
-// 아크패시브(진화)의 "진화형 피해" % 합산
+// 아크패시브(진화)의 "진화형 피해" % 합산 + 항목별 breakdown (디버깅용)
 function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
-  return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '진화형 피해');
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  let total = 0;
+  arkpassiveData.Effects
+    .filter((e) => e.Name === '진화')
+    .forEach((e) => {
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        const text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+        total += extractPercent(text, '진화형 피해');
+      } catch (err) {}
+    });
+  return total;
+}
+
+// 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
+function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
+  const result = {};
+  if (!arkpassiveData || !arkpassiveData.Effects) return result;
+  arkpassiveData.Effects
+    .filter((e) => e.Name === '진화')
+    .forEach((e) => {
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        const nameObj = obj.Element_000 ? stripHtml(obj.Element_000.value) : '이름없음';
+        const text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+        const percent = extractPercent(text, '진화형 피해');
+        if (percent > 0) result[nameObj] = (result[nameObj] || 0) + percent;
+      } catch (err) {}
+    });
+  return result;
 }
 
 // '뭉툭한 가시' 채용 시, 치명타 적중률이 임계값(보통 80%)을 넘는 초과분을 전환율(보통 150%)로
@@ -1320,6 +1349,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
       아크그리드코어_질서: orderCoreResult.byGroup,
       딜러팔찌: dealerBracelet.enemyDamagePercent,
       아크패시브_진화형피해: evolutionDamagePercent,
+      아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       뭉툭한가시_전환보너스: bluntThornBonus,
       사멸옵션: sameolPercent,
     },
