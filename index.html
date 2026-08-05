@@ -89,6 +89,7 @@
         const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
         const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
         const finalDamage = calculateFinalDamage(
+          
           dealerStats.basePower,
           dealerStats.accessoryAttackFlat,
           dealerStats.chaosCoreAttack.flat,
@@ -98,6 +99,8 @@
           dealerStats.arkgridGemsAttackPercent,
           adrenalineBonus
         );
+// 치명타 계산 (실험용)
+        const critResult = calculateCritMultiplier(data.dealer, data.support);
 
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
@@ -105,6 +108,9 @@
           <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
           <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
           <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
+          <p>치명타 적중률: ${critResult.critRatePercent.toFixed(2)}%</p>
+          <p>치명타 피해: ${critResult.critDamagePercent.toFixed(2)}%</p>
+          <p>평균 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
 
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
@@ -113,7 +119,8 @@
           <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
 
           <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
-          <h2>최종 데미지: ${finalDamage.toLocaleString()}</h2>
+          
+          <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
         `;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;

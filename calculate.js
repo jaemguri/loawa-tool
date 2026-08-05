@@ -671,3 +671,221 @@ function getAdrenalineStoneBonus(equipmentList) {
 
   return 0;
 }
+
+// "치명타(로/론)? (적중)? 시 적에게 주는 피해가 X%" 패턴 합산 (곱연산용)
+function extractCritOnHitDamagePercent(text) {
+  if (!text) return 0;
+  const regex = /치명타(?:로|론)?\s*(?:적중\s*)?시\s*적에게\s*주는\s*피해가\s*([\d.]+)\s*%/g;
+  let total = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    total += parseFloat(m[1]);
+  }
+  return total;
+}
+
+// arkpassive Effects 배열에서 특정 카테고리(진화/깨달음)의 텍스트를 전부 이어붙여 반환
+function getArkPassiveEffectsText(arkpassiveData, category) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return '';
+  return arkpassiveData.Effects
+    .filter((e) => e.Name === category)
+    .map((e) => {
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        return obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+      } catch (err) {
+        return '';
+      }
+    })
+    .join(' ');
+}
+
+// 아크패시브(진화+깨달음)의 치명타 적중률 % 합산
+function getArkPassiveCritRatePercent(arkpassiveData) {
+  const evo = getArkPassiveEffectsText(arkpassiveData, '진화');
+  const real = getArkPassiveEffectsText(arkpassiveData, '깨달음');
+  return extractPercent(evo, '치명타 적중률') + extractPercent(real, '치명타 적중률');
+}
+
+// 아크패시브(진화)의 치명타 피해 % 합산
+function getArkPassiveCritDamagePercent(arkpassiveData) {
+  return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '치명타 피해');
+}
+
+// 아크패시브(진화/깨달음)의 "치명타 시 적에게 주는 피해" 곱연산 %(각각 반환)
+function getArkPassiveCritOnHitPercent(arkpassiveData) {
+  return {
+    evolution: extractCritOnHitDamagePercent(getArkPassiveEffectsText(arkpassiveData, '진화')),
+    realization: extractCritOnHitDamagePercent(getArkPassiveEffectsText(arkpassiveData, '깨달음')),
+  };
+}
+
+// 치명 스탯값 → 치명타 적중률 %로 환산 (27.9440당 1%)
+function critStatToRatePercent(critStat) {
+  return (critStat || 0) / 27.9440;
+}
+
+// profiles.Stats 배열에서 특정 Type(예: '치명')의 Value를 찾아 반환
+function getStatValueFromProfile(profilesData, statType) {
+  if (!profilesData || !profilesData.Stats) return 0;
+  const stat = profilesData.Stats.find((s) => s.Type === statType);
+  return stat ? parseFloat(stat.Value) || 0 : 0;
+}
+
+// 반지의 치명타 적중률 / 치명타 피해 % 합산 (목걸이·귀걸이 제외, 반지만)
+function getRingCritRatePercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '반지').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '치명타 적중률');
+  });
+  return total;
+}
+function getRingCritDamagePercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '반지').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '치명타 피해');
+  });
+  return total;
+}
+
+// engravings(ArkPassiveEffects)에서 "예리한 둔기" 기본 효과의 치명타 피해 % 추출
+function getSharpWeaponCritDamagePercent(engravingsData) {
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return 0;
+  const eng = engravingsData.ArkPassiveEffects.find((e) => e.Name === '예리한 둔기');
+  return eng ? extractPercent(eng.Description, '치명타 피해량') : 0;
+}
+
+// 예리한 둔기 어빌리티 스톤 장착 효과 고정표
+const SHARP_WEAPON_STONE_BONUS = { 1: 7.5, 2: 9.4, 3: 13.2, 4: 15.0 };
+function getSharpWeaponStoneBonus(engravingsData) {
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return 0;
+  const eng = engravingsData.ArkPassiveEffects.find((e) => e.Name === '예리한 둔기');
+  if (!eng || !eng.AbilityStoneLevel) return 0;
+  return SHARP_WEAPON_STONE_BONUS[eng.AbilityStoneLevel] || 0;
+}
+
+// 어빌리티 스톤 "레벨 보너스"의 치명타 피해 % (기존 getAbilityStoneBaseAttackPercent와 같은 구조)
+function getAbilityStoneCritDamagePercent(equipmentList) {
+  const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
+  if (!stone) return 0;
+  try {
+    const obj = JSON.parse(stone.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'IndentStringGroup' && el.value) {
+        for (const groupKey of Object.keys(el.value)) {
+          const contentStr = el.value[groupKey].contentStr;
+          if (!contentStr) continue;
+          for (const itemKey of Object.keys(contentStr)) {
+            const line = stripHtml(contentStr[itemKey].contentStr || '');
+            if (line.includes('레벨 보너스')) {
+              const match = line.match(/치명타\s*피해\s*\+?([\d.]+)\s*%/);
+              if (match) return parseFloat(match[1]);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return 0;
+}
+
+// 6개 코어 전체(활성화된 구간만)에서 치명타 적중률/피해/곱연산% 각각 합산
+function getArkgridCritOptions(arkgridData) {
+  const result = { critRatePercent: 0, critDamagePercent: 0, critOnHitPercent: 0 };
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      segments.forEach((seg) => {
+        result.critRatePercent += extractPercent(seg, '치명타 적중률');
+        result.critDamagePercent += extractPercent(seg, '치명타 피해');
+        result.critOnHitPercent += extractCritOnHitDamagePercent(seg);
+      });
+    });
+  }
+  return result;
+}
+
+// 어빌리티 스톤의 "아드레날린 Lv.N" 레벨만 반환 (getAdrenalineStoneBonus와 같은 파싱, 레벨 자체가 필요할 때 사용)
+function getAdrenalineStoneLevel(equipmentList) {
+  const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
+  if (!stone) return 0;
+  try {
+    const obj = JSON.parse(stone.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'IndentStringGroup' && el.value) {
+        for (const groupKey of Object.keys(el.value)) {
+          const contentStr = el.value[groupKey].contentStr;
+          if (!contentStr) continue;
+          for (const itemKey of Object.keys(contentStr)) {
+            const line = stripHtml(contentStr[itemKey].contentStr || '');
+            if (line.includes('아드레날린')) {
+              const match = line.match(/Lv\.(\d)/);
+              if (match) return parseInt(match[1], 10);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return 0;
+}
+
+// 아드레날린 레벨 → 치명타 적중률 보너스 (14 + 레벨×1.5, 최대 20)
+function adrenalineCritRateBonus(level) {
+  if (!level) return 0;
+  return Math.min(14 + level * 1.5, 20);
+}
+
+// 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산
+function calculateCritMultiplier(dealerData, supportData) {
+  const equipment = dealerData.equipment;
+  const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  const dealerBracelet = parseBraceletOptions(braceletText);
+
+  const supportBraceletItem = (supportData.equipment || []).find((it) => it.Type === '팔찌');
+  const supportBraceletText = supportBraceletItem ? parseTooltip(supportBraceletItem.Tooltip).join(' ') : '';
+  const supportBracelet = parseBraceletOptions(supportBraceletText);
+
+  const adrenalineLevel = getAdrenalineStoneLevel(equipment);
+  const adrenalineCritRate = adrenalineCritRateBonus(adrenalineLevel);
+
+  const critRatePercent =
+    adrenalineCritRate +
+    getArkPassiveCritRatePercent(dealerData.arkpassive) +
+    getRingCritRatePercent(equipment) +
+    dealerBracelet.critRatePercent +
+    supportBracelet.critResistReductionPercent +
+    critStatToRatePercent(getStatValueFromProfile(dealerData.profiles, '치명'));
+
+  const arkgridCrit = getArkgridCritOptions(dealerData.arkgrid);
+
+  const critDamagePercent =
+    getArkPassiveCritDamagePercent(dealerData.arkpassive) +
+    getSharpWeaponCritDamagePercent(dealerData.engravings) +
+    getRingCritDamagePercent(equipment) +
+    getAbilityStoneCritDamagePercent(equipment) +
+    getSharpWeaponStoneBonus(dealerData.engravings) +
+    dealerBracelet.critDamagePercent +
+    arkgridCrit.critDamagePercent;
+
+  const arkPassiveOnHit = getArkPassiveCritOnHitPercent(dealerData.arkpassive);
+  const onHitFactors = [
+    arkPassiveOnHit.evolution,
+    arkPassiveOnHit.realization,
+    dealerBracelet.critHitExtraDamagePercent,
+    supportBracelet.critDmgResistReductionPercent,
+    arkgridCrit.critOnHitPercent,
+  ];
+  let onHitMultiplier = 1;
+  onHitFactors.forEach((p) => { onHitMultiplier *= toMultiplier(p); });
+
+  const rate = Math.min(critRatePercent, 100) / 100;
+  const avgDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
+
+  return { critRatePercent, critDamagePercent, avgDamageMultiplier };
+}
+
