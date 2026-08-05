@@ -115,7 +115,7 @@
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
 
         // 적에게 주는 피해 계산 (실험용)
-        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, backSameolChecked, headSameolChecked);
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, backSameolChecked, headSameolChecked, critResult.critRatePercent);
 
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>

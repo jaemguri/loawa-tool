@@ -1244,13 +1244,40 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '진화형 피해');
 }
 
+// '뭉툭한 가시' 채용 시, 치명타 적중률이 임계값(보통 80%)을 넘는 초과분을 전환율(보통 150%)로
+// 추가 진화형 피해로 전환 (최대 한도 - 기본 15%는 이미 위 함수에서 잡히므로 초과분만 반환)
+function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('뭉툭한 가시'));
+  if (!eng) return 0;
+
+  const text = stripHtml(eng.Description || '');
+  const thresholdMatch = text.match(/확률이\s*최대\s*([\d.]+)\s*%로\s*제한/);
+  const rateMatch = text.match(/확률의\s*([\d.]+)\s*%가\s*진화형\s*피해로\s*전환/);
+  const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%까지/);
+  const baseFlatMatch = text.match(/진화형\s*피해가\s*([\d.]+)\s*%\s*증가/);
+
+  if (!thresholdMatch || !rateMatch || !maxTotalMatch) return 0;
+
+  const threshold = parseFloat(thresholdMatch[1]);
+  const rate = parseFloat(rateMatch[1]);
+  const maxTotal = parseFloat(maxTotalMatch[1]);
+  const baseFlat = baseFlatMatch ? parseFloat(baseFlatMatch[1]) : 0;
+
+  const excess = Math.max((critRatePercent || 0) - threshold, 0);
+  const converted = (excess * rate) / 100;
+  const maxBonus = maxTotal - baseFlat;
+
+  return Math.min(converted, maxBonus);
+}
+
 // 백/헤드 사멸 체크박스의 적에게 주는 피해 보너스 %
 function getSameolEnemyDamagePercent(backChecked, headChecked) {
   return (backChecked ? 5 : 0) + (headChecked ? 20 : 0);
 }
 
 // 딜러 데이터 + 사멸 체크박스 상태를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
-function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameolChecked) {
+function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameolChecked, critRatePercent) {
   const equipment = dealerData.equipment;
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -1262,6 +1289,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
   const chaosCoreResult = getChaosCoreEnemyDamageMultiplier(dealerData.arkgrid);
   const orderCoreResult = getOrderCoreEnemyDamageMultiplier(dealerData.arkgrid);
   const evolutionDamagePercent = getArkPassiveEvolutionDamagePercent(dealerData.arkpassive);
+  const bluntThornBonus = getBluntThornConversionBonusPercent(dealerData.arkpassive, critRatePercent);
   const sameolPercent = getSameolEnemyDamagePercent(backSameolChecked, headSameolChecked);
 
   const multiplier =
@@ -1271,7 +1299,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
     chaosCoreResult.multiplier *
     orderCoreResult.multiplier *
     toMultiplier(dealerBracelet.enemyDamagePercent) *
-    toMultiplier(evolutionDamagePercent) *
+    toMultiplier(evolutionDamagePercent + bluntThornBonus) *
     toMultiplier(sameolPercent);
 
   return {
@@ -1285,6 +1313,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
       아크그리드코어_질서: orderCoreResult.byGroup,
       딜러팔찌: dealerBracelet.enemyDamagePercent,
       아크패시브_진화형피해: evolutionDamagePercent,
+      뭉툭한가시_전환보너스: bluntThornBonus,
       사멸옵션: sameolPercent,
     },
   };
