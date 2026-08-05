@@ -839,7 +839,7 @@ function adrenalineCritRateBonus(level) {
   return Math.min(14 + level * 1.5, 20);
 }
 
-// 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산
+// 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산 (항목별 breakdown 포함)
 function calculateCritMultiplier(dealerData, supportData) {
   const equipment = dealerData.equipment;
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
@@ -853,39 +853,54 @@ function calculateCritMultiplier(dealerData, supportData) {
   const adrenalineLevel = getAdrenalineStoneLevel(equipment);
   const adrenalineCritRate = adrenalineCritRateBonus(adrenalineLevel);
 
-  const critRatePercent =
-    adrenalineCritRate +
-    getArkPassiveCritRatePercent(dealerData.arkpassive) +
-    getRingCritRatePercent(equipment) +
-    dealerBracelet.critRatePercent +
-    supportBracelet.critResistReductionPercent +
-    critStatToRatePercent(getStatValueFromProfile(dealerData.profiles, '치명'));
+  const arkPassiveCritRate = getArkPassiveCritRatePercent(dealerData.arkpassive);
+  const ringCritRate = getRingCritRatePercent(equipment);
+  const critStatRate = critStatToRatePercent(getStatValueFromProfile(dealerData.profiles, '치명'));
+
+  const critRateBreakdown = {
+    아드레날린: adrenalineCritRate,
+    아크패시브: arkPassiveCritRate,
+    반지: ringCritRate,
+    딜러팔찌: dealerBracelet.critRatePercent,
+    서폿팔찌_치적저항감소: supportBracelet.critResistReductionPercent,
+    치명스탯: critStatRate,
+  };
+  const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
   const arkgridCrit = getArkgridCritOptions(dealerData.arkgrid);
+  const arkPassiveCritDmg = getArkPassiveCritDamagePercent(dealerData.arkpassive);
+  const sharpWeaponDmg = getSharpWeaponCritDamagePercent(dealerData.engravings);
+  const ringCritDmg = getRingCritDamagePercent(equipment);
+  const stoneLevelBonusDmg = getAbilityStoneCritDamagePercent(equipment);
+  const sharpWeaponStoneDmg = getSharpWeaponStoneBonus(dealerData.engravings);
 
-  const critDamagePercent =
-    getArkPassiveCritDamagePercent(dealerData.arkpassive) +
-    getSharpWeaponCritDamagePercent(dealerData.engravings) +
-    getRingCritDamagePercent(equipment) +
-    getAbilityStoneCritDamagePercent(equipment) +
-    getSharpWeaponStoneBonus(dealerData.engravings) +
-    dealerBracelet.critDamagePercent +
-    arkgridCrit.critDamagePercent;
+  const critDamageBreakdown = {
+    아크패시브: arkPassiveCritDmg,
+    예리한둔기_각인: sharpWeaponDmg,
+    반지: ringCritDmg,
+    스톤_레벨보너스: stoneLevelBonusDmg,
+    예리한둔기_스톤장착효과: sharpWeaponStoneDmg,
+    딜러팔찌: dealerBracelet.critDamagePercent,
+    아크그리드: arkgridCrit.critDamagePercent,
+  };
+  const critDamagePercent = Object.values(critDamageBreakdown).reduce((a, b) => a + b, 0);
 
   const arkPassiveOnHit = getArkPassiveCritOnHitPercent(dealerData.arkpassive);
-  const onHitFactors = [
-    arkPassiveOnHit.evolution,
-    arkPassiveOnHit.realization,
-    dealerBracelet.critHitExtraDamagePercent,
-    supportBracelet.critDmgResistReductionPercent,
-    arkgridCrit.critOnHitPercent,
-  ];
+  const onHitBreakdown = {
+    아크패시브_진화: arkPassiveOnHit.evolution,
+    아크패시브_깨달음: arkPassiveOnHit.realization,
+    딜러팔찌: dealerBracelet.critHitExtraDamagePercent,
+    서폿팔찌: supportBracelet.critDmgResistReductionPercent,
+    아크그리드: arkgridCrit.critOnHitPercent,
+  };
   let onHitMultiplier = 1;
-  onHitFactors.forEach((p) => { onHitMultiplier *= toMultiplier(p); });
+  Object.values(onHitBreakdown).forEach((p) => { onHitMultiplier *= toMultiplier(p); });
 
   const rate = Math.min(critRatePercent, 100) / 100;
   const avgDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
 
-  return { critRatePercent, critDamagePercent, avgDamageMultiplier };
+  return {
+    critRatePercent, critDamagePercent, avgDamageMultiplier,
+    critRateBreakdown, critDamageBreakdown, onHitBreakdown,
+  };
 }
-

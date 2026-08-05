@@ -109,8 +109,12 @@
           <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
           <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
           <p>치명타 적중률: ${critResult.critRatePercent.toFixed(2)}%</p>
+          <pre>${JSON.stringify(critResult.critRateBreakdown, null, 2)}</pre>
           <p>치명타 피해: ${critResult.critDamagePercent.toFixed(2)}%</p>
-          <p>평균 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(critResult.critDamageBreakdown, null, 2)}</pre>
+          <p>곱연산 항목: </p>
+          <pre>${JSON.stringify(critResult.onHitBreakdown, null, 2)}</pre>
+          <p>치명타 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
 
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
