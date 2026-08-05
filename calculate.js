@@ -775,7 +775,7 @@ function getRingCritDamagePercent(equipmentList) {
 function getSharpWeaponCritDamagePercent(engravingsData) {
   if (!engravingsData || !engravingsData.ArkPassiveEffects) return 0;
   const eng = engravingsData.ArkPassiveEffects.find((e) => e.Name === '예리한 둔기');
-  return eng ? extractPercent(eng.Description, '치명타 피해량') : 0;
+  return eng ? extractPercent(stripHtml(eng.Description), '치명타 피해량') : 0;
 }
 
 // 예리한 둔기 어빌리티 스톤 장착 효과 고정표
