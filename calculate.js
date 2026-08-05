@@ -1021,9 +1021,9 @@ function getBackHeadAttackExtraDamagePercent(engravingsData) {
   return total;
 }
 
-// 아크패시브(진화)에 '달인'을 채용했는지 확인해 추가 피해 7% 반환
+// 아크패시브(진화)에 '달인'을 채용했는지 확인해 추가 피해 8.5% 반환
 function getMasterExtraDamagePercent(arkpassiveData) {
-  return hasArkPassiveEffect(arkpassiveData, '달인') ? 7 : 0;
+  return hasArkPassiveEffect(arkpassiveData, '달인') ? 8.5 : 0;
 }
 
 // 추가 피해 배율 = 1(펫도감 고정) + Σ(각 출처 %)/100, breakdown 포함
@@ -1036,6 +1036,7 @@ function calculateExtraDamageMultiplier(dealerData) {
   const weaponQuality = getWeaponQualityExtraDamagePercent(equipment);
 
   const extraDamageBreakdown = {
+    펫도감: 1,
     무기품질: weaponQuality,
     목걸이: getNecklaceExtraDamagePercent(equipment),
     아크그리드젬: getAllArkgridGemsExtraDamagePercent(dealerData.arkgrid),
