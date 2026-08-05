@@ -1239,11 +1239,11 @@ function getNecklaceEnemyDamagePercent(equipmentList) {
   return total;
 }
 
-// "진화형 피해가 X% 증가" 형태만 정확히 잡는 전용 추출 함수
+// "진화형 피해(가) X% 증가" 형태만 정확히 잡는 전용 추출 함수 (조사 생략 대응)
 // ("~최대 X%까지 적용" 같은 다른 문구는 제외)
 function extractEvolutionDamageIncreasePercent(text) {
   if (!text) return 0;
-  const regex = /진화형\s*피해가\s*([\d.]+)\s*%\s*증가/g;
+  const regex = /진화형\s*피해(?:가|이)?\s*([\d.]+)\s*%\s*증가/g;
   let total = 0;
   let m;
   while ((m = regex.exec(text)) !== null) {
