@@ -700,11 +700,34 @@ function getArkPassiveEffectsText(arkpassiveData, category) {
     .join(' ');
 }
 
-// 아크패시브(진화+깨달음)의 치명타 적중률 % 합산
+// arkpassive Effects 배열에서 특정 카테고리 텍스트를 이어붙이되, 이름에 특정 단어가 포함된 항목은 제외
+function getArkPassiveEffectsTextExcluding(arkpassiveData, category, excludeWord) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return '';
+  return arkpassiveData.Effects
+    .filter((e) => e.Name === category && !(e.Description || '').includes(excludeWord))
+    .map((e) => {
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        return obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+      } catch (err) {
+        return '';
+      }
+    })
+    .join(' ');
+}
+
+// arkpassive Effects 배열에 특정 단어가 포함된 효과를 채용했는지 확인
+function hasArkPassiveEffect(arkpassiveData, word) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return false;
+  return arkpassiveData.Effects.some((e) => (e.Description || '').includes(word));
+}
+
+// 아크패시브(진화+깨달음)의 치명타 적중률 % 합산 ('달인'은 최대 5중첩 고정 7%로 별도 처리)
 function getArkPassiveCritRatePercent(arkpassiveData) {
-  const evo = getArkPassiveEffectsText(arkpassiveData, '진화');
+  const evo = getArkPassiveEffectsTextExcluding(arkpassiveData, '진화', '달인');
   const real = getArkPassiveEffectsText(arkpassiveData, '깨달음');
-  return extractPercent(evo, '치명타 적중률') + extractPercent(real, '치명타 적중률');
+  const masterBonus = hasArkPassiveEffect(arkpassiveData, '달인') ? 7 : 0;
+  return extractPercent(evo, '치명타 적중률') + extractPercent(real, '치명타 적중률') + masterBonus;
 }
 
 // 아크패시브(진화)의 치명타 피해 % 합산
@@ -833,6 +856,18 @@ function getAdrenalineStoneLevel(equipmentList) {
   return 0;
 }
 
+// engravings.ArkPassiveEffects 배열에서 특정 각인 이름의 정보를 찾아 반환
+function getArkPassiveEffectByName(engravingsData, name) {
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return null;
+  return engravingsData.ArkPassiveEffects.find((e) => e.Name === name) || null;
+}
+
+// 아드레날린 각인 자체의 Level(1~4)을 반환 (어빌리티 스톤 레벨 아님)
+function getAdrenalineEngravingLevel(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '아드레날린');
+  return eng ? (eng.Level || 0) : 0;
+}
+
 // 아드레날린 레벨 → 치명타 적중률 보너스 (14 + 레벨×1.5, 최대 20)
 function adrenalineCritRateBonus(level) {
   if (!level) return 0;
@@ -850,7 +885,7 @@ function calculateCritMultiplier(dealerData, supportData) {
   const supportBraceletText = supportBraceletItem ? parseTooltip(supportBraceletItem.Tooltip).join(' ') : '';
   const supportBracelet = parseBraceletOptions(supportBraceletText);
 
-  const adrenalineLevel = getAdrenalineStoneLevel(equipment);
+  const adrenalineLevel = getAdrenalineEngravingLevel(dealerData.engravings);
   const adrenalineCritRate = adrenalineCritRateBonus(adrenalineLevel);
 
   const arkPassiveCritRate = getArkPassiveCritRatePercent(dealerData.arkpassive);
@@ -876,10 +911,9 @@ function calculateCritMultiplier(dealerData, supportData) {
 
   const critDamageBreakdown = {
     아크패시브: arkPassiveCritDmg,
-    예리한둔기_각인: sharpWeaponDmg,
+    예리한둔기_각인_최종값: sharpWeaponDmg,
     반지: ringCritDmg,
     스톤_레벨보너스: stoneLevelBonusDmg,
-    예리한둔기_스톤장착효과: sharpWeaponStoneDmg,
     딜러팔찌: dealerBracelet.critDamagePercent,
     아크그리드: arkgridCrit.critDamagePercent,
   };
