@@ -938,3 +938,115 @@ function calculateCritMultiplier(dealerData, supportData) {
     critRateBreakdown, critDamageBreakdown, onHitBreakdown,
   };
 }
+
+
+// 무기 품질(70~100) → 추가 피해 % 변환표
+const WEAPON_QUALITY_EXTRA_DAMAGE_TABLE = {
+  70: 19.80, 71: 20.08, 72: 20.37, 73: 20.66, 74: 20.95,
+  75: 21.25, 76: 21.55, 77: 21.86, 78: 22.17, 79: 22.48,
+  80: 22.80, 81: 23.12, 82: 23.45, 83: 23.78, 84: 24.11,
+  85: 24.45, 86: 24.79, 87: 25.14, 88: 25.49, 89: 25.84,
+  90: 26.20, 91: 26.56, 92: 26.93, 93: 27.30, 94: 27.67,
+  95: 28.05, 96: 28.43, 97: 28.82, 98: 29.21, 99: 29.60,
+  100: 30.00,
+};
+
+// 무기 아이템 Tooltip에서 qualityValue(품질) 추출
+function getWeaponQuality(equipmentList) {
+  const weapon = (equipmentList || []).find((it) => it.Type === '무기');
+  if (!weapon) return null;
+  try {
+    const obj = JSON.parse(weapon.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'ItemTitle' && el.value && el.value.qualityValue !== undefined) {
+        return el.value.qualityValue;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+// 무기 품질 → 추가 피해 % (70 미만이면 null 반환, "표시 불가" 처리용)
+function getWeaponQualityExtraDamagePercent(equipmentList) {
+  const quality = getWeaponQuality(equipmentList);
+  if (quality === null || quality < 70) return null;
+  return WEAPON_QUALITY_EXTRA_DAMAGE_TABLE[quality] ?? null;
+}
+
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[추가 피해] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsExtraDamageLevel(arkgridData) {
+  let totalLevel = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        const matches = text.matchAll(/\[추가\s*피해\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
+      });
+    });
+  }
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.080834% = 아크그리드 젬의 추가 피해 %
+function getAllArkgridGemsExtraDamagePercent(arkgridData) {
+  const level = getAllArkgridGemsExtraDamageLevel(arkgridData);
+  return level * 0.080834;
+}
+
+// 악세서리(목걸이)의 "추가 피해" % 합산
+function getNecklaceExtraDamagePercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '목걸이').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '추가 피해');
+  });
+  return total;
+}
+
+// engravings(ArkPassiveEffects)에서 "기습의 대가"/"결투의 대가"의
+// "백/헤드어택 성공 시 피해량이 추가로 Y% 증가" 부분만 합산 (적에게 주는 피해 X%는 제외)
+function getBackHeadAttackExtraDamagePercent(engravingsData) {
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return 0;
+  const targets = ['기습의 대가', '결투의 대가'];
+  let total = 0;
+  engravingsData.ArkPassiveEffects.forEach((eng) => {
+    if (!targets.includes(eng.Name)) return;
+    const text = stripHtml(eng.Description || '');
+    const match = text.match(/(?:백어택|헤드어택)[^.]*성공\s*시\s*피해량이\s*추가로\s*([\d.]+)\s*%\s*증가/);
+    if (match) total += parseFloat(match[1]);
+  });
+  return total;
+}
+
+// 아크패시브(진화)에 '달인'을 채용했는지 확인해 추가 피해 7% 반환
+function getMasterExtraDamagePercent(arkpassiveData) {
+  return hasArkPassiveEffect(arkpassiveData, '달인') ? 7 : 0;
+}
+
+// 추가 피해 배율 = 1(펫도감 고정) + Σ(각 출처 %)/100, breakdown 포함
+function calculateExtraDamageMultiplier(dealerData) {
+  const equipment = dealerData.equipment;
+  const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  const dealerBracelet = parseBraceletOptions(braceletText);
+
+  const weaponQuality = getWeaponQualityExtraDamagePercent(equipment);
+
+  const extraDamageBreakdown = {
+    무기품질: weaponQuality,
+    목걸이: getNecklaceExtraDamagePercent(equipment),
+    아크그리드젬: getAllArkgridGemsExtraDamagePercent(dealerData.arkgrid),
+    딜러팔찌: dealerBracelet.additionalDamagePercent,
+    달인: getMasterExtraDamagePercent(dealerData.arkpassive),
+    각인_기습결투: getBackHeadAttackExtraDamagePercent(dealerData.engravings),
+  };
+
+  const qualityTooLow = weaponQuality === null;
+  const sumPercent = Object.values(extraDamageBreakdown).reduce((a, b) => a + (b || 0), 0);
+  const multiplier = 1 + sumPercent / 100;
+
+  return { multiplier, extraDamageBreakdown, qualityTooLow };
+}

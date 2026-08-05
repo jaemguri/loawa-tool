@@ -102,6 +102,9 @@
 // 치명타 계산 (실험용)
         const critResult = calculateCritMultiplier(data.dealer, data.support);
 
+        // 추가 피해 계산 (실험용)
+        const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -116,6 +119,12 @@
           <pre>${JSON.stringify(critResult.onHitBreakdown, null, 2)}</pre>
           <p>치명타 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
           <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
+          ${extraDamageResult.qualityTooLow
+            ? '<p style="color:red;">무기 품질 70% 미만은 표시 불가</p>'
+            : `<p>추가 피해 배율: ${extraDamageResult.multiplier.toFixed(4)}</p>
+               <pre>${JSON.stringify(extraDamageResult.extraDamageBreakdown, null, 2)}</pre>`
+          }
+          
           
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
