@@ -1077,6 +1077,7 @@ function extractEngravingEnemyDamagePercent(description) {
   text = text.replace(/받는\s*피해가\s*[\d.]+\s*%\s*(증가|감소)/g, '');
   text = text.replace(/(?:백어택|헤드어택)[^.]*성공\s*시\s*피해량이\s*추가로\s*[\d.]+\s*%\s*증가/g, '');
   text = text.replace(/이동속도\s*증가량의\s*[\d.]+\s*%[^.]*\./g, '');
+  text = text.replace(/치명타\s*피해량이\s*[\d.]+\s*%[^.]*\./g, '');
 
   let total = 0;
   const matches = text.matchAll(/(?:주는\s*피해|피해량|피해)(?:가|이)?\s*([\d.]+)\s*%\s*증가/g);
@@ -1201,25 +1202,31 @@ function getChaosCoreEnemyDamageMultiplier(arkgridData) {
   return { multiplier, byCore };
 }
 
-// 질서 코어 중 18P 이상 투자된 코어를 해/달 그룹별로 찾아 고정 0.15%씩 합산
+// 질서 코어를 해/달/별 그룹별로 찾아, 18P/19P/20P 각 구간을 넘을 때마다 고정 0.15%씩 합산
 function getOrderCoreEnemyDamageByGroup(arkgridData) {
-  const result = { 해: 0, 달: 0 };
+  const result = { 해: 0, 달: 0, 별: 0 };
   if (arkgridData && arkgridData.Slots) {
     arkgridData.Slots.forEach((slot) => {
       const typeText = getCoreTypeText(slot.Tooltip);
       if (!typeText.includes('질서')) return;
-      if ((slot.Point || 0) < 18) return;
-      if (typeText.includes('해')) result.해 += 0.15;
-      else if (typeText.includes('달')) result.달 += 0.15;
+      const point = slot.Point || 0;
+      let percent = 0;
+      if (point >= 18) percent += 0.15;
+      if (point >= 19) percent += 0.15;
+      if (point >= 20) percent += 0.15;
+      if (percent === 0) return;
+      if (typeText.includes('해')) result.해 += percent;
+      else if (typeText.includes('달')) result.달 += percent;
+      else if (typeText.includes('별')) result.별 += percent;
     });
   }
   return result;
 }
 
-// 질서 코어 해/달 그룹간 곱연산 배율
+// 질서 코어 해/달/별 그룹간 곱연산 배율
 function getOrderCoreEnemyDamageMultiplier(arkgridData) {
   const byGroup = getOrderCoreEnemyDamageByGroup(arkgridData);
-  const multiplier = toMultiplier(byGroup.해) * toMultiplier(byGroup.달);
+  const multiplier = toMultiplier(byGroup.해) * toMultiplier(byGroup.달) * toMultiplier(byGroup.별);
   return { multiplier, byGroup };
 }
 
