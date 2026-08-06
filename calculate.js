@@ -1458,3 +1458,44 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
     },
   };
 }
+
+// 방어율 배율 = 방어율상수 / (방어율상수 + 유효 적 방어력)
+// 유효 적 방어력 = 적의 방어력 × (1-암흑수류탄%) × (1-서폿팔찌 방어력감소%) × (1-(시너지A+B+C))
+// 방어율상수/적의 방어력은 현재 각각 6500으로 고정(레이드별로 다를 수 있어 추후 조정 예정).
+// 암흑수류탄(배틀 아이템, 방어력감소 20%)과 시너지A/B/C는 아직 미구현 — 기본값 0(미적용)으로 자리만 잡아둠.
+function calculateDefenseMultiplier(options) {
+  const {
+    defenseConstant = 6500,
+    enemyDefense = 6500,
+    darkGrenadeActive = false,
+    supportBraceletDefenseReductionPercent = 0,
+    synergyAPercent = 0,
+    synergyBPercent = 0,
+    synergyCPercent = 0,
+  } = options || {};
+
+  const darkGrenadeReductionPercent = darkGrenadeActive ? 20 : 0;
+  const synergyTotalPercent = synergyAPercent + synergyBPercent + synergyCPercent;
+
+  const effectiveEnemyDefense =
+    enemyDefense *
+    (1 - darkGrenadeReductionPercent / 100) *
+    (1 - supportBraceletDefenseReductionPercent / 100) *
+    (1 - synergyTotalPercent / 100);
+
+  const multiplier = defenseConstant / (defenseConstant + effectiveEnemyDefense);
+
+  return {
+    multiplier,
+    breakdown: {
+      방어율상수: defenseConstant,
+      적의방어력: enemyDefense,
+      암흑수류탄_방어력감소: darkGrenadeReductionPercent,
+      서폿팔찌_방어력감소: supportBraceletDefenseReductionPercent,
+      시너지A: synergyAPercent,
+      시너지B: synergyBPercent,
+      시너지C: synergyCPercent,
+      유효적방어력: effectiveEnemyDefense,
+    },
+  };
+}
