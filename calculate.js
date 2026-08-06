@@ -1289,24 +1289,39 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
 // '뭉툭한 가시' 채용 시, 치명타 적중률이 임계값(보통 80%)을 넘는 초과분을 전환율(보통 150%)로
 // 추가 진화형 피해로 전환 (최대 한도 - 기본 15%는 이미 위 함수에서 잡히므로 초과분만 반환)
 function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
-  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const debug = {
+    뭉툭한가시_디버그_받은치명타적중률: critRatePercent,
+    엔그레이빙_찾음: false,
+    원문: '',
+    threshold매치: false,
+    rate매치: false,
+    maxTotal매치: false,
+  };
+
+  if (!arkpassiveData || !arkpassiveData.Effects) return { bonus: 0, debug };
   const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('뭉툭한 가시'));
-  if (!eng) return 0;
+  if (!eng) return { bonus: 0, debug };
+  debug.엔그레이빙_찾음 = true;
 
   let text = '';
   try {
     const obj = JSON.parse(eng.ToolTip);
     text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
   } catch (e) {
-    return 0;
+    return { bonus: 0, debug };
   }
+  debug.원문 = text;
 
-  const thresholdMatch = text.match(/확률이\s*최대\s*([\d.]+)\s*%\s*로\s*제한/);
-  const rateMatch = text.match(/확률의\s*([\d.]+)\s*%가\s*진화형\s*피해로\s*전환/);
-  const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%까지/);
-  const baseFlatMatch = text.match(/진화형\s*피해가\s*([\d.]+)\s*%\s*증가/);
+  const thresholdMatch = text.match(/확률[을이]\s*최대\s*([\d.]+)\s*%\s*로\s*제한/);
+  const rateMatch = text.match(/확률의\s*([\d.]+)\s*%\s*[가를]?\s*진화형\s*피해로\s*전환/);
+  const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%\s*까지/);
+  const baseFlatMatch = text.match(/진화형\s*피해(?:가|이)?\s*([\d.]+)\s*%\s*증가/);
 
-  if (!thresholdMatch || !rateMatch || !maxTotalMatch) return 0;
+  debug.threshold매치 = !!thresholdMatch;
+  debug.rate매치 = !!rateMatch;
+  debug.maxTotal매치 = !!maxTotalMatch;
+
+  if (!thresholdMatch || !rateMatch || !maxTotalMatch) return { bonus: 0, debug };
 
   const threshold = parseFloat(thresholdMatch[1]);
   const rate = parseFloat(rateMatch[1]);
@@ -1317,7 +1332,7 @@ function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
   const converted = (excess * rate) / 100;
   const maxBonus = maxTotal - baseFlat;
 
-  return Math.min(converted, maxBonus);
+  return { bonus: Math.min(converted, maxBonus), debug };
 }
 
 // 백/헤드 사멸 체크박스의 적에게 주는 피해 보너스 %
@@ -1338,7 +1353,8 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
   const chaosCoreResult = getChaosCoreEnemyDamageMultiplier(dealerData.arkgrid);
   const orderCoreResult = getOrderCoreEnemyDamageMultiplier(dealerData.arkgrid);
   const evolutionDamagePercent = getArkPassiveEvolutionDamagePercent(dealerData.arkpassive);
-  const bluntThornBonus = getBluntThornConversionBonusPercent(dealerData.arkpassive, critRatePercent);
+  const bluntThornResult = getBluntThornConversionBonusPercent(dealerData.arkpassive, critRatePercent);
+  const bluntThornBonus = bluntThornResult.bonus;
   const sameolPercent = getSameolEnemyDamagePercent(backSameolChecked, headSameolChecked);
 
   const multiplier =
@@ -1364,6 +1380,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
       아크패시브_진화형피해: evolutionDamagePercent,
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       뭉툭한가시_전환보너스: bluntThornBonus,
+      뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
     },
   };
