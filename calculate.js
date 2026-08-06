@@ -1252,12 +1252,76 @@ function extractEvolutionDamageIncreasePercent(text) {
   return total;
 }
 
+// '입식 타격가' 채용 시 기본 진화형 피해 + 스택(입식 타격 II, 항상 최대 중첩 가정)당 진화형 피해
+// (낙인력 보너스는 서포터 시뮬레이터 제작 시 별도 반영 예정 — 여기서는 다루지 않음)
+function getStandingStrikerEvolutionDamagePercent(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('입식 타격가'));
+  if (!eng) return 0;
+
+  let text = '';
+  try {
+    const obj = JSON.parse(eng.ToolTip);
+    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+  } catch (e) {
+    return 0;
+  }
+
+  const baseMatch = text.match(/진화형\s*피해가\s*([\d.]+)\s*%\s*,\s*낙인력/);
+  const stackMatch = text.match(/진화형\s*피해\s*\+([\d.]+)\s*%[^]*?최대\s*(\d+)\s*중첩/);
+
+  const base = baseMatch ? parseFloat(baseMatch[1]) : 0;
+  const perStack = stackMatch ? parseFloat(stackMatch[1]) : 0;
+  const maxStack = stackMatch ? parseFloat(stackMatch[2]) : 0;
+
+  return base + perStack * maxStack;
+}
+
+// '음속 돌파' 채용 시, 실제 공격속도/이동속도 증가량 기반 계산 대신 이 노드의 상한치(최대 효율)로 가정하여 반환
+// (추후 4노드 효율 분석기에서 이동속도를 직접 입력받아 정확히 계산할 예정 — 그 전까지는 최대치로 가정)
+function getSonicBreakthroughEvolutionDamagePercent(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('음속 돌파'));
+  if (!eng) return 0;
+
+  let text = '';
+  try {
+    const obj = JSON.parse(eng.ToolTip);
+    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+  } catch (e) {
+    return 0;
+  }
+
+  const maxMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%\s*까지/);
+  return maxMatch ? parseFloat(maxMatch[1]) : 0;
+}
+
+// '마나 용광로' 채용 시, 실제 스킬별 기본 마나 소모량 기반 계산 대신 이 노드의 상한치(최대 효율)로 가정하여 반환
+// (문구에 "진화형 피해 0.5% 증가" 같은 계수가 들어있어 제너릭 추출기가 오탐하므로, 해당 노드는 제너릭에서 제외하고 여기서만 처리)
+// (낙인력 보너스는 서포터 시뮬레이터 제작 시 별도 반영 예정 — 여기서는 다루지 않음)
+function getManaFurnaceEvolutionDamagePercent(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('마나 용광로'));
+  if (!eng) return 0;
+
+  let text = '';
+  try {
+    const obj = JSON.parse(eng.ToolTip);
+    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+  } catch (e) {
+    return 0;
+  }
+
+  const maxMatch = text.match(/진화형\s*피해\s*([\d.]+)\s*%\s*증가,?\s*최대\s*([\d.]+)\s*%/);
+  return maxMatch ? parseFloat(maxMatch[2]) : 0;
+}
+
 // 아크패시브(진화)의 "진화형 피해" % 합산 + 항목별 breakdown (디버깅용)
 function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   if (!arkpassiveData || !arkpassiveData.Effects) return 0;
   let total = 0;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화')
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1265,6 +1329,9 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
         total += extractEvolutionDamageIncreasePercent(text);
       } catch (err) {}
     });
+  total += getStandingStrikerEvolutionDamagePercent(arkpassiveData);
+  total += getSonicBreakthroughEvolutionDamagePercent(arkpassiveData);
+  total += getManaFurnaceEvolutionDamagePercent(arkpassiveData);
   return total;
 }
 
@@ -1273,7 +1340,7 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};
   if (!arkpassiveData || !arkpassiveData.Effects) return result;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화')
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1283,6 +1350,12 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
         if (percent > 0) result[nameObj] = (result[nameObj] || 0) + percent;
       } catch (err) {}
     });
+  const standingStrikerPercent = getStandingStrikerEvolutionDamagePercent(arkpassiveData);
+  if (standingStrikerPercent > 0) result['입식 타격가'] = (result['입식 타격가'] || 0) + standingStrikerPercent;
+  const sonicBreakthroughPercent = getSonicBreakthroughEvolutionDamagePercent(arkpassiveData);
+  if (sonicBreakthroughPercent > 0) result['음속 돌파'] = (result['음속 돌파'] || 0) + sonicBreakthroughPercent;
+  const manaFurnacePercent = getManaFurnaceEvolutionDamagePercent(arkpassiveData);
+  if (manaFurnacePercent > 0) result['마나 용광로'] = (result['마나 용광로'] || 0) + manaFurnacePercent;
   return result;
 }
 
