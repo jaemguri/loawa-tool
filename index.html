@@ -121,6 +121,10 @@
         // 카드 추가피해 계산 (실험용, 현재는 리스트박스 없이 최대치/기본값 가정)
         const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
 
+        // 방어율 계산 (실험용, 암흑수류탄/서폿팔찌 방어력감소는 아직 미구현 - 기본값 0)
+        const classSynergyDefenseReductionPercent = getClassSynergyPercent(dealerStats.className, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
+        const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -150,7 +154,8 @@
             계열_피해_증가율: cardExtraDamageResult.breakdown.계열_피해_증가율,
           }, null, 2)}</pre>
           <p>시너지(본인 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
-
+          <p>방어율 배율: ${defenseResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(defenseResult.breakdown, null, 2)}</pre>
 
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
