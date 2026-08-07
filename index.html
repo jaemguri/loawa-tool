@@ -11,6 +11,7 @@
   <p>딜러 닉네임: <input type="text" id="dealerName" placeholder="딜러 캐릭터명"></p>
   <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
   <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
+  <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <button id="searchBtn">조회하기</button>
 <p>
     <label><input type="checkbox" id="backSameol"> 백 사멸</label>
@@ -25,6 +26,7 @@
     const dealerNameInput = document.getElementById('dealerName');
     const supportNameInput = document.getElementById('supportName');
     const effectiveRatioInput = document.getElementById('effectiveRatio');
+    const brandEffectiveRatioInput = document.getElementById('brandEffectiveRatio');
     const resultDiv = document.getElementById('result');
     const backSameolInput = document.getElementById('backSameol');
     const headSameolInput = document.getElementById('headSameol');
@@ -58,6 +60,8 @@
       const dealerName = dealerNameInput.value.trim();
       const supportName = supportNameInput.value.trim();
       const effectiveRatio = 1; // 공증 유효율 임시 고정 (나중에 시뮬레이터에서 다시 활성화 예정
+      const brandEffectiveRatioValue = brandEffectiveRatioInput.value.trim();
+      const brandEffectiveRatio = brandEffectiveRatioValue ? parseFloat(brandEffectiveRatioValue) / 100 : 1;
 
       if (!dealerName || !supportName) {
         resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
@@ -117,6 +121,9 @@
         // 적에게 주는 피해 계산 (실험용)
         const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, backSameolChecked, headSameolChecked, critResult.critRatePercent);
 
+        // 서포터 낙인 배율 계산 (실험용)
+        const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -145,7 +152,10 @@
           <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
           <p>공증 버프 보석%: ${buffGemPercent}</p>
           <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
-          
+          <p>서폿 낙인력 총합: ${brandResult.breakdown.낙인력_합계.toFixed(2)}%</p>
+          <p>낙인 배율: ${brandResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(brandResult.breakdown, null, 2)}</pre>
+
           <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
         `;
       } catch (error) {

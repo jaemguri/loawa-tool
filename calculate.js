@@ -1499,3 +1499,84 @@ function calculateDefenseMultiplier(options) {
     },
   };
 }
+
+// 아크패시브(진화)의 "낙인력" % 합산 (입식 타격가 등 진화 노드 문구에 포함된 값도 함께 잡힘)
+function getArkPassiveEvolutionBrandPowerPercent(arkpassiveData) {
+  return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '낙인력');
+}
+
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[낙인력] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsBrandPowerLevel(arkgridData) {
+  let totalLevel = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        const matches = text.matchAll(/\[낙인력\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
+      });
+    });
+  }
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.1667% = 아크그리드 젬의 낙인력 %
+function getAllArkgridGemsBrandPowerPercent(arkgridData) {
+  const level = getAllArkgridGemsBrandPowerLevel(arkgridData);
+  return level * 0.1667;
+}
+
+// 6개 코어 전체의 "낙인력" % 합산 (활성화된 [XXP] 구간만)
+function getBrandPowerFromArkgridCores(arkgridData) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      total += sumCoreSegments(segments, '낙인력').percent;
+    });
+  }
+  return total;
+}
+
+// 악세서리(목걸이)의 "낙인력" % 합산
+function getNecklaceBrandPowerPercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '목걸이').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '낙인력');
+  });
+  return total;
+}
+
+// 낙인 배율 = (1 + 10% × (1 + 낙인력 / 100)) × 낙인 유효율
+// (낙인력 0%일 때도 기본 10%는 붙고, 낙인력이 그 10%를 배율로 키워주는 구조 — 예: 낙인력 50% → 10%×1.5 = 15%)
+// 낙인력 = 아크패시브(진화) + 아크그리드(코어) + 아크그리드(젬) + 악세(목걸이) + 그외 기타(수동 입력)
+// 그외 기타 소스는 아직 실제 파싱 연결 전이라 기본값 0으로 자리만 잡아둠 — 필요해지면 이어서 채울 예정.
+function calculateBrandMultiplier(supportData, options) {
+  const { etcBrandPowerPercent = 0, brandEffectiveRatio = 1 } = options || {};
+
+  const arkPassiveBrandPower = getArkPassiveEvolutionBrandPowerPercent(supportData?.arkpassive);
+  const arkgridCoreBrandPower = getBrandPowerFromArkgridCores(supportData?.arkgrid);
+  const arkgridGemBrandPower = getAllArkgridGemsBrandPowerPercent(supportData?.arkgrid);
+  const necklaceBrandPower = getNecklaceBrandPowerPercent(supportData?.equipment);
+
+  const totalBrandPowerPercent =
+    arkPassiveBrandPower + arkgridCoreBrandPower + arkgridGemBrandPower + necklaceBrandPower + etcBrandPowerPercent;
+
+  const multiplier = (1 + 0.1 * (1 + totalBrandPowerPercent / 100)) * brandEffectiveRatio;
+
+  return {
+    multiplier,
+    breakdown: {
+      아크패시브_진화: arkPassiveBrandPower,
+      아크그리드_코어: arkgridCoreBrandPower,
+      아크그리드_젬: arkgridGemBrandPower,
+      목걸이: necklaceBrandPower,
+      기타: etcBrandPowerPercent,
+      낙인력_합계: totalBrandPowerPercent,
+      낙인_유효율: brandEffectiveRatio,
+    },
+  };
+}
