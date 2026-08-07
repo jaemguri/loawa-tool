@@ -1732,3 +1732,29 @@ function getAutoSameolType(arkpassiveData) {
   if (HEAD_SAMEOL_CLASS_ENGRAVING_NODES.some(hasNode)) return 'head';
   return null;
 }
+
+// 최종 산출식 = 최종데미지 × 치명타배율 × 추가피해 × 적에게 주는 피해 × 방어율 × 서포터 낙인 × 카드
+// 지금까지 만든 실험용 배율 5종(치명타/추가피해/적주피/방어율/카드) + 서포터 낙인 + 최종데미지를 전부 곱한, 이 툴의 최종 결과값
+function calculateFinalOutput(finalDamage, critMultiplier, extraDamageMultiplier, enemyDamageMultiplier, defenseMultiplier, brandMultiplier, cardMultiplier) {
+  const output =
+    finalDamage *
+    critMultiplier *
+    extraDamageMultiplier *
+    enemyDamageMultiplier *
+    defenseMultiplier *
+    brandMultiplier *
+    cardMultiplier;
+
+  return {
+    output,
+    breakdown: {
+      최종데미지: finalDamage,
+      치명타배율: critMultiplier,
+      추가피해: extraDamageMultiplier,
+      적에게주는피해: enemyDamageMultiplier,
+      방어율: defenseMultiplier,
+      서포터낙인: brandMultiplier,
+      카드: cardMultiplier,
+    },
+  };
+}

@@ -125,6 +125,17 @@
         const classSynergyDefenseReductionPercent = getClassSynergyPercent(dealerStats.className, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
         const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
 
+        // 최종 산출식 = 최종데미지 × 치명타배율 × 추가피해 × 적에게 주는 피해 × 방어율 × 서포터 낙인 × 카드
+        const finalOutputResult = calculateFinalOutput(
+          finalDamage,
+          critResult.avgDamageMultiplier,
+          extraDamageResult.multiplier,
+          enemyDamageResult.multiplier,
+          defenseResult.multiplier,
+          brandResult.multiplier,
+          cardExtraDamageResult.multiplier
+        );
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -172,6 +183,8 @@
           <pre>${JSON.stringify(brandResult.breakdown, null, 2)}</pre>
 
           <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
+          <h2>최종 산출식: ${finalOutputResult.output.toLocaleString()}</h2>
+          <pre>${JSON.stringify(finalOutputResult.breakdown, null, 2)}</pre>
         `;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
