@@ -124,6 +124,9 @@
         // 서포터 낙인 배율 계산 (실험용)
         const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
 
+        // 카드 추가피해 계산 (실험용, 현재는 리스트박스 없이 최대치/기본값 가정)
+        const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -145,7 +148,9 @@
           }
           <p>적에게 주는 피해 배율: ${enemyDamageResult.multiplier.toFixed(4)}</p>
           <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
-          
+          <p>카드 추가피해 배율: ${cardExtraDamageResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(cardExtraDamageResult.breakdown, null, 2)}</pre>
+
           
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>

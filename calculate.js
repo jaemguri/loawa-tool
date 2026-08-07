@@ -1609,3 +1609,49 @@ function calculateBrandMultiplier(supportData, options) {
     },
   };
 }
+
+// 속성 피해 증가율(카드 세트 각성, 성/암/화/수/토/뇌 6속성 공통 테이블) — 18/24/30각성별 %
+const CARD_ELEMENT_DAMAGE_TABLE = { 18: 7, 24: 11, 30: 14 };
+
+// 서폿카드 받는 피해 증가율(서폿 카드 세트 각성) — 티어별/각성별 %
+// 1티어(남바절류), 2티어(대사부류)는 18/24/30각성만, 3티어(너/계획, 전 속성 적용 가능)는 12각성부터 존재
+const CARD_SUPPORT_DAMAGE_TAKEN_TABLE = {
+  1: { 18: 1, 24: 2, 30: 3.5 },
+  2: { 18: 0.5, 24: 1.5, 30: 2.5 },
+  3: { 12: 0.5, 18: 1, 24: 1.25, 30: 1.5 },
+};
+
+// 카드 추가피해 배율 = (1 + 속성 피해 증가율%) × (1 + 계열 피해 증가율%) × (1 + 서폿카드 받는 피해 증가율%)
+// - 속성 피해 증가율(카드 세트 각성)과 서폿카드 받는 피해 증가율(서폿 카드 세트 각성)은 어떤 속성/카드를
+//   쓰는지가 레이드마다 달라서, 나중에 시뮬레이터에서 리스트박스로 직접 고르게 할 예정.
+//   기본 계산식(시뮬레이터 아님)에서는 각각 최대치로 가정: 속성 30각성(14%), 서폿카드 1티어 30각성(3.5%).
+// - 계열 피해 증가율(카드 도감)은 API로 가져올 수 없어 기본 계산식에서는 0으로 가정,
+//   추후 시뮬레이터에서 직접 입력받을 예정.
+function calculateCardExtraDamageMultiplier(options) {
+  const {
+    elementAwakening = 30,
+    seriesDamagePercent = 0,
+    supportCardTier = 1,
+    supportCardAwakening = 30,
+  } = options || {};
+
+  const elementDamagePercent = CARD_ELEMENT_DAMAGE_TABLE[elementAwakening] || 0;
+  const supportCardDamagePercent = (CARD_SUPPORT_DAMAGE_TAKEN_TABLE[supportCardTier] || {})[supportCardAwakening] || 0;
+
+  const multiplier =
+    (1 + elementDamagePercent / 100) *
+    (1 + seriesDamagePercent / 100) *
+    (1 + supportCardDamagePercent / 100);
+
+  return {
+    multiplier,
+    breakdown: {
+      속성_피해_증가율: elementDamagePercent,
+      계열_피해_증가율: seriesDamagePercent,
+      서폿카드_받는피해_증가율: supportCardDamagePercent,
+      서폿카드_티어: supportCardTier,
+      서폿카드_각성: supportCardAwakening,
+      속성_각성: elementAwakening,
+    },
+  };
+}
