@@ -393,8 +393,8 @@ function getAvatarPrimaryStatPercent(avatarsData) {
   return Math.min(total, 8);
 }
 
-// 힘/민첩/지능 = (장비합산 + 팔찌옵션 + 카드240 + 물약원정대1850 + 기본스탯476) × (1 + (펫도감1% + 아바타%)/100)
-function getMaxPrimaryStat(equipmentList, braceletText, avatarsData) {
+// 힘/민첩/지능 = (장비합산 + 팔찌옵션 + 완갑 힘민첩지능 + 카드240 + 물약원정대1850 + 기본스탯476) × (1 + (펫도감1% + 아바타%)/100)
+function getMaxPrimaryStat(equipmentList, braceletText, avatarsData, extraStatFlat = 0) {
   const CARD_BONUS = 240;
   const POTION_EXPEDITION = 1850;
   const BASE_STAT = 476;
@@ -408,13 +408,75 @@ function getMaxPrimaryStat(equipmentList, braceletText, avatarsData) {
   const brDex = extractFlat(braceletText, '민첩');
   const brInt = extractFlat(braceletText, '지능');
 
-  const totalStr = eqStr + brStr + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
-  const totalDex = eqDex + brDex + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
-  const totalInt = eqInt + brInt + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+  const totalStr = eqStr + brStr + extraStatFlat + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+  const totalDex = eqDex + brDex + extraStatFlat + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
+  const totalInt = eqInt + brInt + extraStatFlat + CARD_BONUS + POTION_EXPEDITION + BASE_STAT;
 
   const avatarPercent = getAvatarPrimaryStatPercent(avatarsData);
   const multiplier = 1 + (PET_DOGAM_PERCENT + avatarPercent) / 100;
   return Math.max(totalStr, totalDex, totalInt) * multiplier;
+}
+
+// 완갑(신규 장비) 레벨(1~25)별 [무기공격력, 힘/민첩/지능, 기본공격력(고정값)] 테이블
+// 무기공격력/힘·민첩·지능은 다른 장비처럼 툴팁 텍스트 파싱이 아니라 레벨→수치 고정 테이블로 관리
+// (레벨별 수치가 게임 데이터 그대로라 텍스트 파싱보다 표가 더 정확하고 안전함)
+const WANJIB_TABLE = {
+  1: { weaponAttack: 10500, primaryStat: 10500, baseAttackFlat: 0 },
+  2: { weaponAttack: 5350, primaryStat: 16500, baseAttackFlat: 0 },
+  3: { weaponAttack: 7210, primaryStat: 16500, baseAttackFlat: 0 },
+  4: { weaponAttack: 7210, primaryStat: 22530, baseAttackFlat: 0 },
+  5: { weaponAttack: 7210, primaryStat: 22530, baseAttackFlat: 850 },
+  6: { weaponAttack: 9077, primaryStat: 22530, baseAttackFlat: 850 },
+  7: { weaponAttack: 9077, primaryStat: 28608, baseAttackFlat: 850 },
+  8: { weaponAttack: 10969, primaryStat: 28608, baseAttackFlat: 850 },
+  9: { weaponAttack: 10969, primaryStat: 34746, baseAttackFlat: 850 },
+  10: { weaponAttack: 10969, primaryStat: 34746, baseAttackFlat: 2030 },
+  11: { weaponAttack: 12873, primaryStat: 34746, baseAttackFlat: 2030 },
+  12: { weaponAttack: 12873, primaryStat: 40962, baseAttackFlat: 2030 },
+  13: { weaponAttack: 14817, primaryStat: 40962, baseAttackFlat: 2030 },
+  14: { weaponAttack: 14817, primaryStat: 47268, baseAttackFlat: 2030 },
+  15: { weaponAttack: 14817, primaryStat: 47268, baseAttackFlat: 3690 },
+  16: { weaponAttack: 16778, primaryStat: 47268, baseAttackFlat: 3690 },
+  17: { weaponAttack: 16778, primaryStat: 52682, baseAttackFlat: 3690 },
+  18: { weaponAttack: 18794, primaryStat: 52682, baseAttackFlat: 3690 },
+  19: { weaponAttack: 18794, primaryStat: 60216, baseAttackFlat: 3690 },
+  20: { weaponAttack: 18794, primaryStat: 60216, baseAttackFlat: 5980 },
+  21: { weaponAttack: 20832, primaryStat: 60216, baseAttackFlat: 5980 },
+  22: { weaponAttack: 20832, primaryStat: 66888, baseAttackFlat: 5980 },
+  23: { weaponAttack: 22940, primaryStat: 66888, baseAttackFlat: 5980 },
+  24: { weaponAttack: 22940, primaryStat: 73710, baseAttackFlat: 5980 },
+  25: { weaponAttack: 22940, primaryStat: 73710, baseAttackFlat: 9050 },
+};
+
+// 완갑 레벨 구간별 "기본 공격력 %" (보석/스톤 등 기본 공격력 % 풀에 합산)
+function getWanjibBaseAttackPercent(level) {
+  if (!level) return 0;
+  if (level <= 10) return 0;
+  if (level <= 15) return 1;
+  if (level <= 20) return 2;
+  return 3; // 21~25
+}
+
+// 완갑 아이템에서 레벨(+N)을 추출 (미착용 시 0)
+// Type/레벨 표기 형식은 신규 아이템이라 실제 API 데이터로 아직 검증 전 — 무기와 동일하게 이름의 "+N"으로 가정
+function getWanjibLevel(equipmentList) {
+  const item = (equipmentList || []).find((it) => it.Type === '완갑');
+  if (!item) return 0;
+  const m = stripHtml(item.Name).match(/\+(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// 완갑 레벨 → {무기공격력, 힘민첩지능, 기본공격력 고정값, 기본공격력 %} 전부 반환
+function getWanjibStats(equipmentList) {
+  const level = getWanjibLevel(equipmentList);
+  const row = WANJIB_TABLE[level];
+  return {
+    level,
+    weaponAttackFlat: row ? row.weaponAttack : 0,
+    primaryStatFlat: row ? row.primaryStat : 0,
+    baseAttackFlat: row ? row.baseAttackFlat : 0,
+    baseAttackPercent: getWanjibBaseAttackPercent(level),
+  };
 }
 
 // 순수 공격력 = sqrt(힘/민첩/지능(최댓값) × 무기 공격력 / 6)
@@ -604,16 +666,18 @@ function calculateCharacterStats(data) {
   const enlightenmentLevel = getArkPassiveLevelFromData(data.arkpassive, '깨달음');
   const enlightenmentPercent = enlightenmentWeaponAttackPercent(enlightenmentLevel);
 
-  const flatBonusSum = braceletFlat + coreFlat;
+  const wanjibStats = getWanjibStats(data.equipment);
+
+  const flatBonusSum = braceletFlat + coreFlat + wanjibStats.weaponAttackFlat;
   const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent;
   const weaponAttack = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
 
-  const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars);
+  const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars, wanjibStats.primaryStatFlat);
   const purePower = calculatePureAttackPower(primaryStat, weaponAttack);
 
   const gemPercent = getGemsBaseAttackPercent(data.gems);
   const stonePercent = getAbilityStoneBaseAttackPercent(data.equipment);
-  const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent);
+  const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent + wanjibStats.baseAttackPercent) + wanjibStats.baseAttackFlat;
 
   const accessoryAttackFlat = getAccessoryAttackFlat(data.equipment);
   const chaosCoreAttack = getChaosStarCoreAttack(data.arkgrid);
@@ -631,6 +695,7 @@ function calculateCharacterStats(data) {
     weaponAttack, primaryStat, purePower, basePower,
     accessoryAttackFlat, chaosCoreAttack, earringAttackPercent, arkgridGemsAttackPercent,
     statWindowAttack,
+    wanjibStats,
     braceletOptions,
   };
 }
