@@ -118,6 +118,10 @@
         // 서포터 낙인 배율 계산 (실험용)
         const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
 
+        // 서포터 아군 피해량 증가 버프 계산 (실험용, 도화가/바드/홀리나이트/발키리만 지원)
+        const adenkiDamageBuffResult = calculateSupportAdenkiDamageBuffMultiplier(data.support, supportStats.className, {});
+        const hyperAwakeningDamageBuffResult = calculateSupportHyperAwakeningDamageBuffMultiplier(data.support, supportStats.className, {});
+
         // 카드 추가피해 계산 (실험용, 현재는 리스트박스 없이 최대치/기본값 가정)
         const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
 
@@ -173,6 +177,10 @@
           <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
           <p>공증 버프 보석%: ${buffGemPercent}</p>
           <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
+          <p>아군 피해량 증가(아덴기) 배율: ${adenkiDamageBuffResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(adenkiDamageBuffResult.breakdown, null, 2)}</pre>
+          <p>아군 피해량 증가(초각성) 배율: ${hyperAwakeningDamageBuffResult.multiplier.toFixed(4)}</p>
+          <pre>${JSON.stringify(hyperAwakeningDamageBuffResult.breakdown, null, 2)}</pre>
           <p>서폿 낙인력 총합: ${brandResult.breakdown.낙인력_합계.toFixed(2)}%</p>
           <p>낙인 배율: ${brandResult.multiplier.toFixed(4)}</p>
           <p>서폿카드 받는 피해 증가율: ${cardExtraDamageResult.breakdown.서폿카드_받는피해_증가율}%</p>

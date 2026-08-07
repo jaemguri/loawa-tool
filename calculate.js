@@ -342,10 +342,11 @@ function parseBraceletOptions(braceletText) {
   m = text.match(/파티원 보호 및 회복효과가\s*([\d.]+)\s*%/);
   if (m) result.allyShieldHealPercent = parseFloat(m[1]);
 
-  m = text.match(/아군 공격력 강화 효과(?:가|이)\s*([\d.]+)\s*%/);
+  // "효과가 N% 증가한다" / "효과 +N%" (연마 효과 표기) 두 형태 모두 대응
+  m = text.match(/아군 공격력 강화 효과\s*(?:가|이)?\s*\+?\s*([\d.]+)\s*%/);
   if (m) result.allyAttackBuffPercent = parseFloat(m[1]);
 
-  m = text.match(/아군 피해량 강화 효과(?:가|이)\s*([\d.]+)\s*%/);
+  m = text.match(/아군 피해량 강화 효과\s*(?:가|이)?\s*\+?\s*([\d.]+)\s*%/);
   if (m) result.allyDamageBuffPercent = parseFloat(m[1]);
 
   return result;
@@ -589,18 +590,48 @@ function getAllyAttackBuffFromArkgridCores(arkgridData) {
   return total;
 }
 
-// 6개 코어 전체에 박힌 젬들의 "아군 공격력 강화" % 합산
-function getAllyAttackBuffFromArkgridGems(arkgridData) {
-  let total = 0;
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[아군 공격 강화] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsAllyAttackBuffLevel(arkgridData) {
+  let totalLevel = 0;
   if (arkgridData && arkgridData.Slots) {
     arkgridData.Slots.forEach((slot) => {
       (slot.Gems || []).forEach((gem) => {
         const text = parseTooltip(gem.Tooltip).join(' ');
-        total += extractPercent(text, '아군 공격력 강화');
+        const matches = text.matchAll(/\[아군\s*공격\s*강화\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
       });
     });
   }
-  return total;
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.13% = 아크그리드 젬의 아군 공격력 강화 % (API 표시값의 절삭 오차 제거)
+function getAllArkgridGemsAllyAttackBuffPercent(arkgridData) {
+  return getAllArkgridGemsAllyAttackBuffLevel(arkgridData) * 0.13;
+}
+
+// 6개 코어 전체에 박힌 아크그리드 젬들의 "[아군 피해 강화] Lv.X" 레벨을 전부 합산
+function getAllArkgridGemsAllyDamageBuffLevel(arkgridData) {
+  let totalLevel = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      (slot.Gems || []).forEach((gem) => {
+        const text = parseTooltip(gem.Tooltip).join(' ');
+        const matches = text.matchAll(/\[아군\s*피해\s*강화\]\s*Lv\.(\d+)/g);
+        for (const m of matches) {
+          totalLevel += parseInt(m[1], 10);
+        }
+      });
+    });
+  }
+  return totalLevel;
+}
+
+// 합산 레벨 × 0.0525% = 아크그리드 젬의 아군 피해량 강화 % (API 표시값의 절삭 오차 제거)
+function getAllArkgridGemsAllyDamageBuffPercent(arkgridData) {
+  return getAllArkgridGemsAllyDamageBuffLevel(arkgridData) * 0.0525;
 }
 
 // 팔찌+악세+아크그리드(코어/젬)+아크패시브(선각자22+기원22, 고정) 전체의 아군 공격력 강화 % 총합
@@ -610,7 +641,7 @@ function getTotalAllyAttackBuffPercent(equipmentList, braceletOptions, arkgridDa
     (braceletOptions?.allyAttackBuffPercent || 0) +
     getAccessoryAllyAttackBuffPercent(equipmentList) +
     getAllyAttackBuffFromArkgridCores(arkgridData) +
-    getAllyAttackBuffFromArkgridGems(arkgridData) +
+    getAllArkgridGemsAllyAttackBuffPercent(arkgridData) +
     ARKPASSIVE_FIXED
   );
 }
@@ -1796,6 +1827,200 @@ function getAutoSameolType(arkpassiveData) {
   if (BACK_SAMEOL_CLASS_ENGRAVING_NODES.some(hasNode)) return 'back';
   if (HEAD_SAMEOL_CLASS_ENGRAVING_NODES.some(hasNode)) return 'head';
   return null;
+}
+
+// 서포터 "피해량 증가" 버프에서 스킬명이 명시된 코어 옵션(예: "미르 새김의 아군 피해량 강화 효과가 N% 증가한다")
+// 목록. 전체 아군 피해량 강화 합산(generic pool)에서는 이 스킬들을 제외해야 이중 합산되지 않는다.
+const SUPPORT_DAMAGE_BUFF_SKILL_NAMES = [
+  '저무는 달', '미르 새김', '세레나데', '아리아',
+  '신성한 정의', '신성의 오라', '빛의 해방', '신의 증명',
+];
+
+// 클래스별 "피해량 증가" 버프 설정값
+// - 도화가는 히유시 실제 데이터로 검증 완료. 바드/홀리나이트/발키리는 아직 실제 캐릭터로
+//   검증 전 — 스킬명/코어 문구가 실제 API와 다를 수 있음.
+const SUPPORT_DAMAGE_BUFF_CLASS_CONFIG = {
+  도화가: {
+    adenkiSkillName: '저무는 달', adenkiBaseRate: 10,
+    hyperSkillName: '미르 새김', hyperBaseRate: 10,
+    gemSkillName: '음양',
+    specializationCoefficient: 0.0600,
+  },
+  바드: {
+    adenkiSkillName: '세레나데', adenkiBaseRate: 15,
+    hyperSkillName: '아리아', hyperBaseRate: 10,
+    gemSkillName: '세레나데',
+    specializationCoefficient: 0.0500,
+  },
+  홀리나이트: {
+    adenkiSkillName: '신성한 정의', adenkiBaseRate: 10,
+    hyperSkillName: '신성의 오라', hyperBaseRate: 10,
+    gemSkillName: '신앙',
+    specializationCoefficient: 0.0901,
+  },
+  발키리: {
+    adenkiSkillName: '빛의 해방', adenkiBaseRate: 10,
+    hyperSkillName: '신의 증명', hyperBaseRate: 10,
+    gemSkillName: '신앙',
+    specializationCoefficient: 0.0858,
+  },
+};
+
+// 텍스트에서 "스킬명의 아군 피해량 강화 효과가 N% 증가한다" 형태의 스킬-전용 문구를 전부 제거
+// (전체 합산 풀에 이중 합산되지 않도록)
+function stripSkillSpecificAllyDamageBuffText(text) {
+  let cleaned = text;
+  SUPPORT_DAMAGE_BUFF_SKILL_NAMES.forEach((skillName) => {
+    const re = new RegExp(skillName + '\\s*의\\s*아군\\s*피해량\\s*강화[^%]*%', 'g');
+    cleaned = cleaned.replace(re, '');
+  });
+  return cleaned;
+}
+
+// 악세서리(반지만)의 "아군 피해량 강화" % 합산 (목걸이·귀걸이 제외)
+function getRingAllyDamageBuffPercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '반지').forEach((it) => {
+    total += extractPercent(parseTooltip(it.Tooltip).join(' '), '아군 피해량 강화');
+  });
+  return total;
+}
+
+// 6개 코어 전체의 "아군 피해량 강화" % 합산 (활성화된 [XXP] 구간만, 스킬-전용 문구는 제외한 일반 풀)
+function getGenericAllyDamageBuffFromArkgridCores(arkgridData) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      segments.forEach((seg) => {
+        total += extractPercent(stripSkillSpecificAllyDamageBuffText(seg), '아군 피해량 강화');
+      });
+    });
+  }
+  return total;
+}
+
+// 반지+아크그리드(코어 일반 풀)+아크그리드(젬) 전체의 "아군 피해량 효과 증가" % 총합
+function getTotalAllyDamageBuffPercent(equipmentList, arkgridData, braceletOptions) {
+  return (
+    (braceletOptions?.allyDamageBuffPercent || 0) +
+    getRingAllyDamageBuffPercent(equipmentList) +
+    getGenericAllyDamageBuffFromArkgridCores(arkgridData) +
+    getAllArkgridGemsAllyDamageBuffPercent(arkgridData)
+  );
+}
+
+// 특정 스킬명이 명시된 "운명" 코어 옵션의 아군 피해량 강화 % 합산 (해당 스킬 전용, 활성화된 구간만)
+// '운명' 발동 조건은 항상 발동되어 있다고 가정 (요청사항)
+function getSkillSpecificAllyDamageBuffFromArkgridCores(arkgridData, skillName) {
+  let total = 0;
+  if (arkgridData && arkgridData.Slots) {
+    const re = new RegExp(skillName + '\\s*의\\s*아군\\s*피해량\\s*강화[^\\d%]*?([\\d.]+)\\s*%', 'g');
+    arkgridData.Slots.forEach((slot) => {
+      const raw = getCoreOptionText(slot.Tooltip);
+      const segments = getActivatedCoreSegments(raw, slot.Point);
+      segments.forEach((seg) => {
+        let m;
+        re.lastIndex = 0;
+        while ((m = re.exec(seg)) !== null) total += parseFloat(m[1]);
+      });
+    });
+  }
+  return total;
+}
+
+// 보석(gems) 목록에서 특정 스킬명이 명시된 "지원 효과" 보석의 레벨을 찾아 반환 (없으면 0)
+// 같은 스킬이라도 재사용 대기시간 감소형 보석이 꽂혀있을 수 있어 "지원 효과" 문구도 함께 확인해야
+// 정확한 보석(지원형)만 걸러진다 (심빛장전 데이터에서 "신성한 보호" 쿨감 보석 오탐으로 발견된 문제).
+function getSkillGemLevel(gemsData, skillName) {
+  if (!gemsData || !gemsData.Gems) return 0;
+  const gem = gemsData.Gems.find((g) => {
+    try {
+      const obj = JSON.parse(g.Tooltip);
+      const el6 = obj.Element_006 ? obj.Element_006.value : null;
+      const text = el6 ? stripHtml(el6.Element_001 || '') : '';
+      return text.includes(skillName) && text.includes('지원 효과');
+    } catch (e) {
+      return false;
+    }
+  });
+  return gem ? gem.Level : 0;
+}
+
+// 팔찌 아이템을 찾아 parseBraceletOptions로 파싱해서 반환 (미착용 시 기본값 객체)
+function getBraceletOptionsFromEquipment(equipmentList) {
+  const braceletItem = (equipmentList || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  return parseBraceletOptions(braceletText);
+}
+
+// 서포터 아덴기(정체성 스킬) 피해량 증가 배율
+// = [1 + 기본%×(1+아군피해량효과증가/100)×(1+특화계수/100)×1.2×보석레벨×(1+스킬전용운명코어%/100)] × 피증1유효율
+// 특화계수 = 특화 스탯 × 클래스별 계수(예: 도화가 0.0600%/1당)
+function calculateSupportAdenkiDamageBuffMultiplier(supportData, className, options) {
+  const config = SUPPORT_DAMAGE_BUFF_CLASS_CONFIG[className];
+  if (!config) return { multiplier: 1, breakdown: { 지원안되는직업: className } };
+
+  const { effectiveRatio1 = 1 } = options || {};
+
+  const braceletOptions = getBraceletOptionsFromEquipment(supportData?.equipment);
+  const allyDamageBuffPercent = getTotalAllyDamageBuffPercent(supportData?.equipment, supportData?.arkgrid, braceletOptions);
+  const specializationStat = getStatValueFromProfile(supportData?.profiles, '특화');
+  const specializationCoefficientPercent = specializationStat * config.specializationCoefficient;
+  const gemLevel = getSkillGemLevel(supportData?.gems, config.gemSkillName);
+  const skillCoreBonusPercent = getSkillSpecificAllyDamageBuffFromArkgridCores(supportData?.arkgrid, config.adenkiSkillName);
+
+  const multiplier =
+    (1 +
+      (config.adenkiBaseRate / 100) *
+        (1 + allyDamageBuffPercent / 100) *
+        (1 + specializationCoefficientPercent / 100) *
+        1.2 *
+        gemLevel *
+        (1 + skillCoreBonusPercent / 100)) *
+    effectiveRatio1;
+
+  return {
+    multiplier,
+    breakdown: {
+      아군피해량효과증가: allyDamageBuffPercent,
+      특화스탯: specializationStat,
+      특화계수: specializationCoefficientPercent,
+      보석레벨: gemLevel,
+      스킬전용코어보너스: skillCoreBonusPercent,
+      피증1_유효율: effectiveRatio1,
+    },
+  };
+}
+
+// 서포터 초각성 스킬 피해량 증가 배율
+// = [1 + 10%×(1+아군피해량효과증가/100)×(1+스킬전용운명코어%/100)] × 피증2유효율
+function calculateSupportHyperAwakeningDamageBuffMultiplier(supportData, className, options) {
+  const config = SUPPORT_DAMAGE_BUFF_CLASS_CONFIG[className];
+  if (!config) return { multiplier: 1, breakdown: { 지원안되는직업: className } };
+
+  const { effectiveRatio2 = 1 } = options || {};
+
+  const braceletOptions = getBraceletOptionsFromEquipment(supportData?.equipment);
+  const allyDamageBuffPercent = getTotalAllyDamageBuffPercent(supportData?.equipment, supportData?.arkgrid, braceletOptions);
+  const skillCoreBonusPercent = getSkillSpecificAllyDamageBuffFromArkgridCores(supportData?.arkgrid, config.hyperSkillName);
+
+  const multiplier =
+    (1 +
+      (config.hyperBaseRate / 100) *
+        (1 + allyDamageBuffPercent / 100) *
+        (1 + skillCoreBonusPercent / 100)) *
+    effectiveRatio2;
+
+  return {
+    multiplier,
+    breakdown: {
+      아군피해량효과증가: allyDamageBuffPercent,
+      스킬전용코어보너스: skillCoreBonusPercent,
+      피증2_유효율: effectiveRatio2,
+    },
+  };
 }
 
 // 최종 산출식 = 최종데미지 × 치명타배율 × 추가피해 × 적에게 주는 피해 × 방어율 × 서포터 낙인 × 카드
