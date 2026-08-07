@@ -1316,8 +1316,9 @@ function getManaFurnaceEvolutionDamagePercent(arkpassiveData) {
   return maxMatch ? parseFloat(maxMatch[2]) : 0;
 }
 
-// '진화의 카르마' 노드 레벨(1~30) 구간별 보너스 % 테이블
-// (딜러는 진화형 피해, 서포터는 낙인력에 동일한 값이 적용됨)
+// '진화' 카테고리 전체 포인트 레벨(arkpassiveData.Points, 1~30) 구간별 보너스 % 테이블
+// (깨달음 레벨 → 무기 공격력 0.1%/레벨 하던 것과 같은 개념 — enlightenmentWeaponAttackPercent 참고.
+//  다만 이건 선형이 아니라 구간별 고정값이고, 딜러는 진화형 피해, 서포터는 낙인력에 적용됨)
 function getEvolutionKarmaBonusPercent(level) {
   if (!level) return 0;
   if (level <= 4) return 1;
@@ -1328,19 +1329,10 @@ function getEvolutionKarmaBonusPercent(level) {
   return 6; // 22~30
 }
 
-// 아크패시브(진화)의 '진화의 카르마' 노드 레벨(Lv.N)을 반환 (미채용 시 0)
-// (레벨은 ToolTip이 아니라 Effects[].Description의 "Lv.N" 표기에서 그대로 읽음)
-function getArkPassiveEvolutionKarmaLevel(arkpassiveData) {
-  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
-  const eng = arkpassiveData.Effects.find((e) => e.Name === '진화' && (e.Description || '').includes('카르마'));
-  if (!eng) return 0;
-  const m = stripHtml(eng.Description || '').match(/Lv\.(\d+)/);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
-// '진화의 카르마' 채용 시 레벨 구간에 해당하는 보너스 %
+// '진화' 카테고리 포인트 레벨 구간에 해당하는 보너스 % (딜러: 진화형 피해, 서포터: 낙인력)
 function getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData) {
-  return getEvolutionKarmaBonusPercent(getArkPassiveEvolutionKarmaLevel(arkpassiveData));
+  const level = getArkPassiveLevelFromData(arkpassiveData, '진화');
+  return getEvolutionKarmaBonusPercent(level);
 }
 
 // 아크패시브(진화)의 "진화형 피해" % 합산 + 항목별 breakdown (디버깅용)
@@ -1348,7 +1340,7 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   if (!arkpassiveData || !arkpassiveData.Effects) return 0;
   let total = 0;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로') && !(e.Description || '').includes('카르마'))
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1368,7 +1360,7 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};
   if (!arkpassiveData || !arkpassiveData.Effects) return result;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로') && !(e.Description || '').includes('카르마'))
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1385,7 +1377,7 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const manaFurnacePercent = getManaFurnaceEvolutionDamagePercent(arkpassiveData);
   if (manaFurnacePercent > 0) result['마나 용광로'] = (result['마나 용광로'] || 0) + manaFurnacePercent;
   const karmaPercent = getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData);
-  if (karmaPercent > 0) result['진화의 카르마'] = (result['진화의 카르마'] || 0) + karmaPercent;
+  if (karmaPercent > 0) result['카르마(진화 포인트 레벨)'] = (result['카르마(진화 포인트 레벨)'] || 0) + karmaPercent;
   return result;
 }
 
@@ -1531,9 +1523,9 @@ function calculateDefenseMultiplier(options) {
 }
 
 // 아크패시브(진화)의 "낙인력" % 합산 (입식 타격가 등 진화 노드 문구에 포함된 값도 함께 잡힘)
-// '진화의 카르마'는 문구에 % 값이 그대로 없어 일반 추출로는 안 잡히므로 별도로 레벨 구간 테이블을 더함
+// + '진화' 카테고리 포인트 레벨 구간별 카르마 보너스(getArkPassiveEvolutionKarmaBonusPercent)
 function getArkPassiveEvolutionBrandPowerPercent(arkpassiveData) {
-  const generic = extractPercent(getArkPassiveEffectsTextExcluding(arkpassiveData, '진화', '카르마'), '낙인력');
+  const generic = extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '낙인력');
   return generic + getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData);
 }
 
