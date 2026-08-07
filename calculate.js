@@ -1717,6 +1717,7 @@ function getClassSynergyPercent(className, classList, percent) {
 const BACK_SAMEOL_CLASS_ENGRAVING_NODES = [
   '비기', '심판자', '체술', '충격 단련', '오의 강화', '핸드거너', '전술 탄환',
   '오의난무', '일격', '잔재된 기운', '버스트', '갈증', '달의소리',
+  '공간검사', '초심',
 ];
 const HEAD_SAMEOL_CLASS_ENGRAVING_NODES = [
   '고독한 기사', '전투 태세', '수라', '분노의 망치', '중력 수련',
