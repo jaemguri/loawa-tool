@@ -99,8 +99,9 @@
         // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
         const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
         const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
+        const classSynergyAttackPercent = getClassSynergyPercent(dealerStats.className, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
         const finalDamage = calculateFinalDamage(
-          
+
           dealerStats.basePower,
           dealerStats.accessoryAttackFlat,
           dealerStats.chaosCoreAttack.flat,
@@ -108,7 +109,8 @@
           dealerStats.chaosCoreAttack.percent,
           dealerStats.earringAttackPercent,
           dealerStats.arkgridGemsAttackPercent,
-          adrenalineBonus
+          adrenalineBonus,
+          classSynergyAttackPercent
         );
 // 치명타 계산 (실험용)
         const backSameolChecked = backSameolInput.checked;
@@ -150,8 +152,9 @@
           <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
           <p>카드 추가피해 배율: ${cardExtraDamageResult.multiplier.toFixed(4)}</p>
           <pre>${JSON.stringify(cardExtraDamageResult.breakdown, null, 2)}</pre>
+          <p>시너지(본인 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
 
-          
+
           <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
           <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
           <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
