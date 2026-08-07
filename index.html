@@ -13,10 +13,6 @@
   <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <button id="searchBtn">조회하기</button>
-<p>
-    <label><input type="checkbox" id="backSameol"> 백 사멸</label>
-    <label><input type="checkbox" id="headSameol"> 헤드 사멸</label>
-  </p>
 
   <div id="result"></div>
 
@@ -28,8 +24,6 @@
     const effectiveRatioInput = document.getElementById('effectiveRatio');
     const brandEffectiveRatioInput = document.getElementById('brandEffectiveRatio');
     const resultDiv = document.getElementById('result');
-    const backSameolInput = document.getElementById('backSameol');
-    const headSameolInput = document.getElementById('headSameol');
 
     
     function stripHtml(str) {
@@ -112,16 +106,14 @@
           adrenalineBonus,
           classSynergyAttackPercent
         );
-// 치명타 계산 (실험용)
-        const backSameolChecked = backSameolInput.checked;
-        const headSameolChecked = headSameolInput.checked;
-        const critResult = calculateCritMultiplier(data.dealer, data.support, backSameolChecked);
+// 치명타 계산 (실험용, 백/헤드 사멸은 채용한 직업각인 노드로 자동 판정됨)
+        const critResult = calculateCritMultiplier(data.dealer, data.support);
 
         // 추가 피해 계산 (실험용)
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
 
         // 적에게 주는 피해 계산 (실험용)
-        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, backSameolChecked, headSameolChecked, critResult.critRatePercent);
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent);
 
         // 서포터 낙인 배율 계산 (실험용)
         const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
@@ -135,6 +127,7 @@
           <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
           <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
           <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
+          <p>자동 감지된 사멸 타입: ${critResult.자동감지_사멸타입 || '없음'}</p>
           <p>치명타 적중률: ${critResult.critRatePercent.toFixed(2)}%</p>
           <pre>${JSON.stringify(critResult.critRateBreakdown, null, 2)}</pre>
           <p>치명타 피해: ${critResult.critDamagePercent.toFixed(2)}%</p>
@@ -151,7 +144,11 @@
           <p>적에게 주는 피해 배율: ${enemyDamageResult.multiplier.toFixed(4)}</p>
           <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
           <p>카드 추가피해 배율: ${cardExtraDamageResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify(cardExtraDamageResult.breakdown, null, 2)}</pre>
+          <pre>${JSON.stringify({
+            속성_피해_증가율: cardExtraDamageResult.breakdown.속성_피해_증가율,
+            속성_각성: cardExtraDamageResult.breakdown.속성_각성,
+            계열_피해_증가율: cardExtraDamageResult.breakdown.계열_피해_증가율,
+          }, null, 2)}</pre>
           <p>시너지(본인 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
 
 
@@ -162,6 +159,11 @@
           <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
           <p>서폿 낙인력 총합: ${brandResult.breakdown.낙인력_합계.toFixed(2)}%</p>
           <p>낙인 배율: ${brandResult.multiplier.toFixed(4)}</p>
+          <p>서폿카드 받는 피해 증가율: ${cardExtraDamageResult.breakdown.서폿카드_받는피해_증가율}%</p>
+          <pre>${JSON.stringify({
+            서폿카드_티어: cardExtraDamageResult.breakdown.서폿카드_티어,
+            서폿카드_각성: cardExtraDamageResult.breakdown.서폿카드_각성,
+          }, null, 2)}</pre>
           <pre>${JSON.stringify(brandResult.breakdown, null, 2)}</pre>
 
           <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>

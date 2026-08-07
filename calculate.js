@@ -876,9 +876,10 @@ function adrenalineCritRateBonus(level) {
 }
 
 // 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산 (항목별 breakdown 포함)
-function calculateCritMultiplier(dealerData, supportData, backSameolChecked) {
+function calculateCritMultiplier(dealerData, supportData) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  const autoSameolType = getAutoSameolType(dealerData.arkpassive);
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
   const dealerBracelet = parseBraceletOptions(braceletText);
@@ -901,7 +902,7 @@ function calculateCritMultiplier(dealerData, supportData, backSameolChecked) {
     딜러팔찌: dealerBracelet.critRatePercent,
     서폿팔찌_치적저항감소: supportBracelet.critResistReductionPercent,
     치명스탯: critStatRate,
-    백사멸: backSameolChecked ? 10 : 0,
+    백사멸: autoSameolType === 'back' ? 10 : 0,
     시너지_본인직업: getClassSynergyPercent(className, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
@@ -945,6 +946,7 @@ function calculateCritMultiplier(dealerData, supportData, backSameolChecked) {
     critRateBreakdown, critDamageBreakdown, onHitBreakdown,
     sharpWeaponPenalty,
     시너지_치명타시피해량: classSynergyCritDamagePercent,
+    자동감지_사멸타입: autoSameolType,
   };
 }
 
@@ -1440,13 +1442,19 @@ function getSameolEnemyDamagePercent(backChecked, headChecked) {
   return (backChecked ? 5 : 0) + (headChecked ? 20 : 0);
 }
 
-// 딜러 데이터 + 사멸 체크박스 상태를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
-function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameolChecked, critRatePercent) {
+// 딜러 데이터를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
+// 백/헤드 사멸은 더 이상 체크박스 입력이 아니라, 딜러가 채용한 직업각인(빌드) 노드로 자동 판정된다
+// (getAutoSameolType 참고).
+function calculateEnemyDamageMultiplier(dealerData, critRatePercent) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
   const dealerBracelet = parseBraceletOptions(braceletText);
+
+  const autoSameolType = getAutoSameolType(dealerData.arkpassive);
+  const backSameolChecked = autoSameolType === 'back';
+  const headSameolChecked = autoSameolType === 'head';
 
   const necklacePercent = getNecklaceEnemyDamagePercent(equipment);
   const engravingResult = getEngravingEnemyDamageMultiplier(dealerData.engravings);
@@ -1489,6 +1497,7 @@ function calculateEnemyDamageMultiplier(dealerData, backSameolChecked, headSameo
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
+      자동감지_사멸타입: autoSameolType,
       시너지_피해증가: synergyDamageIncreasePercent,
       시너지_주는피해증가: synergyEnemyDamageTakenPercent,
     },
@@ -1699,4 +1708,26 @@ const SYNERGY_DEFENSE_REDUCTION_PERCENT = 12; // 방어력 감소 → calculateD
 // 딜러 본인 직업(className)이 주어진 시너지 직업 목록에 속하면 해당 % 반환, 아니면 0
 function getClassSynergyPercent(className, classList, percent) {
   return classList.includes(className) ? percent : 0;
+}
+
+// 백/헤드 사멸: 예전엔 체크박스로 수동 입력했지만, 실제로는 캐릭터가 채용한 직업각인(빌드)
+// 아크패시브 노드 이름으로 정해지는 값이라 API로 자동 판정 가능. 노드는 클래스별 전용 풀이라
+// 캐릭터 한 명의 Effects에는 다른 클래스의 노드 이름이 섞여 나올 수 없음 — 카테고리(진화/깨달음)
+// 구분 없이 Description 전체에서 이름 매치.
+const BACK_SAMEOL_CLASS_ENGRAVING_NODES = [
+  '비기', '심판자', '체술', '충격 단련', '오의 강화', '핸드거너', '전술 탄환',
+  '오의난무', '일격', '잔재된 기운', '버스트', '갈증', '달의소리',
+];
+const HEAD_SAMEOL_CLASS_ENGRAVING_NODES = [
+  '고독한 기사', '전투 태세', '수라', '분노의 망치', '중력 수련',
+];
+
+// 딜러의 아크패시브 Effects에서 채용한 직업각인(빌드) 노드로 백/헤드 사멸 여부를 자동 판정
+// 반환값: 'back' | 'head' | null (해당 표에 없는 직업/노드는 사멸 없음)
+function getAutoSameolType(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return null;
+  const hasNode = (nodeName) => arkpassiveData.Effects.some((e) => (e.Description || '').includes(nodeName));
+  if (BACK_SAMEOL_CLASS_ENGRAVING_NODES.some(hasNode)) return 'back';
+  if (HEAD_SAMEOL_CLASS_ENGRAVING_NODES.some(hasNode)) return 'head';
+  return null;
 }
