@@ -1538,10 +1538,25 @@ function getSameolEnemyDamagePercent(backChecked, headChecked) {
   return (backChecked ? 5 : 0) + (headChecked ? 20 : 0);
 }
 
-// 딜러 데이터를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
+// 서포터의 '혼돈의 달 코어 : 낙인의 흔적' 등급에 따른 적에게 주는 피해 배율
+// 유물 (1+0.3)×낙인유효율, 고대 (1+0.5)×낙인유효율, 코어 미보유/그 외 등급이면 영향 없음(1배)
+function getSupportBrandTraceCoreEnemyDamageMultiplier(supportArkgridData, brandEffectiveRatio) {
+  const slot = (supportArkgridData?.Slots || []).find((s) => s.Name && s.Name.includes('낙인의 흔적'));
+  if (!slot) return 1;
+  if (slot.Grade === '유물') return (1 + 0.3) * brandEffectiveRatio;
+  if (slot.Grade === '고대') return (1 + 0.5) * brandEffectiveRatio;
+  return 1;
+}
+
+// 서포터가 '정열의 춤사위'(아크패시브 진화) 노드를 채용했으면 진화형 피해 14%를 조건 없이 추가
+function getSupportPassionateDanceEvolutionDamageBonus(supportArkpassiveData) {
+  return hasArkPassiveEffect(supportArkpassiveData, '정열의 춤사위') ? 14 : 0;
+}
+
+// 딜러 데이터(+ 서포터의 낙인의 흔적 코어/정열의 춤사위)를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
 // 백/헤드 사멸은 더 이상 체크박스 입력이 아니라, 딜러가 채용한 직업각인(빌드) 노드로 자동 판정된다
 // (getAutoSameolType 참고).
-function calculateEnemyDamageMultiplier(dealerData, critRatePercent) {
+function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData, brandEffectiveRatio) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
@@ -1565,6 +1580,8 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent) {
   const synergyEnemyDamageTakenPercent = SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES.includes(className)
     ? ((backSameolChecked || headSameolChecked) ? SYNERGY_ENEMY_DAMAGE_TAKEN_SAMEOL_PERCENT : SYNERGY_ENEMY_DAMAGE_TAKEN_BASE_PERCENT)
     : 0;
+  const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
+  const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -1573,10 +1590,11 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent) {
     chaosCoreResult.multiplier *
     orderCoreResult.multiplier *
     toMultiplier(dealerBracelet.enemyDamagePercent) *
-    toMultiplier(evolutionDamagePercent + bluntThornBonus) *
+    toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
-    toMultiplier(synergyEnemyDamageTakenPercent);
+    toMultiplier(synergyEnemyDamageTakenPercent) *
+    supportBrandTraceCoreMultiplier;
 
   return {
     multiplier,
@@ -1596,6 +1614,8 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent) {
       자동감지_사멸타입: autoSameolType,
       시너지_피해증가: synergyDamageIncreasePercent,
       시너지_주는피해증가: synergyEnemyDamageTakenPercent,
+      서폿_정열의춤사위_진화형피해: supportPassionateDanceBonus,
+      서폿_낙인의흔적_코어배율: supportBrandTraceCoreMultiplier,
     },
   };
 }

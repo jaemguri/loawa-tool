@@ -113,7 +113,7 @@
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
 
         // 적에게 주는 피해 계산 (실험용)
-        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent);
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio);
 
         // 서포터 낙인 배율 계산 (실험용)
         const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
