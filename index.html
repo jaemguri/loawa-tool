@@ -140,6 +140,13 @@
           cardExtraDamageResult.multiplier
         );
 
+        // 풀버프 최종 산출식 = 최종 산출식 × 서폿 아군 피해량 증가(아덴기) × 서폿 아군 피해량 증가(초각성)
+        const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
+          finalOutputResult.output,
+          adenkiDamageBuffResult.multiplier,
+          hyperAwakeningDamageBuffResult.multiplier
+        );
+
         resultDiv.innerHTML = `
           <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
           <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
@@ -193,6 +200,8 @@
           <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
           <h2>최종 산출식: ${finalOutputResult.output.toLocaleString()}</h2>
           <pre>${JSON.stringify(finalOutputResult.breakdown, null, 2)}</pre>
+          <h2>풀버프 최종 산출식: ${fullBuffFinalOutputResult.output.toLocaleString()}</h2>
+          <pre>${JSON.stringify(fullBuffFinalOutputResult.breakdown, null, 2)}</pre>
         `;
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;

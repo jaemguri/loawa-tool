@@ -2048,3 +2048,18 @@ function calculateFinalOutput(finalDamage, critMultiplier, extraDamageMultiplier
     },
   };
 }
+
+// 풀버프 최종 산출식 = 최종 산출식 × 서포터 아군 피해량 증가(아덴기) × 서포터 아군 피해량 증가(초각성)
+// (최종 산출식 자체는 그대로 두고, 서폿 피증까지 곱한 별도 결과값)
+function calculateFullBuffFinalOutput(finalOutput, adenkiDamageBuffMultiplier, hyperAwakeningDamageBuffMultiplier) {
+  const output = finalOutput * adenkiDamageBuffMultiplier * hyperAwakeningDamageBuffMultiplier;
+
+  return {
+    output,
+    breakdown: {
+      최종산출식: finalOutput,
+      아덴기배율: adenkiDamageBuffMultiplier,
+      초각성배율: hyperAwakeningDamageBuffMultiplier,
+    },
+  };
+}
