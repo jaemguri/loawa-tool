@@ -1316,12 +1316,39 @@ function getManaFurnaceEvolutionDamagePercent(arkpassiveData) {
   return maxMatch ? parseFloat(maxMatch[2]) : 0;
 }
 
+// '진화의 카르마' 노드 레벨(1~30) 구간별 보너스 % 테이블
+// (딜러는 진화형 피해, 서포터는 낙인력에 동일한 값이 적용됨)
+function getEvolutionKarmaBonusPercent(level) {
+  if (!level) return 0;
+  if (level <= 4) return 1;
+  if (level <= 8) return 2;
+  if (level <= 12) return 3;
+  if (level <= 16) return 4;
+  if (level <= 21) return 5;
+  return 6; // 22~30
+}
+
+// 아크패시브(진화)의 '진화의 카르마' 노드 레벨(Lv.N)을 반환 (미채용 시 0)
+// (레벨은 ToolTip이 아니라 Effects[].Description의 "Lv.N" 표기에서 그대로 읽음)
+function getArkPassiveEvolutionKarmaLevel(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return 0;
+  const eng = arkpassiveData.Effects.find((e) => e.Name === '진화' && (e.Description || '').includes('카르마'));
+  if (!eng) return 0;
+  const m = stripHtml(eng.Description || '').match(/Lv\.(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// '진화의 카르마' 채용 시 레벨 구간에 해당하는 보너스 %
+function getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData) {
+  return getEvolutionKarmaBonusPercent(getArkPassiveEvolutionKarmaLevel(arkpassiveData));
+}
+
 // 아크패시브(진화)의 "진화형 피해" % 합산 + 항목별 breakdown (디버깅용)
 function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   if (!arkpassiveData || !arkpassiveData.Effects) return 0;
   let total = 0;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로') && !(e.Description || '').includes('카르마'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1332,6 +1359,7 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   total += getStandingStrikerEvolutionDamagePercent(arkpassiveData);
   total += getSonicBreakthroughEvolutionDamagePercent(arkpassiveData);
   total += getManaFurnaceEvolutionDamagePercent(arkpassiveData);
+  total += getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData);
   return total;
 }
 
@@ -1340,7 +1368,7 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};
   if (!arkpassiveData || !arkpassiveData.Effects) return result;
   arkpassiveData.Effects
-    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로'))
+    .filter((e) => e.Name === '진화' && !(e.Description || '').includes('마나 용광로') && !(e.Description || '').includes('카르마'))
     .forEach((e) => {
       try {
         const obj = JSON.parse(e.ToolTip);
@@ -1356,6 +1384,8 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   if (sonicBreakthroughPercent > 0) result['음속 돌파'] = (result['음속 돌파'] || 0) + sonicBreakthroughPercent;
   const manaFurnacePercent = getManaFurnaceEvolutionDamagePercent(arkpassiveData);
   if (manaFurnacePercent > 0) result['마나 용광로'] = (result['마나 용광로'] || 0) + manaFurnacePercent;
+  const karmaPercent = getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData);
+  if (karmaPercent > 0) result['진화의 카르마'] = (result['진화의 카르마'] || 0) + karmaPercent;
   return result;
 }
 
@@ -1501,8 +1531,10 @@ function calculateDefenseMultiplier(options) {
 }
 
 // 아크패시브(진화)의 "낙인력" % 합산 (입식 타격가 등 진화 노드 문구에 포함된 값도 함께 잡힘)
+// '진화의 카르마'는 문구에 % 값이 그대로 없어 일반 추출로는 안 잡히므로 별도로 레벨 구간 테이블을 더함
 function getArkPassiveEvolutionBrandPowerPercent(arkpassiveData) {
-  return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '낙인력');
+  const generic = extractPercent(getArkPassiveEffectsTextExcluding(arkpassiveData, '진화', '카르마'), '낙인력');
+  return generic + getArkPassiveEvolutionKarmaBonusPercent(arkpassiveData);
 }
 
 // 6개 코어 전체에 박힌 아크그리드 젬들의 "[낙인력] Lv.X" 레벨을 전부 합산
@@ -1529,13 +1561,18 @@ function getAllArkgridGemsBrandPowerPercent(arkgridData) {
 }
 
 // 6개 코어 전체의 "낙인력" % 합산 (활성화된 [XXP] 구간만)
+// sumCoreSegments는 라벨이 포함된 구간 전체의 숫자를 다 더하는데, "낙인력이 2.40% 증가하며,
+// 낙인 효과 적용 시 ... 받는 피해가 0.20% 증가한다" 처럼 한 구간에 다른 스탯(%) 이 같이 섞여
+// 나오는 경우 그 값까지 오합산되므로, 라벨과 가까운 값만 잡는 extractPercent를 구간별로 사용한다.
 function getBrandPowerFromArkgridCores(arkgridData) {
   let total = 0;
   if (arkgridData && arkgridData.Slots) {
     arkgridData.Slots.forEach((slot) => {
       const raw = getCoreOptionText(slot.Tooltip);
       const segments = getActivatedCoreSegments(raw, slot.Point);
-      total += sumCoreSegments(segments, '낙인력').percent;
+      segments.forEach((seg) => {
+        total += extractPercent(seg, '낙인력');
+      });
     });
   }
   return total;
