@@ -66,6 +66,31 @@
       duo: document.getElementById('duoView'),
     };
 
+    // calculate.js 내부에서 전역 함수로 참조하는 툴팁 파싱 헬퍼 (calculate.js에는 정의되어 있지 않음)
+    function stripHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function parseTooltip(tooltipStr) {
+      const lines = [];
+      try {
+        const obj = JSON.parse(tooltipStr);
+        Object.values(obj).forEach((el) => {
+          if (!el) return;
+          if (typeof el.value === 'string') {
+            const text = stripHtml(el.value);
+            if (text) lines.push(text);
+          } else if (el.value && typeof el.value === 'object' && el.value.Element_000 !== undefined) {
+            const label = stripHtml(el.value.Element_000);
+            const content = stripHtml(el.value.Element_001 || '');
+            lines.push(`[${label}] ${content}`);
+          }
+        });
+      } catch (e) {}
+      return lines;
+    }
+
     // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
     [synergyClass2Select, synergyClass3Select].forEach((select) => {
       const emptyOption = document.createElement('option');
