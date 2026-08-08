@@ -972,9 +972,10 @@ function adrenalineCritRateBonus(level) {
 }
 
 // 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산 (항목별 breakdown 포함)
-function calculateCritMultiplier(dealerData, supportData) {
+function calculateCritMultiplier(dealerData, supportData, options) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  const partyClassNames = [className, ...((options && options.partyClassNames) || [])];
   const autoSameolType = getAutoSameolType(dealerData.arkpassive);
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -999,7 +1000,7 @@ function calculateCritMultiplier(dealerData, supportData) {
     서폿팔찌_치적저항감소: supportBracelet.critResistReductionPercent,
     치명스탯: critStatRate,
     백사멸: autoSameolType === 'back' ? 10 : 0,
-    시너지_본인직업: getClassSynergyPercent(className, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
+    시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
@@ -1034,7 +1035,7 @@ function calculateCritMultiplier(dealerData, supportData) {
   const rate = Math.min(critRatePercent, 100) / 100;
   const critDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
   const sharpWeaponPenalty = getSharpWeaponDamagePenaltyMultiplier(dealerData.engravings);
-  const classSynergyCritDamagePercent = getClassSynergyPercent(className, SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT);
+  const classSynergyCritDamagePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT);
   const avgDamageMultiplier = critDamageMultiplier * sharpWeaponPenalty * toMultiplier(classSynergyCritDamagePercent);
 
   return {
@@ -1556,9 +1557,10 @@ function getSupportPassionateDanceEvolutionDamageBonus(supportArkpassiveData) {
 // 딜러 데이터(+ 서포터의 낙인의 흔적 코어/정열의 춤사위)를 받아 "적에게 주는 피해" 전체 배율 계산 (breakdown 포함)
 // 백/헤드 사멸은 더 이상 체크박스 입력이 아니라, 딜러가 채용한 직업각인(빌드) 노드로 자동 판정된다
 // (getAutoSameolType 참고).
-function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData, brandEffectiveRatio) {
+function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData, brandEffectiveRatio, options) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  const partyClassNames = [className, ...((options && options.partyClassNames) || [])];
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
   const dealerBracelet = parseBraceletOptions(braceletText);
@@ -1576,10 +1578,11 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const bluntThornResult = getBluntThornConversionBonusPercent(dealerData.arkpassive, critRatePercent);
   const bluntThornBonus = bluntThornResult.bonus;
   const sameolPercent = getSameolEnemyDamagePercent(backSameolChecked, headSameolChecked);
-  const synergyDamageIncreasePercent = getClassSynergyPercent(className, SYNERGY_DAMAGE_INCREASE_CLASSES, SYNERGY_DAMAGE_INCREASE_PERCENT);
-  const synergyEnemyDamageTakenPercent = SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES.includes(className)
-    ? ((backSameolChecked || headSameolChecked) ? SYNERGY_ENEMY_DAMAGE_TAKEN_SAMEOL_PERCENT : SYNERGY_ENEMY_DAMAGE_TAKEN_BASE_PERCENT)
-    : 0;
+  const synergyDamageIncreasePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_DAMAGE_INCREASE_CLASSES, SYNERGY_DAMAGE_INCREASE_PERCENT);
+  const synergyEnemyDamageTakenTierPercent = (backSameolChecked || headSameolChecked)
+    ? SYNERGY_ENEMY_DAMAGE_TAKEN_SAMEOL_PERCENT
+    : SYNERGY_ENEMY_DAMAGE_TAKEN_BASE_PERCENT;
+  const synergyEnemyDamageTakenPercent = sumPartySynergyPercent(partyClassNames, SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES, synergyEnemyDamageTakenTierPercent);
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
 
@@ -1821,9 +1824,22 @@ const SYNERGY_ATTACK_POWER_PERCENT = 6; // 공격력 증가 → 최종 데미지
 const SYNERGY_DEFENSE_REDUCTION_CLASSES = ['서머너', '워로드', '디스트로이어', '블래스터', '리퍼', '차원술사', '환수사'];
 const SYNERGY_DEFENSE_REDUCTION_PERCENT = 12; // 방어력 감소 → calculateDefenseMultiplier의 시너지A/B/C에 사용
 
-// 딜러 본인 직업(className)이 주어진 시너지 직업 목록에 속하면 해당 % 반환, 아니면 0
-function getClassSynergyPercent(className, classList, percent) {
-  return classList.includes(className) ? percent : 0;
+// 위 6개 시너지 직업 목록의 합집합 = 딜러 전체 직업 로스터 (이 코드베이스는 "직업 1개당 시너지 1개"
+// 규칙을 반영해 목록을 만들어왔으므로, 합집합이 곧 전체 딜러 직업 27종이 됨). 파티 시너지 직업
+// 선택 드롭다운(index.html)을 채우는 용도.
+const ALL_DEALER_CLASSES = Array.from(new Set([
+  ...SYNERGY_CRIT_RATE_CLASSES,
+  ...SYNERGY_CRIT_DAMAGE_CLASSES,
+  ...SYNERGY_DAMAGE_INCREASE_CLASSES,
+  ...SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES,
+  ...SYNERGY_ATTACK_POWER_CLASSES,
+  ...SYNERGY_DEFENSE_REDUCTION_CLASSES,
+]));
+
+// 파티(본인 포함 최대 3명) 직업 목록 중 주어진 시너지 직업 목록에 속하는 인원 수 × percent를 반환.
+// 같은 직업이 중복 선택될 일은 없다고 가정하고 종류 구분 없이 매치되는 만큼 그냥 더한다.
+function sumPartySynergyPercent(classNames, classList, percent) {
+  return (classNames || []).filter((c) => classList.includes(c)).length * percent;
 }
 
 // 백/헤드 사멸: 예전엔 체크박스로 수동 입력했지만, 실제로는 캐릭터가 채용한 직업각인(빌드)

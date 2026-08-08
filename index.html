@@ -12,20 +12,56 @@
   <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
   <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
   <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" placeholder="예: 80" min="0" max="100"></p>
+  <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" placeholder="예: 80" min="0" max="100"></p>
+  <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" placeholder="예: 80" min="0" max="100"></p>
+  <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select></p>
+  <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
   <button id="searchBtn">조회하기</button>
+  <button id="recalcBtn">재계산</button>
+  <button id="saveBaselineBtn">기준점으로 저장</button>
 
   <div id="result"></div>
 
   <script src="calculate.js"></script>
   <script>
     const searchBtn = document.getElementById('searchBtn');
+    const recalcBtn = document.getElementById('recalcBtn');
+    const saveBaselineBtn = document.getElementById('saveBaselineBtn');
     const dealerNameInput = document.getElementById('dealerName');
     const supportNameInput = document.getElementById('supportName');
     const effectiveRatioInput = document.getElementById('effectiveRatio');
     const brandEffectiveRatioInput = document.getElementById('brandEffectiveRatio');
+    const effectiveRatio1Input = document.getElementById('effectiveRatio1');
+    const effectiveRatio2Input = document.getElementById('effectiveRatio2');
+    const synergyClass2Select = document.getElementById('synergyClass2');
+    const synergyClass3Select = document.getElementById('synergyClass3');
     const resultDiv = document.getElementById('result');
 
-    
+    // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
+    [synergyClass2Select, synergyClass3Select].forEach((select) => {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '없음';
+      select.appendChild(emptyOption);
+      ALL_DEALER_CLASSES.forEach((className) => {
+        const option = document.createElement('option');
+        option.value = className;
+        option.textContent = className;
+        select.appendChild(option);
+      });
+    });
+
+    // 유효율 입력값(0~100)을 배율(0~1)로 변환, 빈 값이면 100%(=1)로 취급
+    function readRatio(inputEl) {
+      const value = inputEl.value.trim();
+      return value ? parseFloat(value) / 100 : 1;
+    }
+
+    let lastFetchedData = null; // 마지막 조회 성공한 API 응답 (재계산 시 API 재호출 없이 재사용)
+    let lastResults = null; // 마지막 렌더링에서 나온 { finalOutput, fullBuffOutput }
+    let baseline = null; // "기준점으로 저장" 버튼으로 수동 고정한 { finalOutput, fullBuffOutput }
+
+
     function stripHtml(str) {
       if (!str) return '';
       return String(str).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -50,12 +86,161 @@
       return lines;
     }
 
+    // API로 조회한 원시 데이터(data)와 현재 입력 필드 값으로 전체 계산을 다시 수행하고 렌더링.
+    // API를 재호출하지 않으므로 유효율/시너지 칸만 바꿔서 재계산하는 용도로도 재사용 가능.
+    function renderResults(data) {
+      const effectiveRatio = readRatio(effectiveRatioInput);
+      const brandEffectiveRatio = readRatio(brandEffectiveRatioInput);
+      const effectiveRatio1 = readRatio(effectiveRatio1Input);
+      const effectiveRatio2 = readRatio(effectiveRatio2Input);
+      const partyClassNames = [synergyClass2Select.value, synergyClass3Select.value].filter(Boolean);
+
+      const dealerStats = calculateCharacterStats(data.dealer);
+      const supportStats = calculateCharacterStats(data.support);
+
+      if (!dealerStats || !supportStats) {
+        resultDiv.textContent = '무기 정보를 찾을 수 없습니다.';
+        return;
+      }
+
+      // 서포터 버프력 계산
+      const allyBuffPercent = getTotalAllyAttackBuffPercent(
+        data.support.equipment, supportStats.braceletOptions, data.support.arkgrid
+      );
+      const buffGemPercent = getSupportBuffGemPercent(data.support.gems, supportStats.className);
+      const supportBuffPower = calculateSupportBuffPower(
+        supportStats.basePower, allyBuffPercent, buffGemPercent, effectiveRatio
+      );
+
+      // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
+      const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
+      const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
+      const fullPartyClassNames = [dealerStats.className, ...partyClassNames];
+      const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
+      const finalDamage = calculateFinalDamage(
+        dealerStats.basePower,
+        dealerStats.accessoryAttackFlat,
+        dealerStats.chaosCoreAttack.flat,
+        supportBuffPower,
+        dealerStats.chaosCoreAttack.percent,
+        dealerStats.earringAttackPercent,
+        dealerStats.arkgridGemsAttackPercent,
+        adrenalineBonus,
+        classSynergyAttackPercent
+      );
+      // 치명타 계산 (실험용, 백/헤드 사멸은 채용한 직업각인 노드로 자동 판정됨)
+      const critResult = calculateCritMultiplier(data.dealer, data.support, { partyClassNames });
+
+      // 추가 피해 계산 (실험용)
+      const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
+
+      // 적에게 주는 피해 계산 (실험용)
+      const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio, { partyClassNames });
+
+      // 서포터 낙인 배율 계산 (실험용)
+      const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
+
+      // 서포터 아군 피해량 증가 버프 계산 (실험용, 도화가/바드/홀리나이트/발키리만 지원)
+      const adenkiDamageBuffResult = calculateSupportAdenkiDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio1 });
+      const hyperAwakeningDamageBuffResult = calculateSupportHyperAwakeningDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio2 });
+
+      // 카드 추가피해 계산 (실험용, 현재는 리스트박스 없이 최대치/기본값 가정)
+      const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
+
+      // 방어율 계산 (실험용, 암흑수류탄/서폿팔찌 방어력감소는 아직 미구현 - 기본값 0)
+      const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
+      const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
+
+      // 최종 산출식 = 최종데미지 × 치명타배율 × 추가피해 × 적에게 주는 피해 × 방어율 × 서포터 낙인 × 카드
+      const finalOutputResult = calculateFinalOutput(
+        finalDamage,
+        critResult.avgDamageMultiplier,
+        extraDamageResult.multiplier,
+        enemyDamageResult.multiplier,
+        defenseResult.multiplier,
+        brandResult.multiplier,
+        cardExtraDamageResult.multiplier
+      );
+
+      // 풀버프 최종 산출식 = 최종 산출식 × 서폿 아군 피해량 증가(아덴기) × 서폿 아군 피해량 증가(초각성)
+      const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
+        finalOutputResult.output,
+        adenkiDamageBuffResult.multiplier,
+        hyperAwakeningDamageBuffResult.multiplier
+      );
+
+      lastResults = { finalOutput: finalOutputResult.output, fullBuffOutput: fullBuffFinalOutputResult.output };
+
+      const baselineHtml = baseline ? `
+          <h2>기준점 대비</h2>
+          <p>최종 산출식: 기준점 ${baseline.finalOutput.toLocaleString()} → 현재 ${finalOutputResult.output.toLocaleString()}
+             (${(((finalOutputResult.output - baseline.finalOutput) / baseline.finalOutput) * 100).toFixed(2)}%)</p>
+          <p>풀버프 최종 산출식: 기준점 ${baseline.fullBuffOutput.toLocaleString()} → 현재 ${fullBuffFinalOutputResult.output.toLocaleString()}
+             (${(((fullBuffFinalOutputResult.output - baseline.fullBuffOutput) / baseline.fullBuffOutput) * 100).toFixed(2)}%)</p>
+      ` : '';
+
+      resultDiv.innerHTML = `
+        <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
+        <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
+        <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
+        <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
+        <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
+        <p>자동 감지된 사멸 타입: ${critResult.자동감지_사멸타입 || '없음'}</p>
+        <p>치명타 적중률: ${critResult.critRatePercent.toFixed(2)}%</p>
+        <pre>${JSON.stringify(critResult.critRateBreakdown, null, 2)}</pre>
+        <p>치명타 피해: ${critResult.critDamagePercent.toFixed(2)}%</p>
+        <pre>${JSON.stringify(critResult.critDamageBreakdown, null, 2)}</pre>
+        <p>곱연산 항목: </p>
+        <pre>${JSON.stringify(critResult.onHitBreakdown, null, 2)}</pre>
+        <p>치명타 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
+        <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
+        ${extraDamageResult.qualityTooLow
+          ? '<p style="color:red;">무기 품질 70% 미만은 표시 불가</p>'
+          : `<p>추가 피해 배율: ${extraDamageResult.multiplier.toFixed(4)}</p>
+             <pre>${JSON.stringify(extraDamageResult.extraDamageBreakdown, null, 2)}</pre>`
+        }
+        <p>적에게 주는 피해 배율: ${enemyDamageResult.multiplier.toFixed(4)}</p>
+        <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
+        <p>카드 추가피해 배율: ${cardExtraDamageResult.multiplier.toFixed(4)}</p>
+        <pre>${JSON.stringify({
+          속성_피해_증가율: cardExtraDamageResult.breakdown.속성_피해_증가율,
+          속성_각성: cardExtraDamageResult.breakdown.속성_각성,
+          계열_피해_증가율: cardExtraDamageResult.breakdown.계열_피해_증가율,
+        }, null, 2)}</pre>
+        <p>시너지(파티 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
+        <p>방어율 배율: ${defenseResult.multiplier.toFixed(4)}</p>
+        <pre>${JSON.stringify(defenseResult.breakdown, null, 2)}</pre>
+
+        <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
+        <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
+        <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
+        <p>공증 버프 보석%: ${buffGemPercent}</p>
+        <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
+        <p>아군 피해량 증가(아덴기) 배율: ${adenkiDamageBuffResult.multiplier.toFixed(4)}</p>
+        <pre>${JSON.stringify(adenkiDamageBuffResult.breakdown, null, 2)}</pre>
+        <p>아군 피해량 증가(초각성) 배율: ${hyperAwakeningDamageBuffResult.multiplier.toFixed(4)}</p>
+        <pre>${JSON.stringify(hyperAwakeningDamageBuffResult.breakdown, null, 2)}</pre>
+        <p>서폿 낙인력 총합: ${brandResult.breakdown.낙인력_합계.toFixed(2)}%</p>
+        <p>낙인 배율: ${brandResult.multiplier.toFixed(4)}</p>
+        <p>서폿카드 받는 피해 증가율: ${cardExtraDamageResult.breakdown.서폿카드_받는피해_증가율}%</p>
+        <pre>${JSON.stringify({
+          서폿카드_티어: cardExtraDamageResult.breakdown.서폿카드_티어,
+          서폿카드_각성: cardExtraDamageResult.breakdown.서폿카드_각성,
+        }, null, 2)}</pre>
+        <pre>${JSON.stringify(brandResult.breakdown, null, 2)}</pre>
+
+        <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
+        <h2>최종 산출식: ${finalOutputResult.output.toLocaleString()}</h2>
+        <pre>${JSON.stringify(finalOutputResult.breakdown, null, 2)}</pre>
+        <h2>풀버프 최종 산출식: ${fullBuffFinalOutputResult.output.toLocaleString()}</h2>
+        <pre>${JSON.stringify(fullBuffFinalOutputResult.breakdown, null, 2)}</pre>
+        ${baselineHtml}
+      `;
+    }
+
     searchBtn.addEventListener('click', async () => {
       const dealerName = dealerNameInput.value.trim();
       const supportName = supportNameInput.value.trim();
-      const effectiveRatio = 1; // 공증 유효율 임시 고정 (나중에 시뮬레이터에서 다시 활성화 예정
-      const brandEffectiveRatioValue = brandEffectiveRatioInput.value.trim();
-      const brandEffectiveRatio = brandEffectiveRatioValue ? parseFloat(brandEffectiveRatioValue) / 100 : 1;
 
       if (!dealerName || !supportName) {
         resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
@@ -73,139 +258,28 @@
           return;
         }
 
-        const dealerStats = calculateCharacterStats(data.dealer);
-        const supportStats = calculateCharacterStats(data.support);
-
-        if (!dealerStats || !supportStats) {
-          resultDiv.textContent = '무기 정보를 찾을 수 없습니다.';
-          return;
-        }
-
-        // 서포터 버프력 계산
-        const allyBuffPercent = getTotalAllyAttackBuffPercent(
-          data.support.equipment, supportStats.braceletOptions, data.support.arkgrid
-        );
-        const buffGemPercent = getSupportBuffGemPercent(data.support.gems, supportStats.className);
-        const supportBuffPower = calculateSupportBuffPower(
-          supportStats.basePower, allyBuffPercent, buffGemPercent, effectiveRatio
-        );
-
-        // 최종 데미지 계산 (딜러 스탯 + 서포터 버프력)
-        const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
-        const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
-        const classSynergyAttackPercent = getClassSynergyPercent(dealerStats.className, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
-        const finalDamage = calculateFinalDamage(
-
-          dealerStats.basePower,
-          dealerStats.accessoryAttackFlat,
-          dealerStats.chaosCoreAttack.flat,
-          supportBuffPower,
-          dealerStats.chaosCoreAttack.percent,
-          dealerStats.earringAttackPercent,
-          dealerStats.arkgridGemsAttackPercent,
-          adrenalineBonus,
-          classSynergyAttackPercent
-        );
-// 치명타 계산 (실험용, 백/헤드 사멸은 채용한 직업각인 노드로 자동 판정됨)
-        const critResult = calculateCritMultiplier(data.dealer, data.support);
-
-        // 추가 피해 계산 (실험용)
-        const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
-
-        // 적에게 주는 피해 계산 (실험용)
-        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio);
-
-        // 서포터 낙인 배율 계산 (실험용)
-        const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
-
-        // 서포터 아군 피해량 증가 버프 계산 (실험용, 도화가/바드/홀리나이트/발키리만 지원)
-        const adenkiDamageBuffResult = calculateSupportAdenkiDamageBuffMultiplier(data.support, supportStats.className, {});
-        const hyperAwakeningDamageBuffResult = calculateSupportHyperAwakeningDamageBuffMultiplier(data.support, supportStats.className, {});
-
-        // 카드 추가피해 계산 (실험용, 현재는 리스트박스 없이 최대치/기본값 가정)
-        const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
-
-        // 방어율 계산 (실험용, 암흑수류탄/서폿팔찌 방어력감소는 아직 미구현 - 기본값 0)
-        const classSynergyDefenseReductionPercent = getClassSynergyPercent(dealerStats.className, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
-        const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
-
-        // 최종 산출식 = 최종데미지 × 치명타배율 × 추가피해 × 적에게 주는 피해 × 방어율 × 서포터 낙인 × 카드
-        const finalOutputResult = calculateFinalOutput(
-          finalDamage,
-          critResult.avgDamageMultiplier,
-          extraDamageResult.multiplier,
-          enemyDamageResult.multiplier,
-          defenseResult.multiplier,
-          brandResult.multiplier,
-          cardExtraDamageResult.multiplier
-        );
-
-        // 풀버프 최종 산출식 = 최종 산출식 × 서폿 아군 피해량 증가(아덴기) × 서폿 아군 피해량 증가(초각성)
-        const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
-          finalOutputResult.output,
-          adenkiDamageBuffResult.multiplier,
-          hyperAwakeningDamageBuffResult.multiplier
-        );
-
-        resultDiv.innerHTML = `
-          <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
-          <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
-          <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
-          <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
-          <p>스탯창 공격력: ${dealerStats.statWindowAttack.toLocaleString()}</p>
-          <p>자동 감지된 사멸 타입: ${critResult.자동감지_사멸타입 || '없음'}</p>
-          <p>치명타 적중률: ${critResult.critRatePercent.toFixed(2)}%</p>
-          <pre>${JSON.stringify(critResult.critRateBreakdown, null, 2)}</pre>
-          <p>치명타 피해: ${critResult.critDamagePercent.toFixed(2)}%</p>
-          <pre>${JSON.stringify(critResult.critDamageBreakdown, null, 2)}</pre>
-          <p>곱연산 항목: </p>
-          <pre>${JSON.stringify(critResult.onHitBreakdown, null, 2)}</pre>
-          <p>치명타 피해 배율: ${critResult.avgDamageMultiplier.toFixed(4)}</p>
-          <p>아드레날린 각인 보너스: ${adrenalineBonus}%</p>
-          ${extraDamageResult.qualityTooLow
-            ? '<p style="color:red;">무기 품질 70% 미만은 표시 불가</p>'
-            : `<p>추가 피해 배율: ${extraDamageResult.multiplier.toFixed(4)}</p>
-               <pre>${JSON.stringify(extraDamageResult.extraDamageBreakdown, null, 2)}</pre>`
-          }
-          <p>적에게 주는 피해 배율: ${enemyDamageResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify(enemyDamageResult.breakdown, null, 2)}</pre>
-          <p>카드 추가피해 배율: ${cardExtraDamageResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify({
-            속성_피해_증가율: cardExtraDamageResult.breakdown.속성_피해_증가율,
-            속성_각성: cardExtraDamageResult.breakdown.속성_각성,
-            계열_피해_증가율: cardExtraDamageResult.breakdown.계열_피해_증가율,
-          }, null, 2)}</pre>
-          <p>시너지(본인 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
-          <p>방어율 배율: ${defenseResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify(defenseResult.breakdown, null, 2)}</pre>
-
-          <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
-          <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
-          <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
-          <p>공증 버프 보석%: ${buffGemPercent}</p>
-          <p>서포터 버프력: ${supportBuffPower.toLocaleString()}</p>
-          <p>아군 피해량 증가(아덴기) 배율: ${adenkiDamageBuffResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify(adenkiDamageBuffResult.breakdown, null, 2)}</pre>
-          <p>아군 피해량 증가(초각성) 배율: ${hyperAwakeningDamageBuffResult.multiplier.toFixed(4)}</p>
-          <pre>${JSON.stringify(hyperAwakeningDamageBuffResult.breakdown, null, 2)}</pre>
-          <p>서폿 낙인력 총합: ${brandResult.breakdown.낙인력_합계.toFixed(2)}%</p>
-          <p>낙인 배율: ${brandResult.multiplier.toFixed(4)}</p>
-          <p>서폿카드 받는 피해 증가율: ${cardExtraDamageResult.breakdown.서폿카드_받는피해_증가율}%</p>
-          <pre>${JSON.stringify({
-            서폿카드_티어: cardExtraDamageResult.breakdown.서폿카드_티어,
-            서폿카드_각성: cardExtraDamageResult.breakdown.서폿카드_각성,
-          }, null, 2)}</pre>
-          <pre>${JSON.stringify(brandResult.breakdown, null, 2)}</pre>
-
-          <h2>최종 공격력: ${finalDamage.toLocaleString()}</h2>
-          <h2>최종 산출식: ${finalOutputResult.output.toLocaleString()}</h2>
-          <pre>${JSON.stringify(finalOutputResult.breakdown, null, 2)}</pre>
-          <h2>풀버프 최종 산출식: ${fullBuffFinalOutputResult.output.toLocaleString()}</h2>
-          <pre>${JSON.stringify(fullBuffFinalOutputResult.breakdown, null, 2)}</pre>
-        `;
+        lastFetchedData = data;
+        renderResults(data);
       } catch (error) {
         resultDiv.textContent = '오류가 발생했습니다: ' + error.message;
       }
+    });
+
+    recalcBtn.addEventListener('click', () => {
+      if (!lastFetchedData) {
+        resultDiv.textContent = '먼저 조회하기를 눌러주세요.';
+        return;
+      }
+      renderResults(lastFetchedData);
+    });
+
+    saveBaselineBtn.addEventListener('click', () => {
+      if (!lastResults) {
+        resultDiv.textContent = '먼저 조회하기를 눌러주세요.';
+        return;
+      }
+      baseline = { ...lastResults };
+      renderResults(lastFetchedData);
     });
   </script>
 </body>
