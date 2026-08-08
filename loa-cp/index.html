@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>로아 CP - 캐릭터 시뮬레이터</title>
+</head>
+<body>
+  <div id="searchScreen">
+    <h1>로아 CP</h1>
+
+    <p>딜러 닉네임: <input type="text" id="dealerName" placeholder="딜러 캐릭터명"></p>
+    <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
+
+    <p>
+      <label><input type="radio" name="simMode" value="dealer" checked> 딜러용 시뮬</label>
+      <label><input type="radio" name="simMode" value="support"> 서폿용 시뮬</label>
+      <label><input type="radio" name="simMode" value="duo"> 딜러&서폿 동시 시뮬</label>
+    </p>
+
+    <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" min="0" max="100"></p>
+    <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" min="0" max="100"></p>
+    <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" min="0" max="100"></p>
+    <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" min="0" max="100"></p>
+    <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select></p>
+    <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
+
+    <button id="searchBtn">조회하기</button>
+    <div id="searchMessage"></div>
+  </div>
+
+  <div id="dealerView" style="display:none;">
+    <button class="backBtn">← 돌아가기</button>
+    <h2>딜러용 시뮬</h2>
+    <div class="viewBody"></div>
+  </div>
+
+  <div id="supportView" style="display:none;">
+    <button class="backBtn">← 돌아가기</button>
+    <h2>서폿용 시뮬</h2>
+    <div class="viewBody"></div>
+  </div>
+
+  <div id="duoView" style="display:none;">
+    <button class="backBtn">← 돌아가기</button>
+    <h2>딜러&서폿 동시 시뮬</h2>
+    <div class="viewBody"></div>
+  </div>
+
+  <script src="/calculate.js"></script>
+  <script>
+    const searchScreen = document.getElementById('searchScreen');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchMessage = document.getElementById('searchMessage');
+    const dealerNameInput = document.getElementById('dealerName');
+    const supportNameInput = document.getElementById('supportName');
+    const effectiveRatioInput = document.getElementById('effectiveRatio');
+    const brandEffectiveRatioInput = document.getElementById('brandEffectiveRatio');
+    const effectiveRatio1Input = document.getElementById('effectiveRatio1');
+    const effectiveRatio2Input = document.getElementById('effectiveRatio2');
+    const synergyClass2Select = document.getElementById('synergyClass2');
+    const synergyClass3Select = document.getElementById('synergyClass3');
+
+    const views = {
+      dealer: document.getElementById('dealerView'),
+      support: document.getElementById('supportView'),
+      duo: document.getElementById('duoView'),
+    };
+
+    // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
+    [synergyClass2Select, synergyClass3Select].forEach((select) => {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '없음';
+      select.appendChild(emptyOption);
+      ALL_DEALER_CLASSES.forEach((className) => {
+        const option = document.createElement('option');
+        option.value = className;
+        option.textContent = className;
+        select.appendChild(option);
+      });
+    });
+
+    // 닉네임 한쪽만 입력했을 때 반대쪽에 임의로 채워 넣는 기본 캐릭터
+    const DEFAULT_DEALER_NAME = '잼구릿';
+    const DEFAULT_SUPPORT_NAME = '히유시';
+
+    // 서포터 직업별 기본 유효율(%) 표. 입력칸을 비워두면 서포터 직업에 따라 이 값을 사용.
+    const DEFAULT_SUPPORT_RATIO_TABLE = {
+      '도화가': { 공증: 95.3, 낙인: 98, 피증1: 84.18, 피증2: 47.42 },
+      '바드': { 공증: 94.15, 낙인: 98, 피증1: 71.69, 피증2: 43.06 },
+      '홀리나이트': { 공증: 97.5, 낙인: 98, 피증1: 74.13, 피증2: 43.43 },
+      '발키리': { 공증: 97.14, 낙인: 98, 피증1: 75.46, 피증2: 42.59 },
+    };
+
+    // 유효율 입력값(0~100)을 배율(0~1)로 변환.
+    // 값을 직접 입력했으면 그 값을, 비워뒀으면 서포터 직업별 기본표 값을, 표에도 없으면 100%(=1)를 사용.
+    function readRatio(inputEl, className, ratioKey) {
+      const value = inputEl.value.trim();
+      if (value) return parseFloat(value) / 100;
+      const classDefault = DEFAULT_SUPPORT_RATIO_TABLE[className]?.[ratioKey];
+      return classDefault !== undefined ? classDefault / 100 : 1;
+    }
+
+    function showView(mode) {
+      searchScreen.style.display = 'none';
+      Object.values(views).forEach((view) => { view.style.display = 'none'; });
+      views[mode].style.display = '';
+    }
+
+    function backToSearch() {
+      Object.values(views).forEach((view) => { view.style.display = 'none'; });
+      searchScreen.style.display = '';
+    }
+
+    document.querySelectorAll('.backBtn').forEach((btn) => {
+      btn.addEventListener('click', backToSearch);
+    });
+
+    searchBtn.addEventListener('click', async () => {
+      const dealerNameRaw = dealerNameInput.value.trim();
+      const supportNameRaw = supportNameInput.value.trim();
+
+      if (!dealerNameRaw && !supportNameRaw) {
+        searchMessage.textContent = '한개 이상의 닉네임을 입력하세요';
+        return;
+      }
+
+      const dealerIsDefault = !dealerNameRaw;
+      const supportIsDefault = !supportNameRaw;
+      const dealerName = dealerNameRaw || DEFAULT_DEALER_NAME;
+      const supportName = supportNameRaw || DEFAULT_SUPPORT_NAME;
+      const simMode = document.querySelector('input[name="simMode"]:checked').value;
+
+      searchMessage.textContent = '조회 중...';
+
+      try {
+        const response = await fetch(`/api/character?dealer=${encodeURIComponent(dealerName)}&support=${encodeURIComponent(supportName)}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+          searchMessage.textContent = data.error || '조회에 실패했습니다.';
+          return;
+        }
+
+        searchMessage.textContent = '';
+
+        const dealerStats = calculateCharacterStats(data.dealer);
+        const supportStats = calculateCharacterStats(data.support);
+
+        if (!dealerStats || !supportStats) {
+          searchMessage.textContent = '무기 정보를 찾을 수 없습니다.';
+          return;
+        }
+
+        const dealerLabel = dealerIsDefault ? '' : dealerStats.characterName;
+        const supportLabel = supportIsDefault ? '' : supportStats.characterName;
+
+        const viewBody = views[simMode].querySelector('.viewBody');
+        viewBody.innerHTML = `
+          <p>딜러: ${dealerLabel} (${dealerStats.className})</p>
+          <p>서포터: ${supportLabel} (${supportStats.className})</p>
+          <p>(이 화면의 상세 계산 내용은 준비 중입니다.)</p>
+        `;
+
+        showView(simMode);
+      } catch (error) {
+        searchMessage.textContent = '오류가 발생했습니다: ' + error.message;
+      }
+    });
+  </script>
+</body>
+</html>
