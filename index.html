@@ -10,10 +10,10 @@
 
   <p>딜러 닉네임: <input type="text" id="dealerName" placeholder="딜러 캐릭터명"></p>
   <p>서포터 닉네임: <input type="text" id="supportName" placeholder="서포터 캐릭터명"></p>
-  <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" placeholder="예: 80" min="0" max="100"></p>
-  <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" placeholder="예: 80" min="0" max="100"></p>
-  <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" placeholder="예: 80" min="0" max="100"></p>
-  <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" placeholder="예: 80" min="0" max="100"></p>
+  <p>공증 유효율(0~100): <input type="number" id="effectiveRatio" min="0" max="100"></p>
+  <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" min="0" max="100"></p>
+  <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" min="0" max="100"></p>
+  <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" min="0" max="100"></p>
   <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select></p>
   <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
   <button id="searchBtn">조회하기</button>
@@ -51,10 +51,25 @@
       });
     });
 
-    // 유효율 입력값(0~100)을 배율(0~1)로 변환, 빈 값이면 100%(=1)로 취급
-    function readRatio(inputEl) {
+    // 닉네임 한쪽만 입력했을 때 반대쪽에 임의로 채워 넣는 기본 캐릭터
+    const DEFAULT_DEALER_NAME = '잼구릿';
+    const DEFAULT_SUPPORT_NAME = '히유시';
+
+    // 서포터 직업별 기본 유효율(%) 표. 입력칸을 비워두면 서포터 직업에 따라 이 값을 사용.
+    const DEFAULT_SUPPORT_RATIO_TABLE = {
+      '도화가': { 공증: 95.3, 낙인: 98, 피증1: 84.18, 피증2: 47.42 },
+      '바드': { 공증: 94.15, 낙인: 98, 피증1: 71.69, 피증2: 43.06 },
+      '홀리나이트': { 공증: 97.5, 낙인: 98, 피증1: 74.13, 피증2: 43.43 },
+      '발키리': { 공증: 97.14, 낙인: 98, 피증1: 75.46, 피증2: 42.59 },
+    };
+
+    // 유효율 입력값(0~100)을 배율(0~1)로 변환.
+    // 값을 직접 입력했으면 그 값을, 비워뒀으면 서포터 직업별 기본표 값을, 표에도 없으면 100%(=1)를 사용.
+    function readRatio(inputEl, className, ratioKey) {
       const value = inputEl.value.trim();
-      return value ? parseFloat(value) / 100 : 1;
+      if (value) return parseFloat(value) / 100;
+      const classDefault = DEFAULT_SUPPORT_RATIO_TABLE[className]?.[ratioKey];
+      return classDefault !== undefined ? classDefault / 100 : 1;
     }
 
     let lastFetchedData = null; // 마지막 조회 성공한 API 응답 (재계산 시 API 재호출 없이 재사용)
@@ -89,10 +104,6 @@
     // API로 조회한 원시 데이터(data)와 현재 입력 필드 값으로 전체 계산을 다시 수행하고 렌더링.
     // API를 재호출하지 않으므로 유효율/시너지 칸만 바꿔서 재계산하는 용도로도 재사용 가능.
     function renderResults(data) {
-      const effectiveRatio = readRatio(effectiveRatioInput);
-      const brandEffectiveRatio = readRatio(brandEffectiveRatioInput);
-      const effectiveRatio1 = readRatio(effectiveRatio1Input);
-      const effectiveRatio2 = readRatio(effectiveRatio2Input);
       const partyClassNames = [synergyClass2Select.value, synergyClass3Select.value].filter(Boolean);
 
       const dealerStats = calculateCharacterStats(data.dealer);
@@ -102,6 +113,11 @@
         resultDiv.textContent = '무기 정보를 찾을 수 없습니다.';
         return;
       }
+
+      const effectiveRatio = readRatio(effectiveRatioInput, supportStats.className, '공증');
+      const brandEffectiveRatio = readRatio(brandEffectiveRatioInput, supportStats.className, '낙인');
+      const effectiveRatio1 = readRatio(effectiveRatio1Input, supportStats.className, '피증1');
+      const effectiveRatio2 = readRatio(effectiveRatio2Input, supportStats.className, '피증2');
 
       // 서포터 버프력 계산
       const allyBuffPercent = getTotalAllyAttackBuffPercent(
@@ -180,7 +196,7 @@
       ` : '';
 
       resultDiv.innerHTML = `
-        <h2>딜러: ${dealerStats.characterName} (${dealerStats.className})</h2>
+        <h2>딜러: ${data.dealerIsDefault ? '' : dealerStats.characterName} (${dealerStats.className})</h2>
         <p>무기 공격력: ${dealerStats.weaponAttack.toLocaleString()}</p>
         <p>순수 공격력: ${dealerStats.purePower.toLocaleString()}</p>
         <p>기본 공격력: ${dealerStats.basePower.toLocaleString()}</p>
@@ -211,7 +227,7 @@
         <p>방어율 배율: ${defenseResult.multiplier.toFixed(4)}</p>
         <pre>${JSON.stringify(defenseResult.breakdown, null, 2)}</pre>
 
-        <h2>서포터: ${supportStats.characterName} (${supportStats.className})</h2>
+        <h2>서포터: ${data.supportIsDefault ? '' : supportStats.characterName} (${supportStats.className})</h2>
         <p>기본 공격력: ${supportStats.basePower.toLocaleString()}</p>
         <p>아군 공격력 강화 총합%: ${allyBuffPercent}</p>
         <p>공증 버프 보석%: ${buffGemPercent}</p>
@@ -239,13 +255,18 @@
     }
 
     searchBtn.addEventListener('click', async () => {
-      const dealerName = dealerNameInput.value.trim();
-      const supportName = supportNameInput.value.trim();
+      const dealerNameRaw = dealerNameInput.value.trim();
+      const supportNameRaw = supportNameInput.value.trim();
 
-      if (!dealerName || !supportName) {
-        resultDiv.textContent = '딜러와 서포터 닉네임을 모두 입력해주세요.';
+      if (!dealerNameRaw && !supportNameRaw) {
+        resultDiv.textContent = '한개 이상의 닉네임을 입력하세요';
         return;
       }
+
+      const dealerIsDefault = !dealerNameRaw;
+      const supportIsDefault = !supportNameRaw;
+      const dealerName = dealerNameRaw || DEFAULT_DEALER_NAME;
+      const supportName = supportNameRaw || DEFAULT_SUPPORT_NAME;
 
       resultDiv.textContent = '조회 중...';
 
@@ -257,6 +278,9 @@
           resultDiv.textContent = data.error || '조회에 실패했습니다.';
           return;
         }
+
+        data.dealerIsDefault = dealerIsDefault;
+        data.supportIsDefault = supportIsDefault;
 
         lastFetchedData = data;
         renderResults(data);
