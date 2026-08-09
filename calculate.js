@@ -193,6 +193,16 @@ function getEarringAttackPercent(equipmentList) {
   return total;
 }
 
+// 귀걸이 연마옵션의 "무기 공격력 %" 합산 (무기 공격력 계산에 쓰이는 별도 값, 위 공격력%와는 다른 옵션)
+function getEarringWeaponAttackPercent(equipmentList) {
+  let total = 0;
+  (equipmentList || []).filter((it) => it.Type === '귀걸이').forEach((it) => {
+    const text = parseTooltip(it.Tooltip).join(' ');
+    total += extractPercent(text, '무기 공격력');
+  });
+  return total;
+}
+
 // 혼돈의 별 코어의 "공격력" 고정값/%값 (무기 공격력 제외)
 function getChaosStarCoreAttack(arkgridData) {
   let flat = 0;
@@ -547,6 +557,37 @@ function getAbilityStoneBaseAttackPercent(equipmentList) {
   return 0;
 }
 
+// 어빌리티 스톤의 "무작위 각인 효과" 슬롯을 이름/레벨 그대로 나열 (표시용).
+// "[돌격대장] Lv.3", "[아드레날린] Lv.2", "[방어력 감소] Lv.0"처럼 스톤마다 어떤 각인이 걸렸는지 다르므로
+// 치명타피해 등 특정 스탯을 고정으로 찾지 않고 실제로 들어있는 각인 효과를 그대로 반환한다.
+// "레벨 보너스"(기본 공격력 %, getAbilityStoneBaseAttackPercent가 별도 처리) 줄은 제외.
+function getAbilityStoneEngravingEffects(equipmentList) {
+  const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
+  if (!stone) return [];
+
+  const effects = [];
+  try {
+    const obj = JSON.parse(stone.Tooltip);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (el && el.type === 'IndentStringGroup' && el.value) {
+        for (const groupKey of Object.keys(el.value)) {
+          const contentStr = el.value[groupKey].contentStr;
+          if (!contentStr) continue;
+          for (const itemKey of Object.keys(contentStr)) {
+            const line = stripHtml(contentStr[itemKey].contentStr || '');
+            if (line.includes('레벨 보너스')) continue;
+            const match = line.match(/\[\s*(.+?)\s*\]\s*Lv\.(\d+)/);
+            if (match) effects.push({ name: match[1], level: Number(match[2]) });
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  return effects;
+}
+
 // 기본 공격력 = 순수 공격력 × (1 + (보석% + 세공%)/100)
 function calculateBaseAttackPower(purePower, gemPercent, stonePercent) {
   return purePower * (1 + (gemPercent + stonePercent) / 100);
@@ -696,12 +737,7 @@ function calculateCharacterStats(data) {
   const braceletOptions = parseBraceletOptions(braceletText);
   const braceletFlat = braceletOptions.weaponAttackFlat;
 
-  const earringItems = (data.equipment || []).filter((it) => it.Type === '귀걸이');
-  let earringWeaponPercent = 0;
-  earringItems.forEach((it) => {
-    const text = parseTooltip(it.Tooltip).join(' ');
-    earringWeaponPercent += extractPercent(text, '무기 공격력');
-  });
+  const earringWeaponPercent = getEarringWeaponAttackPercent(data.equipment);
 
   let coreFlat = 0;
   let corePercentWeapon = 0;
