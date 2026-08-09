@@ -136,6 +136,28 @@ function extractPercentExcluding(text, includeLabel, excludeLabel) {
   return extractPercent(cleaned, includeLabel);
 }
 
+// 라벨 뒤에 "14.0%, 28.0%, 42.0%"처럼 쉼표로 나열된 단계별 값이 있으면 그중 최댓값만 사용
+// (조건부 다단계 버프는 최댓값 달성을 가정하는 기존 관례와 동일), 값이 하나면 그 값 그대로 사용.
+// labelPattern은 그대로 정규식 소스 문자열로 들어감(라벨 자체가 정규식이어도 됨).
+function extractPercentMaxSequence(text, labelPattern) {
+  if (!text) return 0;
+  const regex = new RegExp(labelPattern + '[^\\d%]{0,6}((?:[\\d.]+\\s*%[,\\s]*)+)', 'g');
+  let total = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const numbers = m[1].match(/[\d.]+/g).map(Number);
+    total += Math.max(...numbers);
+  }
+  return total;
+}
+
+// extractPercentMaxSequence의 "다른 라벨 제외" 버전 (extractPercentExcluding과 동일한 제외 방식)
+function extractPercentMaxSequenceExcluding(text, includeLabel, excludeLabel) {
+  if (!text) return 0;
+  const cleaned = text.replace(new RegExp(excludeLabel + '[^\\d%]{0,6}[\\d.]+\\s*%', 'g'), '');
+  return extractPercentMaxSequence(cleaned, includeLabel);
+}
+
 // 코어 구간에서 특정 라벨은 포함, 다른 라벨은 제외하고 합산
 function sumCoreSegmentsExcluding(segments, includeLabel, excludeLabel) {
   let flat = 0;
@@ -652,11 +674,11 @@ function calculateSupportBuffPower(basePower, allyAttackBuffPercent, buffGemPerc
   return basePower * 0.22 * (1 + (allyAttackBuffPercent + buffGemPercent) / 100) * effectiveRatio;
 }
 
-// 최종 데미지 = (기본공격력 + 악세공격력고정 + 코어공격력고정 + 서포터버프력) × (1+(코어%+귀걸이%+젬%+아드레날린보너스)/100) × (1+시너지_공격력증가%/100)
+// 최종 데미지 = (기본공격력 + 악세공격력고정 + 코어공격력고정 + 서포터버프력) × (1+(코어%+귀걸이%+젬%+아드레날린보너스+아크패시브상시버프공격력%)/100) × (1+시너지_공격력증가%/100)
 // 시너지_공격력증가(기공사/스카우터 6%)는 딜러 본인 직업이 해당될 때만 자동 반영되는 값 — SYNERGY_ATTACK_POWER_CLASSES 참고
-function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPower, corePercent, earringPercent, gemPercent, adrenalineBonus, classSynergyAttackPercent) {
+function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPower, corePercent, earringPercent, gemPercent, adrenalineBonus, classSynergyAttackPercent, arkPassiveAttackPercent) {
   const flatTotal = basePower + accessoryFlat + coreFlat + supportBuffPower;
-  const percentSum = corePercent + earringPercent + gemPercent + (adrenalineBonus || 0);
+  const percentSum = corePercent + earringPercent + gemPercent + (adrenalineBonus || 0) + (arkPassiveAttackPercent || 0);
   return flatTotal * toMultiplier(percentSum) * toMultiplier(classSynergyAttackPercent || 0);
 }
 
@@ -811,6 +833,46 @@ function getArkPassiveEffectsTextExcluding(arkpassiveData, category, excludeWord
       }
     })
     .join(' ');
+}
+
+// arkpassive Effects 배열에서 특정 카테고리 텍스트를 전부 이어붙여 반환 (조건부/시간제한 텍스트도 일단 포함 —
+// 어떤 노드를 예외로 뺄지는 사용자가 클래스별로 직접 정리해서 알려줄 예정이라, 그 전까지는 전부 포함해서 계산)
+function getArkPassivePersistentEffectsText(arkpassiveData, category, excludeWord) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return '';
+  return arkpassiveData.Effects
+    .filter((e) => e.Name === category && !(excludeWord && (e.Description || '').includes(excludeWord)))
+    .map((e) => {
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        return obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+      } catch (err) {
+        return '';
+      }
+    })
+    .join(' ');
+}
+
+// 아크패시브(진화+깨달음)의 공격력 % 합산 ("무기 공격력"과는 별개). 조건부/시간제한 노드도 일단 포함 —
+// 클래스별 제외 목록이 정리되면 excludeWord 등으로 빼는 방식으로 다듬을 예정.
+function getArkPassivePersistentAttackPercent(arkpassiveData) {
+  const evo = getArkPassivePersistentEffectsText(arkpassiveData, '진화');
+  const real = getArkPassivePersistentEffectsText(arkpassiveData, '깨달음');
+  return extractPercentMaxSequenceExcluding(evo, '공격력', '무기 공격력') + extractPercentMaxSequenceExcluding(real, '공격력', '무기 공격력');
+}
+
+// 아크패시브(진화+깨달음)의 "적에게 주는 피해" % 합산. 조건부/시간제한 노드도 일단 포함.
+function getArkPassivePersistentEnemyDamagePercent(arkpassiveData) {
+  const evo = getArkPassivePersistentEffectsText(arkpassiveData, '진화');
+  const real = getArkPassivePersistentEffectsText(arkpassiveData, '깨달음');
+  return extractEnemyDamageAllPercent(evo) + extractEnemyDamageAllPercent(real);
+}
+
+// 아크패시브(진화+깨달음)의 추가 피해 % 합산 ('달인'은 이미 getMasterExtraDamagePercent에서
+// 고정 8.5%로 별도 처리되므로 중복 방지를 위해 '진화'에서 제외). 조건부/시간제한 노드도 일단 포함.
+function getArkPassivePersistentExtraDamagePercent(arkpassiveData) {
+  const evo = getArkPassivePersistentEffectsText(arkpassiveData, '진화', '달인');
+  const real = getArkPassivePersistentEffectsText(arkpassiveData, '깨달음');
+  return extractPercentMaxSequence(evo, '추가 피해') + extractPercentMaxSequence(real, '추가 피해');
 }
 
 // arkpassive Effects 배열에 특정 단어가 포함된 효과를 채용했는지 확인
@@ -1151,6 +1213,7 @@ function calculateExtraDamageMultiplier(dealerData) {
     딜러팔찌: dealerBracelet.additionalDamagePercent,
     달인: getMasterExtraDamagePercent(dealerData.arkpassive),
     각인_기습결투: getBackHeadAttackExtraDamagePercent(dealerData.engravings),
+    아크패시브_상시버프: getArkPassivePersistentExtraDamagePercent(dealerData.arkpassive),
   };
 
   const qualityTooLow = weaponQuality === null;
@@ -1352,6 +1415,22 @@ function extractEvolutionDamageIncreasePercent(text) {
   let m;
   while ((m = regex.exec(text)) !== null) {
     total += parseFloat(m[1]);
+  }
+  return total;
+}
+
+// "적에게 주는 (모든 )?피해(가) X[, Y, Z]% 증가" 형태를 잡는 전용 추출 함수
+// (아크패시브 노드 문구가 "적에게 주는 모든 피해가 21.0% 증가"처럼 "모든"이 끼어 있어
+// extractPercent의 6자 이내 근접 매칭 규칙으로는 못 잡아서 별도 정규식으로 처리)
+// "14.0%, 28.0%, 42.0% 증가"처럼 조건부 단계값이 나열된 경우 최댓값만 사용(최대 달성 가정).
+function extractEnemyDamageAllPercent(text) {
+  if (!text) return 0;
+  const regex = /적에게\s*주는\s*(?:모든\s*)?피해(?:가|이)?\s*((?:[\d.]+\s*%[,\s]*)+)증가/g;
+  let total = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const numbers = m[1].match(/[\d.]+/g).map(Number);
+    total += Math.max(...numbers);
   }
   return total;
 }
@@ -1585,6 +1664,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const synergyEnemyDamageTakenPercent = sumPartySynergyPercent(partyClassNames, SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES, synergyEnemyDamageTakenTierPercent);
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
+  const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -1594,6 +1674,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     orderCoreResult.multiplier *
     toMultiplier(dealerBracelet.enemyDamagePercent) *
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
+    toMultiplier(arkPassivePersistentEnemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -1611,6 +1692,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       딜러팔찌: dealerBracelet.enemyDamagePercent,
       아크패시브_진화형피해: evolutionDamagePercent,
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
+      아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
@@ -1989,6 +2071,40 @@ function getBraceletOptionsFromEquipment(equipmentList) {
   const braceletItem = (equipmentList || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
   return parseBraceletOptions(braceletText);
+}
+
+// 아크그리드 6개 코어 슬롯을 이름/투자 포인트/등급 그대로 나열 (Slot.Name에 "질서의 해 코어 : ..." 형태로
+// 질서·혼돈/해·달·별 구분이 이미 포함되어 있어 별도 텍스트 파싱 없이 그대로 사용)
+function getArkgridCoreSummary(arkgridData) {
+  if (!arkgridData || !arkgridData.Slots) return [];
+  return arkgridData.Slots.map((slot) => ({
+    name: slot.Name,
+    point: slot.Point,
+    grade: slot.Grade,
+  }));
+}
+
+// 딜러의 모든 각인(ArkPassiveEffects)을 이름/레벨만 나열 (유물 각인서 정보 표시용)
+function getEngravingList(engravingsData) {
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return [];
+  return engravingsData.ArkPassiveEffects.map((e) => ({ name: e.Name, level: e.Level }));
+}
+
+// 클래스별 "직업 각인"(그 클래스 전용 빌드 각인) 이름 목록. 사용자가 확인해준 것만 채움 —
+// 아직 대부분의 클래스는 비어 있어서 getClassBuildEngravingName이 null을 반환함 (틀린 이름을 넣지 않기 위해
+// 확인되지 않은 클래스는 일부러 비워둠). 사용자가 추가로 알려주는 대로 채워나갈 것.
+const CLASS_BUILD_ENGRAVING_NAMES = {
+  '블래스터': ['포격 강화'],
+  '기상술사': ['질풍노도'],
+};
+
+// 캐릭터의 직업에 해당하는 "직업 각인"(전용 각인) 이름을 engravings.ArkPassiveEffects에서 찾아 반환.
+// 해당 클래스가 아직 CLASS_BUILD_ENGRAVING_NAMES에 없거나 못 찾으면 null.
+function getClassBuildEngravingName(className, engravingsData) {
+  const candidates = CLASS_BUILD_ENGRAVING_NAMES[className];
+  if (!candidates || !engravingsData || !engravingsData.ArkPassiveEffects) return null;
+  const found = engravingsData.ArkPassiveEffects.find((e) => candidates.includes(e.Name));
+  return found ? found.Name : null;
 }
 
 // 서포터 아덴기(정체성 스킬) 피해량 증가 배율
