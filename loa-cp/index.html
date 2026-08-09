@@ -160,6 +160,13 @@
         .join('\n');
     }
 
+    // 객체에서 특정 키들을 뺀 새 객체를 반환 (breakdown 중 디버그 전용 항목을 화면 표시에서 빼는 용도)
+    function omit(obj, keys) {
+      const result = { ...obj };
+      keys.forEach((key) => { delete result[key]; });
+      return result;
+    }
+
     // title 속성에 안전하게 넣기 위한 큰따옴표/꺾쇠 이스케이프
     function escapeAttr(str) {
       return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -361,7 +368,7 @@
             <tr><th>전투력</th><td>${info.combatPower ?? '-'}</td></tr>
             <tr><th>무기 공격력</th><td class="hoverInfo" ${hoverTitle(ctx.dealerStats.weaponAttackBreakdown)}>${ctx.dealerStats.weaponAttack.toLocaleString()}</td></tr>
             <tr><th>추가 피해</th><td class="hoverInfo" ${hoverTitle(ctx.extraDamageResult.extraDamageBreakdown)}>${ctx.extraDamageResult.qualityTooLow ? '표시 불가' : ctx.extraDamageResult.multiplier.toFixed(4)}</td></tr>
-            <tr><th>적에게 주는 피해</th><td class="hoverInfo" ${hoverTitle(ctx.enemyDamageResult.breakdown)}>${ctx.enemyDamageResult.multiplier.toFixed(4)}</td></tr>
+            <tr><th>적에게 주는 피해</th><td class="hoverInfo" ${hoverTitle(omit(ctx.enemyDamageResult.breakdown, ['뭉툭한가시_디버그']))}>${ctx.enemyDamageResult.multiplier.toFixed(4)}</td></tr>
             <tr><th>진화형 피해</th><td class="hoverInfo" ${hoverTitle(ctx.enemyDamageResult.breakdown.아크패시브_진화형피해_상세)}>${pct(info.evolutionDamagePercent)}%</td></tr>
             <tr><th>치명타 적중률</th><td class="hoverInfo" ${hoverTitle(ctx.critResult.critRateBreakdown)}>${ctx.critResult.critRatePercent.toFixed(2)}%</td></tr>
             <tr><th>치명타 피해</th><td class="hoverInfo" ${hoverTitle(ctx.critResult.critDamageBreakdown)}>${ctx.critResult.critDamagePercent.toFixed(2)}%</td></tr>
