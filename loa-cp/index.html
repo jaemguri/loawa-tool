@@ -246,11 +246,11 @@
         necklaceExtraDamagePercent: getNecklaceExtraDamagePercent(equipment),
         necklaceEnemyDamagePercent: getNecklaceEnemyDamagePercent(equipment),
         earringAttackPercent: dealerStats.earringAttackPercent,
+        earringWeaponAttackPercent: getEarringWeaponAttackPercent(equipment),
         ringCritRatePercent: extra.critResult.critRateBreakdown.반지,
         ringCritDamagePercent: extra.critResult.critDamageBreakdown.반지,
         stoneBaseAttackPercent: getAbilityStoneBaseAttackPercent(equipment),
-        stoneAdrenalineLevel: getAdrenalineStoneLevel(equipment),
-        stoneCritDamagePercent: getAbilityStoneCritDamagePercent(equipment),
+        stoneEngravingEffects: getAbilityStoneEngravingEffects(equipment),
         itemAvgLevel: dealerData.profiles?.ItemAvgLevel,
         combatPower: dealerData.profiles?.CombatPower,
         evolutionDamagePercent: extra.enemyDamageResult.breakdown.아크패시브_진화형피해,
@@ -307,14 +307,17 @@
     function buildAccessorySectionHtml(info) {
       const earringNames = info.earrings.map((e) => stripHtml(e.Name)).join(', ') || '(미장착)';
       const ringNames = info.rings.map((r) => stripHtml(r.Name)).join(', ') || '(미장착)';
+      const stoneEffectsText = info.stoneEngravingEffects.length
+        ? info.stoneEngravingEffects.map((e) => `${e.name} Lv.${e.level}`).join(', ')
+        : '없음';
       return `
         <div class="fieldGroup">
           <h4>장신구 정보</h4>
           <table class="statTable">
             <tr><th>목걸이</th><td>${info.necklace ? stripHtml(info.necklace.Name) : '(미장착)'} (추가피해 ${pct(info.necklaceExtraDamagePercent)}%, 적주피 ${pct(info.necklaceEnemyDamagePercent)}%)</td></tr>
-            <tr><th>귀걸이</th><td>${earringNames} (공격력 ${pct(info.earringAttackPercent)}%)</td></tr>
+            <tr><th>귀걸이</th><td>${earringNames} (공격력 ${pct(info.earringAttackPercent)}%, 무기 공격력 ${pct(info.earringWeaponAttackPercent)}%)</td></tr>
             <tr><th>반지</th><td>${ringNames} (치명타 ${pct(info.ringCritRatePercent)}%, 치명타피해 ${pct(info.ringCritDamagePercent)}%)</td></tr>
-            <tr><th>어빌리티 스톤</th><td>${info.abilityStone ? stripHtml(info.abilityStone.Name) : '(미장착)'} (기본공격력 ${pct(info.stoneBaseAttackPercent)}%, 아드레날린 Lv.${info.stoneAdrenalineLevel}, 치명타피해 ${pct(info.stoneCritDamagePercent)}%)</td></tr>
+            <tr><th>어빌리티 스톤</th><td>${info.abilityStone ? stripHtml(info.abilityStone.Name) : '(미장착)'} (기본공격력 ${pct(info.stoneBaseAttackPercent)}%, 각인 효과: ${stoneEffectsText})</td></tr>
           </table>
         </div>
       `;
