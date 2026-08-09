@@ -133,6 +133,7 @@
       const adrenalineBonus = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
       const fullPartyClassNames = [dealerStats.className, ...partyClassNames];
       const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
+      const arkPassiveAttackPercent = getArkPassivePersistentAttackPercent(data.dealer.arkpassive);
       const finalDamage = calculateFinalDamage(
         dealerStats.basePower,
         dealerStats.accessoryAttackFlat,
@@ -142,7 +143,8 @@
         dealerStats.earringAttackPercent,
         dealerStats.arkgridGemsAttackPercent,
         adrenalineBonus,
-        classSynergyAttackPercent
+        classSynergyAttackPercent,
+        arkPassiveAttackPercent
       );
       // 치명타 계산 (실험용, 백/헤드 사멸은 채용한 직업각인 노드로 자동 판정됨)
       const critResult = calculateCritMultiplier(data.dealer, data.support, { partyClassNames });
@@ -224,6 +226,7 @@
           계열_피해_증가율: cardExtraDamageResult.breakdown.계열_피해_증가율,
         }, null, 2)}</pre>
         <p>시너지(파티 직업) 공격력 증가: ${classSynergyAttackPercent}%</p>
+        <p>아크패시브 진화+깨달음 공격력 증가(조건부/시간제한 노드도 일단 포함, 클래스별 예외는 추후 정리 예정): ${arkPassiveAttackPercent}%</p>
         <p>방어율 배율: ${defenseResult.multiplier.toFixed(4)}</p>
         <pre>${JSON.stringify(defenseResult.breakdown, null, 2)}</pre>
 

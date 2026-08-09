@@ -3,6 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <title>로아 CP - 캐릭터 시뮬레이터</title>
+  <style>
+    .statTable { border-collapse: collapse; margin: 8px 0; }
+    .statTable th, .statTable td { border: 1px solid #ccc; padding: 4px 10px; text-align: left; }
+    .statTable th { background: #f5f5f5; font-weight: normal; color: #555; }
+    .finalOutput { margin: 6px 0; }
+    .innerTabs { margin: 10px 0; }
+    .innerTabBtn { margin-right: 4px; }
+    .innerTabBtn.active { font-weight: bold; text-decoration: underline; }
+    .tabPanel[hidden] { display: none; }
+    .fieldGroup { margin: 12px 0; }
+    .fieldGroup h4 { margin: 4px 0; }
+    .surgeBar { border: 1px solid #999; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; }
+  </style>
 </head>
 <body>
   <div id="searchScreen">
@@ -31,7 +44,22 @@
   <div id="dealerView" style="display:none;">
     <button class="backBtn">← 돌아가기</button>
     <h2>딜러용 시뮬</h2>
-    <div class="viewBody"></div>
+    <div class="innerTabs">
+      <button class="innerTabBtn" data-tab="info">현재 정보</button>
+      <button class="innerTabBtn" data-tab="equip">장비</button>
+      <button class="innerTabBtn" data-tab="bracelet">팔찌</button>
+      <button class="innerTabBtn" data-tab="stone">어빌리티스톤</button>
+      <button class="innerTabBtn" data-tab="evolution">아크패시브 진화</button>
+      <button class="innerTabBtn" data-tab="gem">보석</button>
+      <button class="innerTabBtn" data-tab="synergy">시너지</button>
+    </div>
+    <div class="tabPanel" data-panel="info"></div>
+    <div class="tabPanel" data-panel="equip" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="bracelet" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="stone" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="evolution" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="gem" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
   </div>
 
   <div id="supportView" style="display:none;">
@@ -66,6 +94,23 @@
       duo: document.getElementById('duoView'),
     };
 
+    // 뷰 내부의 안쪽 탭바(현재정보/장비/팔찌/... ) 전환. 탭 버튼을 담은 컨테이너 기준으로 동작.
+    function setupInnerTabs(rootEl) {
+      const buttons = rootEl.querySelectorAll('.innerTabBtn');
+      const panels = rootEl.querySelectorAll('.tabPanel');
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          buttons.forEach((b) => b.classList.remove('active'));
+          panels.forEach((p) => { p.hidden = true; });
+          btn.classList.add('active');
+          rootEl.querySelector(`.tabPanel[data-panel="${btn.dataset.tab}"]`).hidden = false;
+        });
+      });
+      buttons[0].classList.add('active');
+      panels[0].hidden = false;
+    }
+    setupInnerTabs(views.dealer);
+
     // calculate.js 내부에서 전역 함수로 참조하는 툴팁 파싱 헬퍼 (calculate.js에는 정의되어 있지 않음)
     function stripHtml(str) {
       if (!str) return '';
@@ -89,6 +134,11 @@
         });
       } catch (e) {}
       return lines;
+    }
+
+    // %로 표시할 숫자를 소수점 2자리로 정리 (부동소수점 오차로 4.0417000000000005% 같은 값이 나오는 것 방지)
+    function pct(n) {
+      return Number(n || 0).toFixed(2);
     }
 
     // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
@@ -125,6 +175,278 @@
       const classDefault = DEFAULT_SUPPORT_RATIO_TABLE[className]?.[ratioKey];
       return classDefault !== undefined ? classDefault / 100 : 1;
     }
+
+    // 딜러 본인 스탯/배율 표를 <table> HTML로 생성 (딜러용/동시 시뮬 공용)
+    function buildDealerStatsHtml(ctx) {
+      const { dealerStats, extraDamageResult, critResult, enemyDamageResult, defenseResult, cardExtraDamageResult, classSynergyAttackPercent } = ctx;
+      return `
+        <table class="statTable">
+          <tr><th>무기 공격력</th><td>${dealerStats.weaponAttack.toLocaleString()}</td></tr>
+          <tr><th>기본 공격력</th><td>${dealerStats.basePower.toLocaleString()}</td></tr>
+          <tr><th>스탯창 공격력</th><td>${dealerStats.statWindowAttack.toLocaleString()}</td></tr>
+          <tr><th>치명타 적중률</th><td>${critResult.critRatePercent.toFixed(2)}%</td></tr>
+          <tr><th>치명타 피해</th><td>${critResult.critDamagePercent.toFixed(2)}%</td></tr>
+          <tr><th>치명타 피해 배율</th><td>${critResult.avgDamageMultiplier.toFixed(4)}</td></tr>
+          <tr><th>추가 피해 배율</th><td>${extraDamageResult.qualityTooLow ? '표시 불가 (무기 품질 70% 미만)' : extraDamageResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>적에게 주는 피해 배율</th><td>${enemyDamageResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>방어율 배율</th><td>${defenseResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>카드 추가피해 배율</th><td>${cardExtraDamageResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>시너지(파티 직업) 공격력 증가</th><td>${classSynergyAttackPercent}%</td></tr>
+        </table>
+      `;
+    }
+
+    // 서포터 본인 스탯/배율 표를 <table> HTML로 생성 (서폿용/동시 시뮬 공용)
+    function buildSupportStatsHtml(ctx) {
+      const { supportStats, allyBuffPercent, buffGemPercent, supportBuffPower, brandResult, adenkiDamageBuffResult, hyperAwakeningDamageBuffResult, cardExtraDamageResult } = ctx;
+      return `
+        <table class="statTable">
+          <tr><th>기본 공격력</th><td>${supportStats.basePower.toLocaleString()}</td></tr>
+          <tr><th>아군 공격력 강화 총합</th><td>${allyBuffPercent}%</td></tr>
+          <tr><th>공증 버프 보석</th><td>${buffGemPercent}%</td></tr>
+          <tr><th>서포터 버프력</th><td>${supportBuffPower.toLocaleString()}</td></tr>
+          <tr><th>낙인력 합계</th><td>${brandResult.breakdown.낙인력_합계.toFixed(2)}%</td></tr>
+          <tr><th>낙인 배율</th><td>${brandResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>아군 피해량 증가(아덴기) 배율</th><td>${adenkiDamageBuffResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>아군 피해량 증가(초각성) 배율</th><td>${hyperAwakeningDamageBuffResult.multiplier.toFixed(4)}</td></tr>
+          <tr><th>서폿카드 받는 피해 증가율</th><td>${cardExtraDamageResult.breakdown.서폿카드_받는피해_증가율}%</td></tr>
+        </table>
+      `;
+    }
+
+    function findEquip(equipmentList, type) {
+      return (equipmentList || []).find((it) => it.Type === type) || null;
+    }
+
+    function findEquipAll(equipmentList, type) {
+      return (equipmentList || []).filter((it) => it.Type === type);
+    }
+
+    // 딜러용 시뮬 "현재 정보" 탭 전용 필드(장비 나열/아크그리드/각인/장신구/스펙 정보)를 한 번에 계산
+    function buildDealerCurrentInfo(dealerData, dealerStats, extra) {
+      const equipment = dealerData.equipment || [];
+      const weaponItem = findEquip(equipment, '무기');
+      const wanjibItem = findEquip(equipment, '완갑');
+
+      return {
+        arkgridCores: getArkgridCoreSummary(dealerData.arkgrid),
+        engravingList: getEngravingList(dealerData.engravings),
+        // API의 실제 Type 값은 '투구'/'어깨'(모자/견장이 아님) — 실 캐릭터로 확인한 값
+        equipList: [['모자', '투구'], ['견장', '어깨'], ['상의', '상의'], ['하의', '하의'], ['장갑', '장갑']].map(([label, apiType]) => ({
+          type: label,
+          name: findEquip(equipment, apiType)?.Name ? stripHtml(findEquip(equipment, apiType).Name) : '(미장착)',
+        })),
+        weaponName: weaponItem ? stripHtml(weaponItem.Name) : '(미장착)',
+        wanjibName: wanjibItem ? stripHtml(wanjibItem.Name) : '(미장착)',
+        braceletOptions: getBraceletOptionsFromEquipment(equipment),
+        necklace: findEquip(equipment, '목걸이'),
+        earrings: findEquipAll(equipment, '귀걸이'),
+        rings: findEquipAll(equipment, '반지'),
+        abilityStone: findEquip(equipment, '어빌리티 스톤'),
+        necklaceExtraDamagePercent: getNecklaceExtraDamagePercent(equipment),
+        necklaceEnemyDamagePercent: getNecklaceEnemyDamagePercent(equipment),
+        earringAttackPercent: dealerStats.earringAttackPercent,
+        ringCritRatePercent: extra.critResult.critRateBreakdown.반지,
+        ringCritDamagePercent: extra.critResult.critDamageBreakdown.반지,
+        stoneBaseAttackPercent: getAbilityStoneBaseAttackPercent(equipment),
+        stoneAdrenalineLevel: getAdrenalineStoneLevel(equipment),
+        stoneCritDamagePercent: getAbilityStoneCritDamagePercent(equipment),
+        itemAvgLevel: dealerData.profiles?.ItemAvgLevel,
+        combatPower: dealerData.profiles?.CombatPower,
+        evolutionDamagePercent: extra.enemyDamageResult.breakdown.아크패시브_진화형피해,
+      };
+    }
+
+    function buildArkgridSectionHtml(info) {
+      const coreRows = info.arkgridCores.map((c) => `<tr><td>${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
+      return `
+        <div class="fieldGroup">
+          <h4>아크그리드 정보</h4>
+          <table class="statTable"><tr><th>코어</th><th>투자 포인트</th><th>등급</th></tr>${coreRows}</table>
+        </div>
+      `;
+    }
+
+    function buildEngravingSectionHtml(info) {
+      const rows = info.engravingList.map((e) => `<tr><td>${e.name}</td><td>Lv.${e.level}</td></tr>`).join('');
+      return `
+        <div class="fieldGroup">
+          <h4>유물 각인서 정보</h4>
+          <table class="statTable"><tr><th>각인 이름</th><th>레벨</th></tr>${rows}</table>
+        </div>
+      `;
+    }
+
+    function buildEquipmentSectionHtml(info) {
+      const armorRows = info.equipList.map((e) => `<tr><th>${e.type}</th><td>${e.name}</td></tr>`).join('');
+      return `
+        <div class="fieldGroup">
+          <h4>장비 정보</h4>
+          <table class="statTable">
+            ${armorRows}
+            <tr><th>무기</th><td>${info.weaponName}</td></tr>
+            <tr><th>완갑</th><td>${info.wanjibName}</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    function buildBraceletSectionHtml(info) {
+      const rows = Object.entries(info.braceletOptions)
+        .filter(([, value]) => value)
+        .map(([key, value]) => `<tr><th>${key}</th><td>${key.endsWith('Percent') ? pct(value) + '%' : value}</td></tr>`)
+        .join('');
+      return `
+        <div class="fieldGroup">
+          <h4>팔찌 정보</h4>
+          <table class="statTable">${rows || '<tr><td>팔찌 미장착 또는 옵션 없음</td></tr>'}</table>
+        </div>
+      `;
+    }
+
+    function buildAccessorySectionHtml(info) {
+      const earringNames = info.earrings.map((e) => stripHtml(e.Name)).join(', ') || '(미장착)';
+      const ringNames = info.rings.map((r) => stripHtml(r.Name)).join(', ') || '(미장착)';
+      return `
+        <div class="fieldGroup">
+          <h4>장신구 정보</h4>
+          <table class="statTable">
+            <tr><th>목걸이</th><td>${info.necklace ? stripHtml(info.necklace.Name) : '(미장착)'} (추가피해 ${pct(info.necklaceExtraDamagePercent)}%, 적주피 ${pct(info.necklaceEnemyDamagePercent)}%)</td></tr>
+            <tr><th>귀걸이</th><td>${earringNames} (공격력 ${pct(info.earringAttackPercent)}%)</td></tr>
+            <tr><th>반지</th><td>${ringNames} (치명타 ${pct(info.ringCritRatePercent)}%, 치명타피해 ${pct(info.ringCritDamagePercent)}%)</td></tr>
+            <tr><th>어빌리티 스톤</th><td>${info.abilityStone ? stripHtml(info.abilityStone.Name) : '(미장착)'} (기본공격력 ${pct(info.stoneBaseAttackPercent)}%, 아드레날린 Lv.${info.stoneAdrenalineLevel}, 치명타피해 ${pct(info.stoneCritDamagePercent)}%)</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    function buildSpecSectionHtml(info, ctx) {
+      return `
+        <div class="fieldGroup">
+          <h4>캐릭터 스펙 정보</h4>
+          <table class="statTable">
+            <tr><th>아이템 레벨</th><td>${info.itemAvgLevel ?? '-'}</td></tr>
+            <tr><th>전투력</th><td>${info.combatPower ?? '-'}</td></tr>
+            <tr><th>무기 공격력</th><td>${ctx.dealerStats.weaponAttack.toLocaleString()}</td></tr>
+            <tr><th>추가 피해</th><td>${ctx.extraDamageResult.qualityTooLow ? '표시 불가' : ctx.extraDamageResult.multiplier.toFixed(4)}</td></tr>
+            <tr><th>적에게 주는 피해</th><td>${ctx.enemyDamageResult.multiplier.toFixed(4)}</td></tr>
+            <tr><th>진화형 피해</th><td>${pct(info.evolutionDamagePercent)}%</td></tr>
+            <tr><th>치명타 적중률</th><td>${ctx.critResult.critRatePercent.toFixed(2)}%</td></tr>
+            <tr><th>치명타 피해</th><td>${ctx.critResult.critDamagePercent.toFixed(2)}%</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    // 아드/암수 체크박스 상태에 따라 최종 공격력/방어율 배율/최종 산출식/풀버프 최종 산출식을
+    // 다시 계산해서 "현재 정보" 탭의 실시간 표시만 갱신한다. (baseline·최종 딜 상승량에는 영향 없음)
+    function recomputeDealerLiveNumbers(ctx) {
+      const adrenalineUse = document.getElementById('adrenalineUseCheckbox').checked;
+      const darkGrenadeUse = document.getElementById('darkGrenadeCheckbox').checked;
+
+      const adrenalineBonus = ctx.adrenalineBonusBase + (adrenalineUse ? 30 : 0);
+      const finalDamage = calculateFinalDamage(
+        ctx.dealerStats.basePower, ctx.dealerStats.accessoryAttackFlat, ctx.dealerStats.chaosCoreAttack.flat,
+        ctx.supportBuffPower, ctx.dealerStats.chaosCoreAttack.percent, ctx.dealerStats.earringAttackPercent,
+        ctx.dealerStats.arkgridGemsAttackPercent, adrenalineBonus, ctx.classSynergyAttackPercent,
+        ctx.arkPassiveAttackPercent
+      );
+      const defenseResult = calculateDefenseMultiplier({
+        synergyAPercent: ctx.classSynergyDefenseReductionPercent,
+        darkGrenadeActive: darkGrenadeUse,
+      });
+      const finalOutputResult = calculateFinalOutput(
+        finalDamage, ctx.critResult.avgDamageMultiplier, ctx.extraDamageResult.multiplier, ctx.enemyDamageResult.multiplier,
+        defenseResult.multiplier, ctx.brandResult.multiplier, ctx.cardExtraDamageResult.multiplier
+      );
+      const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
+        finalOutputResult.output, ctx.adenkiDamageBuffResult.multiplier, ctx.hyperAwakeningDamageBuffResult.multiplier
+      );
+
+      document.getElementById('liveFinalDamage').textContent = finalDamage.toLocaleString();
+      document.getElementById('liveDefenseMultiplier').textContent = defenseResult.multiplier.toFixed(4);
+      document.getElementById('liveFinalOutput').textContent = finalOutputResult.output.toLocaleString();
+      document.getElementById('liveFullBuffOutput').textContent = fullBuffFinalOutputResult.output.toLocaleString();
+    }
+
+    function renderDealerInfoTab(ctx) {
+      const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="info"]');
+
+      // 최종 딜 상승량은 항상 체크박스 OFF 상태로 고정 계산한 풀버프 최종 산출식을 기준으로 비교한다.
+      // Phase 1에서는 편집 가능한 탭이 없어 baseline과 현재값이 같으므로 항상 0.00%.
+      const surgePercent = ((ctx.fullBuffFinalOutputResult.output - ctx.baselineFullBuffOutput) / ctx.baselineFullBuffOutput) * 100;
+
+      const buildEngravingName = getClassBuildEngravingName(ctx.dealerStats.className, ctx.dealerData.engravings);
+
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>${ctx.dealerLabel} (${ctx.dealerStats.className})</h4>
+          <p>직업각인 명: ${buildEngravingName || '(미확인 — 이 클래스는 아직 목록에 없거나 직업 각인을 채용하지 않음)'}</p>
+        </div>
+        ${buildArkgridSectionHtml(info)}
+        <div class="fieldGroup">
+          <h4>아크그리드 젬 정보</h4>
+          <table class="statTable">
+            <tr><th>공격력</th><td>${pct(ctx.dealerStats.arkgridGemsAttackPercent)}%</td></tr>
+            <tr><th>추가피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬)}%</td></tr>
+            <tr><th>보스피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해)}%</td></tr>
+          </table>
+        </div>
+        ${buildEngravingSectionHtml(info)}
+        ${buildEquipmentSectionHtml(info)}
+        ${buildBraceletSectionHtml(info)}
+        ${buildAccessorySectionHtml(info)}
+        ${buildSpecSectionHtml(info, ctx)}
+        <div class="fieldGroup">
+          <h4>아크패시브 진화+깨달음 (조건부·시간제한 노드도 일단 포함, 클래스별 예외는 추후 정리 예정)</h4>
+          <table class="statTable">
+            <tr><th>공격력</th><td>${pct(ctx.arkPassiveAttackPercent)}%</td></tr>
+            <tr><th>적에게 주는 피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크패시브_상시버프_적주피)}%</td></tr>
+            <tr><th>추가 피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크패시브_상시버프)}%</td></tr>
+          </table>
+        </div>
+        <div class="fieldGroup">
+          <h4>최종 공격력: <span id="liveFinalDamage">${ctx.finalDamage.toLocaleString()}</span></h4>
+          <p>방어율 배율: <span id="liveDefenseMultiplier">${ctx.defenseResult.multiplier.toFixed(4)}</span></p>
+          <p>최종 산출식: <span id="liveFinalOutput">${ctx.finalOutputResult.output.toLocaleString()}</span></p>
+          <p>풀버프 최종 산출식: <span id="liveFullBuffOutput">${ctx.fullBuffFinalOutputResult.output.toLocaleString()}</span></p>
+        </div>
+        <div class="fieldGroup">
+          <label><input type="checkbox" id="adrenalineUseCheckbox"> 아드 사용 (공격력 +30%)</label>
+          <label style="margin-left:12px;"><input type="checkbox" id="darkGrenadeCheckbox"> 암수 사용 (암흑 수류탄 방어력감소 20%)</label>
+        </div>
+        <div class="surgeBar">최종 딜 상승량: ${surgePercent.toFixed(2)}%</div>
+      `;
+
+      document.getElementById('adrenalineUseCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
+      document.getElementById('darkGrenadeCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
+    }
+
+    function renderDealerView(ctx) {
+      renderDealerInfoTab(ctx);
+    }
+
+    function renderSupportView(ctx) {
+      views.support.querySelector('.viewBody').innerHTML = `
+        <h3>${ctx.supportLabel} (${ctx.supportStats.className})</h3>
+        ${buildSupportStatsHtml(ctx)}
+      `;
+    }
+
+    function renderDuoView(ctx) {
+      views.duo.querySelector('.viewBody').innerHTML = `
+        <h3>딜러: ${ctx.dealerLabel} (${ctx.dealerStats.className})</h3>
+        ${buildDealerStatsHtml(ctx)}
+        <h3>서포터: ${ctx.supportLabel} (${ctx.supportStats.className})</h3>
+        ${buildSupportStatsHtml(ctx)}
+        <h3 class="finalOutput">최종 공격력: ${ctx.finalDamage.toLocaleString()}</h3>
+        <h3 class="finalOutput">최종 산출식: ${ctx.finalOutputResult.output.toLocaleString()}</h3>
+        <h3 class="finalOutput">풀버프 최종 산출식: ${ctx.fullBuffFinalOutputResult.output.toLocaleString()}</h3>
+      `;
+    }
+
+    const renderers = { dealer: renderDealerView, support: renderSupportView, duo: renderDuoView };
 
     function showView(mode) {
       searchScreen.style.display = 'none';
@@ -180,13 +502,59 @@
         const dealerLabel = dealerIsDefault ? '' : dealerStats.characterName;
         const supportLabel = supportIsDefault ? '' : supportStats.characterName;
 
-        const viewBody = views[simMode].querySelector('.viewBody');
-        viewBody.innerHTML = `
-          <p>딜러: ${dealerLabel} (${dealerStats.className})</p>
-          <p>서포터: ${supportLabel} (${supportStats.className})</p>
-          <p>(이 화면의 상세 계산 내용은 준비 중입니다.)</p>
-        `;
+        const partyClassNames = [synergyClass2Select.value, synergyClass3Select.value].filter(Boolean);
+        const fullPartyClassNames = [dealerStats.className, ...partyClassNames];
 
+        const effectiveRatio = readRatio(effectiveRatioInput, supportStats.className, '공증');
+        const brandEffectiveRatio = readRatio(brandEffectiveRatioInput, supportStats.className, '낙인');
+        const effectiveRatio1 = readRatio(effectiveRatio1Input, supportStats.className, '피증1');
+        const effectiveRatio2 = readRatio(effectiveRatio2Input, supportStats.className, '피증2');
+
+        const allyBuffPercent = getTotalAllyAttackBuffPercent(data.support.equipment, supportStats.braceletOptions, data.support.arkgrid);
+        const buffGemPercent = getSupportBuffGemPercent(data.support.gems, supportStats.className);
+        const supportBuffPower = calculateSupportBuffPower(supportStats.basePower, allyBuffPercent, buffGemPercent, effectiveRatio);
+
+        const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
+        const adrenalineBonusBase = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
+        const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
+        const arkPassiveAttackPercent = getArkPassivePersistentAttackPercent(data.dealer.arkpassive);
+
+        const finalDamage = calculateFinalDamage(
+          dealerStats.basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, supportBuffPower,
+          dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, dealerStats.arkgridGemsAttackPercent,
+          adrenalineBonusBase, classSynergyAttackPercent, arkPassiveAttackPercent
+        );
+
+        const critResult = calculateCritMultiplier(data.dealer, data.support, { partyClassNames });
+        const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio, { partyClassNames });
+        const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
+        const adenkiDamageBuffResult = calculateSupportAdenkiDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio1 });
+        const hyperAwakeningDamageBuffResult = calculateSupportHyperAwakeningDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio2 });
+        const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
+        const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
+        const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
+
+        const finalOutputResult = calculateFinalOutput(
+          finalDamage, critResult.avgDamageMultiplier, extraDamageResult.multiplier, enemyDamageResult.multiplier,
+          defenseResult.multiplier, brandResult.multiplier, cardExtraDamageResult.multiplier
+        );
+        const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
+          finalOutputResult.output, adenkiDamageBuffResult.multiplier, hyperAwakeningDamageBuffResult.multiplier
+        );
+
+        const ctx = {
+          dealerData: data.dealer, supportData: data.support,
+          dealerStats, supportStats, dealerLabel, supportLabel,
+          allyBuffPercent, buffGemPercent, supportBuffPower,
+          adrenalineBonusBase, classSynergyAttackPercent, classSynergyDefenseReductionPercent, arkPassiveAttackPercent,
+          finalDamage, critResult, extraDamageResult, enemyDamageResult, brandResult,
+          adenkiDamageBuffResult, hyperAwakeningDamageBuffResult, cardExtraDamageResult,
+          defenseResult, finalOutputResult, fullBuffFinalOutputResult,
+          baselineFullBuffOutput: fullBuffFinalOutputResult.output,
+        };
+
+        renderers[simMode](ctx);
         showView(simMode);
       } catch (error) {
         searchMessage.textContent = '오류가 발생했습니다: ' + error.message;
