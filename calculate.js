@@ -760,6 +760,16 @@ function calculateCharacterStats(data) {
   const flatBonusSum = braceletFlat + coreFlat + wanjibStats.weaponAttackFlat;
   const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent;
   const weaponAttack = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+  const weaponAttackBreakdown = {
+    무기_강화단계: weaponLevel,
+    강화단계_기본값: WEAPON_LEVEL_TABLE[weaponLevel] || 0,
+    팔찌_고정: braceletFlat,
+    아크그리드코어_고정: coreFlat,
+    완갑_고정: wanjibStats.weaponAttackFlat,
+    귀걸이_퍼센트: earringWeaponPercent,
+    아크그리드코어_퍼센트: corePercentWeapon,
+    깨달음_퍼센트: enlightenmentPercent,
+  };
 
   const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars, wanjibStats.primaryStatFlat);
   const purePower = calculatePureAttackPower(primaryStat, weaponAttack);
@@ -781,7 +791,7 @@ function calculateCharacterStats(data) {
     characterName: data.profiles.CharacterName,
     serverName: data.profiles.ServerName,
     className: data.profiles.CharacterClassName,
-    weaponAttack, primaryStat, purePower, basePower,
+    weaponAttack, weaponAttackBreakdown, primaryStat, purePower, basePower,
     accessoryAttackFlat, chaosCoreAttack, earringAttackPercent, arkgridGemsAttackPercent,
     statWindowAttack,
     wanjibStats,

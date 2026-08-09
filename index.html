@@ -13,6 +13,7 @@
     .innerTabBtn.active { font-weight: bold; text-decoration: underline; }
     .tabPanel[hidden] { display: none; }
     .fieldGroup { margin: 12px 0; }
+    .hoverInfo { cursor: help; border-bottom: 1px dotted #888; }
     .fieldGroup h4 { margin: 4px 0; }
     .surgeBar { border: 1px solid #999; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; }
   </style>
@@ -139,6 +140,34 @@
     // %로 표시할 숫자를 소수점 2자리로 정리 (부동소수점 오차로 4.0417000000000005% 같은 값이 나오는 것 방지)
     function pct(n) {
       return Number(n || 0).toFixed(2);
+    }
+
+    // calculate.js가 반환하는 breakdown 객체(중첩 객체 포함)를 마우스오버 title에 넣을 수 있는
+    // 여러 줄 텍스트로 변환. 0/빈 값은 숫자가 아닌 값을 있는 그대로 보여줘야 하는 경우가 아니면 건너뜀.
+    function formatBreakdown(obj, indent) {
+      indent = indent || '';
+      return Object.entries(obj || {})
+        .filter(([, v]) => v !== 0 && v !== null && v !== undefined && v !== '')
+        .map(([key, value]) => {
+          if (typeof value === 'object') {
+            const nested = formatBreakdown(value, indent + '  ');
+            return nested ? `${indent}${key}:\n${nested}` : '';
+          }
+          const shown = typeof value === 'number' ? Math.round(value * 10000) / 10000 : value;
+          return `${indent}${key}: ${shown}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    // title 속성에 안전하게 넣기 위한 큰따옴표/꺾쇠 이스케이프
+    function escapeAttr(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    // breakdown 객체를 받아 바로 title 속성 문자열(따옴표 포함)로 만들어주는 헬퍼
+    function hoverTitle(breakdown) {
+      return `title="${escapeAttr(formatBreakdown(breakdown))}"`;
     }
 
     // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
@@ -330,12 +359,12 @@
           <table class="statTable">
             <tr><th>아이템 레벨</th><td>${info.itemAvgLevel ?? '-'}</td></tr>
             <tr><th>전투력</th><td>${info.combatPower ?? '-'}</td></tr>
-            <tr><th>무기 공격력</th><td>${ctx.dealerStats.weaponAttack.toLocaleString()}</td></tr>
-            <tr><th>추가 피해</th><td>${ctx.extraDamageResult.qualityTooLow ? '표시 불가' : ctx.extraDamageResult.multiplier.toFixed(4)}</td></tr>
-            <tr><th>적에게 주는 피해</th><td>${ctx.enemyDamageResult.multiplier.toFixed(4)}</td></tr>
-            <tr><th>진화형 피해</th><td>${pct(info.evolutionDamagePercent)}%</td></tr>
-            <tr><th>치명타 적중률</th><td>${ctx.critResult.critRatePercent.toFixed(2)}%</td></tr>
-            <tr><th>치명타 피해</th><td>${ctx.critResult.critDamagePercent.toFixed(2)}%</td></tr>
+            <tr><th>무기 공격력</th><td class="hoverInfo" ${hoverTitle(ctx.dealerStats.weaponAttackBreakdown)}>${ctx.dealerStats.weaponAttack.toLocaleString()}</td></tr>
+            <tr><th>추가 피해</th><td class="hoverInfo" ${hoverTitle(ctx.extraDamageResult.extraDamageBreakdown)}>${ctx.extraDamageResult.qualityTooLow ? '표시 불가' : ctx.extraDamageResult.multiplier.toFixed(4)}</td></tr>
+            <tr><th>적에게 주는 피해</th><td class="hoverInfo" ${hoverTitle(ctx.enemyDamageResult.breakdown)}>${ctx.enemyDamageResult.multiplier.toFixed(4)}</td></tr>
+            <tr><th>진화형 피해</th><td class="hoverInfo" ${hoverTitle(ctx.enemyDamageResult.breakdown.아크패시브_진화형피해_상세)}>${pct(info.evolutionDamagePercent)}%</td></tr>
+            <tr><th>치명타 적중률</th><td class="hoverInfo" ${hoverTitle(ctx.critResult.critRateBreakdown)}>${ctx.critResult.critRatePercent.toFixed(2)}%</td></tr>
+            <tr><th>치명타 피해</th><td class="hoverInfo" ${hoverTitle(ctx.critResult.critDamageBreakdown)}>${ctx.critResult.critDamagePercent.toFixed(2)}%</td></tr>
           </table>
         </div>
       `;
