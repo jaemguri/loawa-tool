@@ -24,6 +24,12 @@
     .braceletSimRow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
     .braceletSimRow select { flex: 1 1 auto; }
     .braceletSimRow input { width: 80px; }
+    .braceletSimGrantRow { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+    .braceletSimGrantRow select { flex: 1 1 220px; }
+    .braceletSimTiers { display: flex; gap: 4px; }
+    .braceletTierBtn { border: 2px solid transparent; border-radius: 4px; padding: 4px 8px; color: #fff; font-weight: bold; cursor: pointer; text-shadow: 0 1px 1px rgba(0,0,0,0.4); }
+    .braceletTierBtn.selected { border-color: #222; }
+    .braceletSimRemoveBtn { flex: 0 0 auto; }
     .braceletSimTotal { font-weight: bold; margin-top: 8px; }
   </style>
 </head>
@@ -492,24 +498,23 @@
       document.getElementById('darkGrenadeCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
     }
 
-    // 팔찌 시뮬레이터 상태: 기본 옵션 최대 2개(힘/민첩/지능/특화/신속/치명 중), 부여 옵션 최대 3개
+    // 팔찌 시뮬레이터 상태: 기본 옵션 최대 2개(힘/민첩/지능/특화/신속/치명 중, 자유 입력),
+    // 부여 옵션 최대 3개(BRACELET_OPTION_CATALOG에서 옵션 종류 + 3단계 등급 선택)
     const BRACELET_SIM_MAX = { basic: 2, grant: 3 };
-    const braceletSimState = { basic: [{ type: '', value: '' }], grant: [{ type: '', value: '' }] };
+    const braceletSimState = { basic: [{ type: '', value: '' }], grant: [{ catalogKey: '', tierIndex: null }] };
     let braceletSimCtx = null;
 
-    function braceletSimOptionPool(group) {
-      return group === 'basic'
-        ? BRACELET_BASIC_OPTION_TYPES.map((t) => ({ value: t, label: t }))
-        : BRACELET_GRANT_OPTION_TYPES.map((o) => ({ value: o.key, label: o.label }));
+    function renderBraceletSimRows(group) {
+      if (group === 'grant') { renderBraceletSimGrantRows(); return; }
+      renderBraceletSimBasicRows();
     }
 
-    // 각 그룹의 행들을 다시 그린다. 같은 그룹 내 다른 행이 이미 고른 옵션은 드롭다운에서 빼서
-    // 중복 선택을 막는다(본인이 고른 값은 유지).
-    function renderBraceletSimRows(group) {
-      const container = document.querySelector(`.braceletSimRows[data-group="${group}"]`);
+    // "팔찌 기본 옵션" 행: 힘/민첩/지능/특화/신속/치명 드롭다운 + 자유 숫자 입력 (기존과 동일).
+    // 같은 그룹 내 다른 행이 이미 고른 스탯은 드롭다운에서 빼서 중복 선택을 막는다.
+    function renderBraceletSimBasicRows() {
+      const container = document.querySelector('.braceletSimRows[data-group="basic"]');
       container.innerHTML = '';
-      const pool = braceletSimOptionPool(group);
-      braceletSimState[group].forEach((row, index) => {
+      braceletSimState.basic.forEach((row, index) => {
         const rowEl = document.createElement('div');
         rowEl.className = 'braceletSimRow';
 
@@ -518,17 +523,17 @@
         emptyOption.value = '';
         emptyOption.textContent = '옵션 선택';
         select.appendChild(emptyOption);
-        const othersPicked = braceletSimState[group].filter((_, i) => i !== index).map((r) => r.type).filter(Boolean);
-        pool.filter((opt) => !othersPicked.includes(opt.value)).forEach((opt) => {
+        const othersPicked = braceletSimState.basic.filter((_, i) => i !== index).map((r) => r.type).filter(Boolean);
+        BRACELET_BASIC_OPTION_TYPES.filter((t) => !othersPicked.includes(t)).forEach((t) => {
           const optionEl = document.createElement('option');
-          optionEl.value = opt.value;
-          optionEl.textContent = opt.label;
-          if (opt.value === row.type) optionEl.selected = true;
+          optionEl.value = t;
+          optionEl.textContent = t;
+          if (t === row.type) optionEl.selected = true;
           select.appendChild(optionEl);
         });
         select.addEventListener('change', () => {
           row.type = select.value;
-          renderBraceletSimRows(group);
+          renderBraceletSimBasicRows();
           recomputeBraceletSimulator();
         });
 
@@ -545,9 +550,9 @@
         removeBtn.type = 'button';
         removeBtn.textContent = '×';
         removeBtn.addEventListener('click', () => {
-          braceletSimState[group].splice(index, 1);
-          if (braceletSimState[group].length === 0) braceletSimState[group].push({ type: '', value: '' });
-          renderBraceletSimRows(group);
+          braceletSimState.basic.splice(index, 1);
+          if (braceletSimState.basic.length === 0) braceletSimState.basic.push({ type: '', value: '' });
+          renderBraceletSimBasicRows();
           recomputeBraceletSimulator();
         });
 
@@ -557,8 +562,87 @@
         container.appendChild(rowEl);
       });
 
-      const addBtn = document.querySelector(`.braceletSimAddBtn[data-group="${group}"]`);
-      addBtn.style.display = braceletSimState[group].length >= BRACELET_SIM_MAX[group] ? 'none' : '';
+      const addBtn = document.querySelector('.braceletSimAddBtn[data-group="basic"]');
+      addBtn.style.display = braceletSimState.basic.length >= BRACELET_SIM_MAX.basic ? 'none' : '';
+    }
+
+    // 카탈로그를 딜러/공용/서폿 그룹(optgroup)으로 나눠서 <option> 마크업 생성. excludeKeys는
+    // 같은 그룹 내 다른 행이 이미 고른 옵션 종류(중복 선택 방지용).
+    function braceletSimCatalogOptionsHtml(excludeKeys) {
+      const categories = [
+        { key: 'dealer', label: '딜러 옵션' },
+        { key: 'both', label: '무기공격력(공용)' },
+        { key: 'support', label: '서폿 옵션' },
+      ];
+      return categories.map((cat) => {
+        const items = BRACELET_OPTION_CATALOG.filter((c) => c.category === cat.key && !excludeKeys.includes(c.key));
+        if (!items.length) return '';
+        const options = items.map((c) => `<option value="${c.key}">${c.label}</option>`).join('');
+        return `<optgroup label="${cat.label}">${options}</optgroup>`;
+      }).join('');
+    }
+
+    // "팔찌 부여 옵션" 행: 실제 옵션 종류(카탈로그) 드롭다운 + 3단계 등급 색상 버튼(하늘색/보라색/주황색).
+    // 종류를 고르면 그 옵션의 대표 수치(첫 효과 기준)가 버튼에 표시되고, 등급을 누르면 딸린 효과가
+    // (1~2개) 전부 같이 세팅된다.
+    function renderBraceletSimGrantRows() {
+      const container = document.querySelector('.braceletSimRows[data-group="grant"]');
+      container.innerHTML = '';
+      braceletSimState.grant.forEach((row, index) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'braceletSimGrantRow';
+
+        const select = document.createElement('select');
+        const othersPicked = braceletSimState.grant.filter((_, i) => i !== index).map((r) => r.catalogKey).filter(Boolean);
+        select.innerHTML = `<option value="">옵션 선택</option>${braceletSimCatalogOptionsHtml(othersPicked)}`;
+        select.value = row.catalogKey || '';
+        select.addEventListener('change', () => {
+          row.catalogKey = select.value;
+          row.tierIndex = null;
+          renderBraceletSimGrantRows();
+          recomputeBraceletSimulator();
+        });
+
+        const tierContainer = document.createElement('div');
+        tierContainer.className = 'braceletSimTiers';
+        const catalogEntry = BRACELET_OPTION_CATALOG.find((c) => c.key === row.catalogKey);
+        if (catalogEntry) {
+          const primaryEffect = catalogEntry.effects[0];
+          BRACELET_TIER_COLORS.forEach((color, tierIdx) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'braceletTierBtn' + (row.tierIndex === tierIdx ? ' selected' : '');
+            btn.style.background = color;
+            btn.title = BRACELET_TIER_LABELS[tierIdx];
+            btn.textContent = `${primaryEffect.tiers[tierIdx]}${primaryEffect.unit}`;
+            btn.addEventListener('click', () => {
+              row.tierIndex = tierIdx;
+              renderBraceletSimGrantRows();
+              recomputeBraceletSimulator();
+            });
+            tierContainer.appendChild(btn);
+          });
+        }
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'braceletSimRemoveBtn';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          braceletSimState.grant.splice(index, 1);
+          if (braceletSimState.grant.length === 0) braceletSimState.grant.push({ catalogKey: '', tierIndex: null });
+          renderBraceletSimGrantRows();
+          recomputeBraceletSimulator();
+        });
+
+        rowEl.appendChild(select);
+        rowEl.appendChild(tierContainer);
+        rowEl.appendChild(removeBtn);
+        container.appendChild(rowEl);
+      });
+
+      const addBtn = document.querySelector('.braceletSimAddBtn[data-group="grant"]');
+      addBtn.style.display = braceletSimState.grant.length >= BRACELET_SIM_MAX.grant ? 'none' : '';
     }
 
     // 선택된 옵션들로 calculateHypotheticalBraceletEfficiency를 다시 돌려 결과 표를 갱신
@@ -566,16 +650,19 @@
       const resultEl = document.querySelector('.braceletSimResult');
       const selections = {
         basic: braceletSimState.basic.filter((r) => r.type && r.value).map((r) => ({ type: r.type, value: r.value })),
-        grant: braceletSimState.grant.filter((r) => r.type && r.value).map((r) => ({ type: r.type, value: r.value })),
+        grant: braceletSimState.grant.filter((r) => r.catalogKey && r.tierIndex != null).map((r) => ({ catalogKey: r.catalogKey, tierIndex: r.tierIndex })),
       };
       if (!selections.basic.length && !selections.grant.length) {
-        resultEl.innerHTML = '<p>옵션을 선택하고 값을 입력하면 결과가 표시됩니다.</p>';
+        resultEl.innerHTML = '<p>옵션을 선택하면 결과가 표시됩니다.</p>';
         return;
       }
       const result = calculateHypotheticalBraceletEfficiency(braceletSimCtx.dealerData, braceletSimCtx.supportData, braceletSimCtx, selections);
       const rows = result.rows
         .filter((item) => item.value)
-        .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`)
+        .map((item) => {
+          const displayValue = typeof item.value === 'string' ? item.value : `${item.value}${item.key.endsWith('Percent') ? '%' : ''}`;
+          return `<tr><th>${item.label}</th><td>${displayValue}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`;
+        })
         .join('');
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>옵션</th><th>값</th><th>환산 효율</th></tr>${rows}</table>
@@ -586,7 +673,7 @@
     function setupBraceletSimulator(ctx) {
       braceletSimCtx = ctx;
       braceletSimState.basic = [{ type: '', value: '' }];
-      braceletSimState.grant = [{ type: '', value: '' }];
+      braceletSimState.grant = [{ catalogKey: '', tierIndex: null }];
       renderBraceletSimRows('basic');
       renderBraceletSimRows('grant');
       recomputeBraceletSimulator();
@@ -595,7 +682,7 @@
         btn.onclick = () => {
           const group = btn.dataset.group;
           if (braceletSimState[group].length < BRACELET_SIM_MAX[group]) {
-            braceletSimState[group].push({ type: '', value: '' });
+            braceletSimState[group].push(group === 'basic' ? { type: '', value: '' } : { catalogKey: '', tierIndex: null });
             renderBraceletSimRows(group);
             recomputeBraceletSimulator();
           }

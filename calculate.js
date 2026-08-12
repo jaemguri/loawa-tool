@@ -271,7 +271,7 @@ function getBraceletWeaponAttackFlatBase(braceletText) {
 
   const remaining = text
     .replace(/무기\s*공격력이\s*[\d,]+[^()]*\(최대\s*6\s*중첩\)/g, '')
-    .replace(/무기\s*공격력이\s*[\d,]+\s*증가한다\s*\(최대\s*30\s*중첩\)/g, '')
+    .replace(/무기\s*공격력이\s*[\d,]+\s*증가한다\.?\s*\(최대\s*30\s*중첩\)/g, '')
     .replace(/생명력이\s*50%[^.]*\./g, '');
 
   let total = 0;
@@ -293,7 +293,7 @@ function getBraceletWeaponAttackConditionalBreakdown(braceletText) {
   let m = text.match(/무기\s*공격력이\s*([\d,]+)[^()]*\(최대\s*6\s*중첩\)/);
   if (m) found.push({ variantKey: 'weaponAttackFlatStack6', rawValue: parseFloat(m[1].replace(/,/g, '')), multiplier: 6 });
 
-  m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\s*\(최대\s*30\s*중첩\)/);
+  m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\.?\s*\(최대\s*30\s*중첩\)/);
   if (m) found.push({ variantKey: 'weaponAttackFlatStack30', rawValue: parseFloat(m[1].replace(/,/g, '')), multiplier: 30 });
 
   m = text.match(/생명력이\s*50%[^무]*무기\s*공격력이\s*([\d,]+)/);
@@ -333,13 +333,14 @@ function parseBraceletOptions(braceletText) {
     critResistReductionPercent: 0,
     critDmgResistReductionPercent: 0,
     protectedTargetDamagePercent: 0,
+    incapacitatedDamagePercent: 0,
     allyShieldHealPercent: 0,
     allyAttackBuffPercent: 0,
     allyDamageBuffPercent: 0,
   };
   if (!braceletText) return result;
 
-  const text = braceletText.replace(/무력화 상태의[^.]*\./g, ''); // 무력화 옵션은 없는 것으로 간주
+  const text = braceletText;
 
   result.weaponAttackFlat = getBraceletWeaponAttackFlat(text);
   result.weaponAttackFlatBase = getBraceletWeaponAttackFlatBase(text);
@@ -347,7 +348,7 @@ function parseBraceletOptions(braceletText) {
   result.critDamagePercent = extractPercent(text, '치명타 피해');
   result.additionalDamagePercent = extractPercent(text, '추가 피해');
 
-  // "적에게 주는 피해"는 아래 조건부 문구들(치명타 적중 시/백어택/헤드어택/비방향성/보호효과대상)에도
+  // "적에게 주는 피해"는 아래 조건부 문구들(치명타 적중 시/백어택/헤드어택/비방향성/보호효과대상/무력화)에도
   // 전부 부분 문자열로 포함되어 있어, 그대로 extractPercent를 돌리면 그 수치들까지 중복 합산된다.
   // 해당 문구들을 먼저 지운 텍스트로 순수 "적에게 주는 피해 N%" 옵션만 집계한다.
   const enemyDamageOnlyText = text
@@ -355,7 +356,8 @@ function parseBraceletOptions(braceletText) {
     .replace(/백어택 스킬이 적에게 주는 피해가\s*[\d.]+\s*%/g, '')
     .replace(/헤드어택 스킬이 적에게 주는 피해가\s*[\d.]+\s*%/g, '')
     .replace(/방향성 공격이 아닌 스킬이 적에게 주는 피해가\s*[\d.]+\s*%/g, '')
-    .replace(/보호 효과가 적용된 대상이[^%]*적에게 주는 피해가\s*[\d.]+\s*%/g, '');
+    .replace(/보호 효과가 적용된 대상이[^%]*적에게 주는 피해가\s*[\d.]+\s*%/g, '')
+    .replace(/무력화 상태의 적에게 주는 피해가\s*[\d.]+\s*%/g, '');
   result.enemyDamagePercent = extractPercent(enemyDamageOnlyText, '적에게 주는 피해');
 
   let m;
@@ -388,6 +390,9 @@ function parseBraceletOptions(braceletText) {
 
   m = text.match(/보호 효과가 적용된 대상이[^%]*적에게 주는 피해가\s*([\d.]+)\s*%/);
   if (m) result.protectedTargetDamagePercent = parseFloat(m[1]);
+
+  m = text.match(/무력화 상태의 적에게 주는 피해가\s*([\d.]+)\s*%/);
+  if (m) result.incapacitatedDamagePercent = parseFloat(m[1]);
 
   m = text.match(/파티원 보호 및 회복효과가\s*([\d.]+)\s*%/);
   if (m) result.allyShieldHealPercent = parseFloat(m[1]);
@@ -2202,11 +2207,12 @@ function buildDealerDataWithCritStatDelta(dealerData, delta) {
 //   컨벤션과 동일)하면 적주피와 수학적으로 동치라 1:1로 취급.
 // - 악마 피해%/치명타(적)저항감소%(딜러 자신의 팔찌)/아군 버프 계열: 현재 엔진에
 //   딜러 자신에게 적용되는 계산식이 없어 0으로 처리 (필요해지면 나중에 보강 대상).
+const BRACELET_SPECIALIZATION_RATE = 0.03; // 특화 1당 0.03% (사용자 지정 고정치)
+const BRACELET_SWIFTNESS_RATE = 0.02; // 신속 1당 0.02% (사용자 지정 고정치)
+const BRACELET_COOLDOWN_PENALTY_RATE = 0.01 * 93.1; // 재사용대기 증가 1%당 -0.931% 페널티 (사용자 지정 고정치)
+
 function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStats, inputs, finalDamage, extraDamageMultiplier, ctx, baseTotal) {
   const { braceletOptions, primaryStatFlat, specStat, swiftStat, critStat } = inputs;
-  const SPECIALIZATION_RATE = 0.03; // 특화 1당 0.03% (사용자 지정 고정치)
-  const SWIFTNESS_RATE = 0.02; // 신속 1당 0.02% (사용자 지정 고정치)
-  const COOLDOWN_PENALTY_RATE = 0.01 * 93.1; // 재사용대기 증가 1%당 -0.931% 페널티 (사용자 지정 고정치)
 
   function sensitivityPercent(excludeKey, value) {
     if (!value) return 0;
@@ -2248,11 +2254,12 @@ function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStat
     { key: 'headAttackDamagePercent', label: '헤드어택 시 주는 피해%', value: braceletOptions.headAttackDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.headAttackDamagePercent || 0 },
     { key: 'nonDirectionalDamagePercent', label: '비방향성 스킬 주는 피해%', value: braceletOptions.nonDirectionalDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.nonDirectionalDamagePercent || 0 },
     { key: 'protectedTargetDamagePercent', label: '보호효과 대상 주는 피해%', value: braceletOptions.protectedTargetDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.protectedTargetDamagePercent || 0 },
-    { key: 'specialization', label: '특화(스탯)', value: specStat, method: '고정환산(1당 0.03%)', efficiencyPercent: (specStat || 0) * SPECIALIZATION_RATE },
-    { key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: (swiftStat || 0) * SWIFTNESS_RATE },
+    { key: 'incapacitatedDamagePercent', label: '무력화 상태 적에게 주는 피해%', value: braceletOptions.incapacitatedDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.incapacitatedDamagePercent || 0 },
+    { key: 'specialization', label: '특화(스탯)', value: specStat, method: '고정환산(1당 0.03%)', efficiencyPercent: (specStat || 0) * BRACELET_SPECIALIZATION_RATE },
+    { key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: (swiftStat || 0) * BRACELET_SWIFTNESS_RATE },
     { key: 'critStat', label: '치명(스탯)', value: critStat, method: '실스펙 환산', efficiencyPercent: critStatSensitivityPercent(critStat) },
     { key: 'demonDamagePercent', label: '악마 계열 피해%', value: braceletOptions.demonDamagePercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
-    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '고정환산(1당 -0.931%)', efficiencyPercent: -(braceletOptions.cooldownPenaltyPercent || 0) * COOLDOWN_PENALTY_RATE },
+    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '고정환산(1당 -0.931%)', efficiencyPercent: -(braceletOptions.cooldownPenaltyPercent || 0) * BRACELET_COOLDOWN_PENALTY_RATE },
     { key: 'defenseReductionPercent', label: '적 방어력 감소%', value: braceletOptions.defenseReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critResistReductionPercent', label: '치명타 저항 감소%', value: braceletOptions.critResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critDmgResistReductionPercent', label: '치명타 피해 저항 감소%', value: braceletOptions.critDmgResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
@@ -2301,59 +2308,159 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
 // "팔찌 기본 옵션" 드롭다운에 쓰이는 스탯 목록 (팔찌 시뮬레이터용)
 const BRACELET_BASIC_OPTION_TYPES = ['힘', '민첩', '지능', '특화', '신속', '치명'];
 
-// "고정 무기공격력" 부여 옵션은 실제로는 조건이 다른 4가지 옵션(일반/최대 6중첩/최대 30중첩/생명력 50%
-// 이상)인데, parseBraceletOptions의 weaponAttackFlat 하나로 합쳐서 관리한다(getBraceletWeaponAttackFlatBase/
-// Conditional 참고). 시뮬레이터에서 사용자가 실제 팔찌 툴팁에 적힌 "칸당(스택당) 값" 그대로 입력할 수 있도록
-// 종류별 배율을 따로 두고, calculateHypotheticalBraceletEfficiency에서 weaponAttackFlat 총합으로 환산한다.
-const WEAPON_ATTACK_GRANT_VARIANTS = {
-  weaponAttackFlatPlain: { label: '고정 무기공격력 (일반)', multiplier: 1 },
-  weaponAttackFlatStack6: { label: '고정 무기공격력 (최대 6중첩)', multiplier: 6 },
-  weaponAttackFlatStack30: { label: '고정 무기공격력 (최대 30중첩)', multiplier: 30 },
-  weaponAttackFlatLife50: { label: '고정 무기공격력 (생명력 50% 이상)', multiplier: 1 },
-};
-
 // 실제 팔찌 텍스트에 "고정 무기공격력" 계열 중 어떤 종류가 있는지 감지해서
 // [{ variantKey, label, rawValue(칸당 값) }] 로 반환 (실제로는 보통 최대 1개).
+const WEAPON_ATTACK_VARIANT_LABELS = {
+  weaponAttackFlatPlain: '고정 무기공격력 (일반)',
+  weaponAttackFlatStack6: '고정 무기공격력 (최대 6중첩)',
+  weaponAttackFlatStack30: '고정 무기공격력 (최대 30중첩)',
+  weaponAttackFlatLife50: '고정 무기공격력 (생명력 50% 이상)',
+};
 function getBraceletWeaponAttackVariants(braceletText) {
   const variants = getBraceletWeaponAttackConditionalBreakdown(braceletText).map((v) => ({
-    variantKey: v.variantKey, rawValue: v.rawValue, label: WEAPON_ATTACK_GRANT_VARIANTS[v.variantKey].label,
+    variantKey: v.variantKey, rawValue: v.rawValue, label: WEAPON_ATTACK_VARIANT_LABELS[v.variantKey],
   }));
   const baseValue = getBraceletWeaponAttackFlatBase(braceletText);
   if (baseValue) {
-    variants.push({ variantKey: 'weaponAttackFlatPlain', rawValue: baseValue, label: WEAPON_ATTACK_GRANT_VARIANTS.weaponAttackFlatPlain.label });
+    variants.push({ variantKey: 'weaponAttackFlatPlain', rawValue: baseValue, label: WEAPON_ATTACK_VARIANT_LABELS.weaponAttackFlatPlain });
   }
   return variants;
 }
 
-// "팔찌 부여 옵션" 드롭다운에 쓰이는 옵션 목록 (팔찌 시뮬레이터용). 비슷한 항목끼리 묶어서 순서를 정함.
-// key는 parseBraceletOptions 결과 필드명과 동일 (weaponAttackFlatBase는 내부 역산용이라 제외) —
-// 단 고정 무기공격력만 WEAPON_ATTACK_GRANT_VARIANTS의 4개 key로 대체.
-const BRACELET_GRANT_OPTION_TYPES = [
-  ...Object.keys(WEAPON_ATTACK_GRANT_VARIANTS).map((key) => ({ key, label: WEAPON_ATTACK_GRANT_VARIANTS[key].label })),
-  { key: 'critRatePercent', label: '치명타 적중률%' },
-  { key: 'critDamagePercent', label: '치명타 피해%' },
-  { key: 'critHitExtraDamagePercent', label: '치명타 적중 시 추가 피해%' },
-  { key: 'critResistReductionPercent', label: '치명타 저항 감소%' },
-  { key: 'critDmgResistReductionPercent', label: '치명타 피해 저항 감소%' },
-  { key: 'enemyDamagePercent', label: '적에게 주는 피해%' },
-  { key: 'additionalDamagePercent', label: '추가 피해%' },
-  { key: 'demonDamagePercent', label: '악마 계열 피해%' },
-  { key: 'backAttackDamagePercent', label: '백어택 시 주는 피해%' },
-  { key: 'headAttackDamagePercent', label: '헤드어택 시 주는 피해%' },
-  { key: 'nonDirectionalDamagePercent', label: '비방향성 스킬 주는 피해%' },
-  { key: 'protectedTargetDamagePercent', label: '보호효과 대상 주는 피해%' },
-  { key: 'defenseReductionPercent', label: '적 방어력 감소%' },
-  { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)' },
-  { key: 'allyShieldHealPercent', label: '아군 보호/회복 효과%' },
-  { key: 'allyAttackBuffPercent', label: '아군 공격력 강화 효과%' },
-  { key: 'allyDamageBuffPercent', label: '아군 피해량 강화 효과%' },
+// 팔찌 실제 옵션 카탈로그(딜러/서폿/공용, 사용자가 정리해준 실제 게임 문구·수치 기준) — 팔찌 시뮬레이터의
+// "부여 옵션" 드롭다운이 이 목록을 그대로 쓴다. 각 옵션은 등급 3단계(하늘색<보라색<주황색) 값을 가지며,
+// 실제 게임에서 한 옵션 슬롯을 고르면 딸린 효과(1~2개)가 전부 같이 세팅되므로 effects 배열로 묶어서 표현.
+// field는 parseBraceletOptions 결과 필드명과 동일. stackMultiplier가 있으면 tier 값(칸당 값)에 그 배수를
+// 곱해서 field에 누적한다(스택형 무기공격력용).
+const BRACELET_OPTION_CATALOG = [
+  // 딜러 - 이중 효과
+  { key: 'critRateDual', category: 'dealer', label: '치명타 적중률 + 치명타 적중 시 적주피',
+    effects: [
+      { field: 'critRatePercent', label: '치명타 적중률', tiers: [3.4, 4.2, 5.0], unit: '%' },
+      { field: 'critHitExtraDamagePercent', label: '치명타 적중 시 적주피', tiers: [1.5, 1.5, 1.5], unit: '%' },
+    ] },
+  { key: 'critDamageDual', category: 'dealer', label: '치명타 피해 + 치명타 적중 시 적주피',
+    effects: [
+      { field: 'critDamagePercent', label: '치명타 피해', tiers: [6.8, 8.4, 10.0], unit: '%' },
+      { field: 'critHitExtraDamagePercent', label: '치명타 적중 시 적주피', tiers: [1.5, 1.5, 1.5], unit: '%' },
+    ] },
+  { key: 'enemyDamageIncapDual', category: 'dealer', label: '적주피 + 무력화 상태 적주피',
+    effects: [
+      { field: 'enemyDamagePercent', label: '적주피', tiers: [2.0, 2.5, 3.0], unit: '%' },
+      { field: 'incapacitatedDamagePercent', label: '무력화 상태 적주피', tiers: [4.0, 4.5, 5.0], unit: '%' },
+    ] },
+  { key: 'extraDamageDemonDual', category: 'dealer', label: '추가 피해 + 악마 계열 피해',
+    effects: [
+      { field: 'additionalDamagePercent', label: '추가 피해', tiers: [2.5, 3.0, 3.5], unit: '%' },
+      { field: 'demonDamagePercent', label: '악마 계열 피해', tiers: [2.5, 2.5, 2.5], unit: '%' },
+    ] },
+  { key: 'cooldownEnemyDamageDual', category: 'dealer', label: '재사용대기 증가 + 적주피',
+    effects: [
+      { field: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', tiers: [2, 2, 2], unit: '%' },
+      { field: 'enemyDamagePercent', label: '적주피', tiers: [4.5, 5.0, 5.5], unit: '%' },
+    ] },
+
+  // 딜러 - 단일 효과 (부가 문구 없음)
+  { key: 'critRateSingle', category: 'dealer', label: '치명타 적중률 (단독)',
+    effects: [{ field: 'critRatePercent', label: '치명타 적중률', tiers: [3.4, 4.2, 5.0], unit: '%' }] },
+  { key: 'critDamageSingle', category: 'dealer', label: '치명타 피해 (단독)',
+    effects: [{ field: 'critDamagePercent', label: '치명타 피해', tiers: [6.8, 8.4, 10.0], unit: '%' }] },
+  { key: 'weaponAttackSingle', category: 'dealer', label: '무기 공격력 (단독)',
+    effects: [{ field: 'weaponAttackFlat', label: '무기 공격력', tiers: [7200, 8100, 9000], unit: '' }] },
+  { key: 'enemyDamageSingle', category: 'dealer', label: '적주피 (단독)',
+    effects: [{ field: 'enemyDamagePercent', label: '적주피', tiers: [2.0, 2.5, 3.0], unit: '%' }] },
+  { key: 'extraDamageSingle', category: 'dealer', label: '추가 피해 (단독)',
+    effects: [{ field: 'additionalDamagePercent', label: '추가 피해', tiers: [3.0, 3.5, 4.0], unit: '%' }] },
+  { key: 'backAttackSingle', category: 'dealer', label: '백어택',
+    effects: [{ field: 'backAttackDamagePercent', label: '백어택 시 주는 피해', tiers: [2.5, 3.0, 3.5], unit: '%' }] },
+  { key: 'headAttackSingle', category: 'dealer', label: '헤드어택',
+    effects: [{ field: 'headAttackDamagePercent', label: '헤드어택 시 주는 피해', tiers: [2.5, 3.0, 3.5], unit: '%' }] },
+  { key: 'nonDirectionalSingle', category: 'dealer', label: '비방향성 (각성기 제외)',
+    effects: [{ field: 'nonDirectionalDamagePercent', label: '비방향성 스킬 주는 피해', tiers: [2.5, 3.0, 3.5], unit: '%' }] },
+
+  // 공용 - 무기공격력 특수 3종 (딜러/서폿 동일)
+  { key: 'weaponAttackStack6', category: 'both', label: '무기 공격력 (공격 적중 스택, 최대 6중첩)',
+    effects: [{ field: 'weaponAttackFlat', label: '무기 공격력(칸당)', tiers: [1160, 1320, 1480], unit: '', stackMultiplier: 6 }] },
+  { key: 'weaponAttackLife50', category: 'both', label: '무기 공격력 (생명력 50% 이상)',
+    effects: [
+      { field: 'weaponAttackFlat', label: '무기 공격력(기본)', tiers: [7200, 8100, 9000], unit: '' },
+      { field: 'weaponAttackFlat', label: '무기 공격력(조건부 추가)', tiers: [2000, 2200, 2400], unit: '' },
+    ] },
+  { key: 'weaponAttackStack30', category: 'both', label: '무기 공격력 (시간차 스택, 최대 30중첩)',
+    effects: [
+      { field: 'weaponAttackFlat', label: '무기 공격력(기본)', tiers: [6900, 7800, 8700], unit: '' },
+      { field: 'weaponAttackFlat', label: '무기 공격력(칸당)', tiers: [130, 140, 150], unit: '', stackMultiplier: 30 },
+    ] },
+
+  // 서폿 - 이중 효과 (모두 + 아군 공격력 강화)
+  { key: 'defenseReductionAllyDual', category: 'support', label: '방어력 감소 + 아군 공격력 강화',
+    effects: [
+      { field: 'defenseReductionPercent', label: '방어력 감소', tiers: [1.8, 2.1, 2.5], unit: '%' },
+      { field: 'allyAttackBuffPercent', label: '아군 공격력 강화', tiers: [2.0, 2.5, 3.0], unit: '%' },
+    ] },
+  { key: 'critResistReductionAllyDual', category: 'support', label: '치명타 저항 감소 + 아군 공격력 강화',
+    effects: [
+      { field: 'critResistReductionPercent', label: '치명타 저항 감소', tiers: [1.8, 2.1, 2.5], unit: '%' },
+      { field: 'allyAttackBuffPercent', label: '아군 공격력 강화', tiers: [2.0, 2.5, 3.0], unit: '%' },
+    ] },
+  { key: 'protectedTargetAllyDual', category: 'support', label: '보호효과 대상 적주피 + 아군 공격력 강화',
+    effects: [
+      { field: 'protectedTargetDamagePercent', label: '보호효과 대상 적주피', tiers: [0.9, 1.1, 1.3], unit: '%' },
+      { field: 'allyAttackBuffPercent', label: '아군 공격력 강화', tiers: [2.0, 2.5, 3.0], unit: '%' },
+    ] },
+  { key: 'critDmgResistReductionAllyDual', category: 'support', label: '치명타 피해 저항 감소 + 아군 공격력 강화',
+    effects: [
+      { field: 'critDmgResistReductionPercent', label: '치명타 피해 저항 감소', tiers: [3.6, 4.2, 4.8], unit: '%' },
+      { field: 'allyAttackBuffPercent', label: '아군 공격력 강화', tiers: [2.0, 2.5, 3.0], unit: '%' },
+    ] },
+
+  // 서폿 - 단일 효과
+  { key: 'allyAttackBuffSingle', category: 'support', label: '아군 공격력 강화 (단독)',
+    effects: [{ field: 'allyAttackBuffPercent', label: '아군 공격력 강화', tiers: [4.0, 5.0, 6.0], unit: '%' }] },
+  { key: 'allyDamageBuffSingle', category: 'support', label: '아군 피해량 강화 (단독)',
+    effects: [{ field: 'allyDamageBuffPercent', label: '아군 피해량 강화', tiers: [6.0, 7.5, 9.0], unit: '%' }] },
 ];
+
+// 3단계 등급 색상(낮음→높음: 하늘색/보라색/주황색)과 라벨 — 팔찌 시뮬레이터 UI에서 사용.
+// calculateBraceletOptionEfficiencies에서 "1:1 (상시발동 가정)" 방식으로 처리하는 필드들 — recompute로는
+// 안 잡히므로(어떤 계산식에도 안 꽂혀 있음) 팔찌 시뮬레이터에서도 값 그대로 더해준다.
+// enemyDamagePercent는 여기 포함하지 않음 — BRACELET_HOOKED_FIELD_SENTENCES에 이미 있어서 recompute
+// 경로로 정확히 잡히므로, 여기 넣으면 중복 합산된다.
+const BRACELET_DIRECT_1TO1_FIELDS = new Set([
+  'backAttackDamagePercent', 'headAttackDamagePercent',
+  'nonDirectionalDamagePercent', 'protectedTargetDamagePercent', 'incapacitatedDamagePercent',
+]);
+
+const BRACELET_TIER_COLORS = ['#4FC3F7', '#9C6ADE', '#FF9F40'];
+const BRACELET_TIER_LABELS = ['1단계', '2단계', '3단계'];
+
+// buildDealerDataWithoutBraceletField의 다중 필드 버전 — 팔찌 시뮬레이터에서 "이 옵션 슬롯(1~2개 필드에
+// 걸칠 수 있음) 하나가 통째로 없다고 가정"한 dealerData를 만들 때 쓴다.
+function buildDealerDataWithoutBraceletFields(dealerData, braceletOptions, primaryStatFlat, excludeKeys) {
+  const excludeSet = new Set(excludeKeys);
+  const sentences = Object.keys(BRACELET_HOOKED_FIELD_SENTENCES)
+    .filter((key) => !excludeSet.has(key) && braceletOptions[key])
+    .map((key) => BRACELET_HOOKED_FIELD_SENTENCES[key](braceletOptions[key]));
+
+  ['힘', '민첩', '지능'].forEach((stat) => {
+    if (!excludeSet.has(stat) && primaryStatFlat[stat]) sentences.push(`${stat} +${primaryStatFlat[stat]} 증가한다.`);
+  });
+
+  const equipment = (dealerData.equipment || []).map((item) => ({ ...item }));
+  const braceletIdx = equipment.findIndex((it) => it.Type === '팔찌');
+  if (braceletIdx === -1) return { ...dealerData, equipment };
+
+  const syntheticTooltip = {};
+  sentences.forEach((s, i) => { syntheticTooltip['S' + i] = { value: s }; });
+  equipment[braceletIdx] = { ...equipment[braceletIdx], Tooltip: JSON.stringify(syntheticTooltip) };
+  return { ...dealerData, equipment };
+}
 
 // 팔찌 시뮬레이터: 사용자가 고른 가상 옵션 조합(기본 옵션 최대 2개 + 부여 옵션 최대 3개)을 실제 팔찌와
 // "교체"했다고 가정하고 효율표 + 총 변화율을 계산.
-// selections = { basic: [{type, value}], grant: [{type, value}] } (type은 BRACELET_BASIC_OPTION_TYPES 값
-// 또는 BRACELET_GRANT_OPTION_TYPES의 key). 고정 무기공격력 계열 4종(WEAPON_ATTACK_GRANT_VARIANTS)을 고르면
-// 입력값(칸당 값)에 종류별 배율을 곱해 weaponAttackFlat 총합으로 합산.
+// selections = { basic: [{type, value}], grant: [{catalogKey, tierIndex}] } — type은
+// BRACELET_BASIC_OPTION_TYPES 값, catalogKey/tierIndex는 BRACELET_OPTION_CATALOG의 key와 등급(0~2).
+// 부여 옵션 한 슬롯을 고르면 그 카탈로그 항목의 effects(1~2개)가 전부 같이 세팅된다.
 // 치명 스탯은 실제 팔찌가 이미 가진 치명 스탯 기여분을 고려하지 않고(즉 실제 팔찌에 치명이 있었어도 무시하고)
 // "이 가상 치명 스탯만큼 추가로 있다"고 가정 — 실제 팔찌에 치명 스탯이 있는 경우는 드물어서 일단 이렇게 단순화.
 function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, selections) {
@@ -2370,20 +2477,16 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
     else if (type === '신속') swiftStat = value;
     else if (type === '치명') critStat = value;
   });
-  // 고정 무기공격력 계열(4종) 선택 — 실제 옵션 종류별 배율로 weaponAttackFlat 총합으로 환산.
-  // 화면에는 사용자가 입력한 "칸당 값"과 종류 라벨을 그대로 보여줘야 하므로 따로 기억해둔다.
-  let weaponAttackVariantLabel = null;
-  let weaponAttackVariantValue = 0;
-  (selections.grant || []).forEach(({ type, value }) => {
-    if (!type || !value) return;
-    const variant = WEAPON_ATTACK_GRANT_VARIANTS[type];
-    if (variant) {
-      braceletOptions.weaponAttackFlat += value * variant.multiplier;
-      weaponAttackVariantLabel = variant.label;
-      weaponAttackVariantValue = value;
-    } else {
-      braceletOptions[type] = value;
-    }
+
+  const grantSlots = (selections.grant || [])
+    .filter((s) => s.catalogKey != null && s.tierIndex != null)
+    .map((s) => ({ ...s, catalogEntry: BRACELET_OPTION_CATALOG.find((c) => c.key === s.catalogKey) }))
+    .filter((s) => s.catalogEntry);
+
+  grantSlots.forEach(({ catalogEntry, tierIndex }) => {
+    catalogEntry.effects.forEach((effect) => {
+      braceletOptions[effect.field] += effect.tiers[tierIndex] * (effect.stackMultiplier || 1);
+    });
   });
 
   let hypotheticalDealerData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, null);
@@ -2403,19 +2506,69 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
   const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
   const totalChangePercent = ((hypotheticalTotal / realTotal) - 1) * 100;
 
-  const inputs = { braceletOptions, primaryStatFlat, specStat, swiftStat, critStat };
-  const rows = calculateBraceletOptionEfficiencies(
-    hypotheticalDealerData, supportData, hypotheticalStats, inputs,
-    hypotheticalFinalDamage, hypotheticalExtra.multiplier, ctx, hypotheticalTotal
-  );
-
-  if (weaponAttackVariantLabel) {
-    const weaponAttackRow = rows.find((r) => r.key === 'weaponAttackFlat');
-    if (weaponAttackRow) {
-      weaponAttackRow.label = weaponAttackVariantLabel;
-      weaponAttackRow.value = weaponAttackVariantValue;
+  // 슬롯 하나(1~2개 필드)가 통째로 없다고 가정하고 다시 계산해서 hypotheticalTotal과 비교한 비율.
+  // cooldownPenaltyPercent는 어떤 계산식에도 안 꽂혀 있어 재계산으로는 0이 나오므로, 실제 팔찌 효율표와
+  // 동일한 고정 환산치(1당 -0.931%)를 별도로 빼준다.
+  function slotEfficiencyPercent(catalogEntry, tierIndex) {
+    // 실제 계산식에 꽂혀서 recompute로 잡히는 필드(BRACELET_HOOKED_FIELD_SENTENCES)만 "없다고 가정"하고
+    // 다시 계산 — 백어택/헤드어택/비방향성/보호효과대상/무력화처럼 recompute로는 안 잡히는 "상시발동 가정
+    // 1:1" 필드나, 재사용대기 페널티(고정환산)는 실제 팔찌 효율표와 동일하게 별도로 더/빼준다.
+    const hookedFields = [...new Set(catalogEntry.effects.map((e) => e.field).filter((f) => BRACELET_HOOKED_FIELD_SENTENCES[f]))];
+    let percent = 0;
+    if (hookedFields.length) {
+      const withoutData = buildDealerDataWithoutBraceletFields(hypotheticalDealerData, braceletOptions, primaryStatFlat, hookedFields);
+      const newStats = calculateCharacterStats(withoutData);
+      const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames });
+      const newExtra = calculateExtraDamageMultiplier(withoutData);
+      const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+      const newFinalDamage = calculateFinalDamage(
+        newStats.basePower, hypotheticalStats.accessoryAttackFlat, hypotheticalStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+        hypotheticalStats.chaosCoreAttack.percent, hypotheticalStats.earringAttackPercent, hypotheticalStats.arkgridGemsAttackPercent,
+        ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+      );
+      const withoutTotal = newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+      percent = ((hypotheticalTotal / withoutTotal) - 1) * 100;
     }
+
+    catalogEntry.effects.forEach((e) => {
+      if (BRACELET_DIRECT_1TO1_FIELDS.has(e.field)) percent += e.tiers[tierIndex];
+      if (e.field === 'cooldownPenaltyPercent') percent -= e.tiers[tierIndex] * BRACELET_COOLDOWN_PENALTY_RATE;
+    });
+
+    return percent;
   }
+
+  const rows = [];
+  ['힘', '민첩', '지능'].forEach((stat) => {
+    if (!primaryStatFlat[stat]) return;
+    const excludeFields = [stat];
+    const withoutData = buildDealerDataWithoutBraceletFields(hypotheticalDealerData, braceletOptions, primaryStatFlat, excludeFields);
+    const newStats = calculateCharacterStats(withoutData);
+    const newFinalDamage = calculateFinalDamage(
+      newStats.basePower, hypotheticalStats.accessoryAttackFlat, hypotheticalStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+      hypotheticalStats.chaosCoreAttack.percent, hypotheticalStats.earringAttackPercent, hypotheticalStats.arkgridGemsAttackPercent,
+      ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+    );
+    const withoutTotal = newFinalDamage * hypotheticalCrit.avgDamageMultiplier * hypotheticalExtra.multiplier * hypotheticalEnemy.multiplier;
+    rows.push({ key: 'primaryStat_' + stat, label: `주스탯(${stat})`, value: primaryStatFlat[stat], method: '실스펙 환산', efficiencyPercent: ((hypotheticalTotal / withoutTotal) - 1) * 100 });
+  });
+  if (specStat) rows.push({ key: 'specialization', label: '특화(스탯)', value: specStat, method: '고정환산(1당 0.03%)', efficiencyPercent: specStat * BRACELET_SPECIALIZATION_RATE });
+  if (swiftStat) rows.push({ key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: swiftStat * BRACELET_SWIFTNESS_RATE });
+  if (critStat) {
+    const withoutData = buildDealerDataWithCritStatDelta(hypotheticalDealerData, -critStat);
+    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames });
+    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+    const withoutTotal = hypotheticalFinalDamage * newCrit.avgDamageMultiplier * hypotheticalExtra.multiplier * newEnemy.multiplier;
+    rows.push({ key: 'critStat', label: '치명(스탯)', value: critStat, method: '실스펙 환산', efficiencyPercent: ((hypotheticalTotal / withoutTotal) - 1) * 100 });
+  }
+
+  grantSlots.forEach(({ catalogEntry, tierIndex }) => {
+    const valueText = catalogEntry.effects.map((e) => `${e.label} ${e.tiers[tierIndex]}${e.unit}`).join(' + ');
+    rows.push({
+      key: catalogEntry.key, label: catalogEntry.label, value: valueText, tierIndex,
+      method: '실스펙 환산', efficiencyPercent: slotEfficiencyPercent(catalogEntry, tierIndex),
+    });
+  });
 
   return { rows, totalChangePercent };
 }
@@ -2425,7 +2578,8 @@ const EMPTY_BRACELET_OPTIONS = {
   critHitExtraDamagePercent: 0, enemyDamagePercent: 0, additionalDamagePercent: 0, demonDamagePercent: 0,
   cooldownPenaltyPercent: 0, backAttackDamagePercent: 0, headAttackDamagePercent: 0, nonDirectionalDamagePercent: 0,
   defenseReductionPercent: 0, critResistReductionPercent: 0, critDmgResistReductionPercent: 0,
-  protectedTargetDamagePercent: 0, allyShieldHealPercent: 0, allyAttackBuffPercent: 0, allyDamageBuffPercent: 0,
+  protectedTargetDamagePercent: 0, incapacitatedDamagePercent: 0,
+  allyShieldHealPercent: 0, allyAttackBuffPercent: 0, allyDamageBuffPercent: 0,
 };
 
 // 아크그리드 6개 코어 슬롯을 이름/투자 포인트/등급 그대로 나열 (Slot.Name에 "질서의 해 코어 : ..." 형태로
