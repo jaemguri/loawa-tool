@@ -426,15 +426,105 @@ function getCoreOptionText(tooltipStr) {
 
 // 모든 장비(팔찌 제외)의 "기본 효과"에서 특정 스탯(힘/민첩/지능)을 다 더해서 총합 계산
 // (팔찌는 별도로 계산해서 더하므로 여기서 제외해 중복 방지)
+// 방어구 5종(머리장식/견장/상의/하의/장갑)은 텍스트 파싱 대신 ARMOR_LEVEL_TABLE로 별도 계산하므로
+// (getArmorPrimaryStatFlat 참고) 여기서는 제외해서 중복 합산을 막는다.
+const ARMOR_EQUIPMENT_TYPES = ['투구', '어깨', '상의', '하의', '장갑'];
+
 function getStatTotalFromEquipment(equipmentList, statName) {
   let total = 0;
   (equipmentList || [])
-    .filter((item) => item.Type !== '팔찌')
+    .filter((item) => item.Type !== '팔찌' && !ARMOR_EQUIPMENT_TYPES.includes(item.Type))
     .forEach((item) => {
       const text = parseTooltip(item.Tooltip).join(' ');
       total += extractFlat(text, statName);
     });
   return total;
+}
+
+// 방어구 5종 레벨(10~25)별 힘/민첩/지능 고정 테이블 — 완갑/무기처럼 텍스트 파싱 대신 레벨→수치 고정
+// 테이블로 관리(레벨별 수치가 게임 데이터 그대로라 텍스트 파싱보다 표가 더 정확하고 안전함).
+// API의 실제 Type 값은 '투구'/'어깨'(모자/견장이 아님).
+const ARMOR_LEVEL_TABLE = {
+  '투구': { 10: 94140, 11: 96801, 12: 99554, 13: 102404, 14: 105353, 15: 108406, 16: 111565, 17: 114358, 18: 117218, 19: 120150, 20: 123155, 21: 126236, 22: 129393, 23: 132629, 24: 135946, 25: 139346 },
+  '어깨': { 10: 100193, 11: 103023, 12: 105954, 13: 108987, 14: 112126, 15: 115375, 16: 118738, 17: 121709, 18: 124754, 19: 127874, 20: 131072, 21: 134351, 22: 137711, 23: 141155, 24: 144686, 25: 148304 },
+  '상의': { 10: 75313, 11: 77441, 12: 79644, 13: 81924, 14: 84283, 15: 86725, 16: 89253, 17: 91486, 18: 93775, 19: 96120, 20: 98524, 21: 100989, 22: 103514, 23: 106103, 24: 108757, 25: 111477 },
+  '하의': { 10: 81364, 11: 83664, 12: 86043, 13: 88506, 14: 91056, 15: 93693, 16: 96424, 17: 98838, 18: 101310, 19: 103844, 20: 106441, 21: 109104, 22: 111833, 23: 114630, 24: 117497, 25: 120435 },
+  '장갑': { 10: 112969, 11: 116161, 12: 119465, 13: 122885, 14: 126425, 15: 130087, 16: 133879, 17: 137229, 18: 140662, 19: 144180, 20: 147786, 21: 151483, 22: 155271, 23: 159155, 24: 163136, 25: 167216 },
+};
+
+// 방어구 아이템 이름의 "+N"에서 강화 레벨 추출 (무기/완갑과 동일한 패턴)
+function getArmorLevel(item) {
+  if (!item) return 0;
+  const levelMatch = stripHtml(item.Name).match(/\+(\d+)/);
+  return levelMatch ? parseInt(levelMatch[1], 10) : 0;
+}
+
+// 방어구 5종 각각의 실제 착용 레벨을 ARMOR_LEVEL_TABLE에서 찾아 합산한 힘/민첩/지능 고정치.
+// (부위별 상세는 getArmorBreakdown 참고 — 장비 탭 표시용)
+function getArmorPrimaryStatFlat(equipmentList) {
+  return getArmorBreakdown(equipmentList).reduce((sum, row) => sum + row.statFlat, 0);
+}
+
+// 장비 탭/디버그 표시용 — 방어구 5종 부위별 [type, item, level, statFlat] 나열
+function getArmorBreakdown(equipmentList) {
+  return ARMOR_EQUIPMENT_TYPES.map((apiType) => {
+    const item = (equipmentList || []).find((it) => it.Type === apiType);
+    const level = getArmorLevel(item);
+    const statFlat = (ARMOR_LEVEL_TABLE[apiType] && ARMOR_LEVEL_TABLE[apiType][level]) || 0;
+    return { type: apiType, item, level, statFlat };
+  });
+}
+
+// API Type -> 화면 표시용 한글 이름 (장비 탭 UI용)
+const ARMOR_TYPE_LABELS = { '투구': '머리장식', '어깨': '견장', '상의': '상의', '하의': '하의', '장갑': '장갑' };
+
+// 장비 시뮬레이터: 방어구 5종 레벨을 가상으로 바꿨을 때(실제 착용 레벨 대신) 전체 딜 변화율을 계산.
+// 방어구는 primaryStat(purePower=sqrt(주스탯×무기공격력/6) 경로) 하나에만 영향을 주므로, 팔찌처럼
+// 텍스트를 재구성할 필요 없이 getMaxPrimaryStat에 넘기는 extraStatFlat만 갈아끼우면 된다.
+// levelSelections = { 투구: level, 어깨: level, ... } — 값이 없는(0/undefined) 부위는 실제 착용 레벨을
+// 그대로 사용(안 바꾼 것으로 취급).
+function calculateHypotheticalArmorEfficiency(dealerData, dealerStats, ctx, levelSelections) {
+  const braceletItem = (dealerData.equipment || []).find((it) => it.Type === '팔찌');
+  const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
+  const gemPercent = getGemsBaseAttackPercent(dealerData.gems);
+  const stonePercent = getAbilityStoneBaseAttackPercent(dealerData.equipment);
+
+  function totalWithArmorFlat(armorFlat) {
+    const primaryStat = getMaxPrimaryStat(dealerData.equipment, braceletText, dealerData.avatars, dealerStats.wanjibStats.primaryStatFlat + armorFlat);
+    const purePower = calculatePureAttackPower(primaryStat, dealerStats.weaponAttack);
+    const basePower = calculateBaseAttackPower(purePower, gemPercent, stonePercent + dealerStats.wanjibStats.baseAttackPercent) + dealerStats.wanjibStats.baseAttackFlat;
+    const finalDamage = calculateFinalDamage(
+      basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+      dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, dealerStats.arkgridGemsAttackPercent,
+      ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+    );
+    return finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  }
+
+  const realBreakdown = getArmorBreakdown(dealerData.equipment);
+  const perPieceFlat = {};
+  let hypotheticalArmorFlat = 0;
+  ARMOR_EQUIPMENT_TYPES.forEach((apiType) => {
+    const level = levelSelections[apiType];
+    const realStatFlat = realBreakdown.find((b) => b.type === apiType).statFlat;
+    const statFlat = level ? ((ARMOR_LEVEL_TABLE[apiType] && ARMOR_LEVEL_TABLE[apiType][level]) || 0) : realStatFlat;
+    perPieceFlat[apiType] = statFlat;
+    hypotheticalArmorFlat += statFlat;
+  });
+
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const hypotheticalTotal = totalWithArmorFlat(hypotheticalArmorFlat);
+  const totalChangePercent = ((hypotheticalTotal / realTotal) - 1) * 100;
+
+  const rows = ARMOR_EQUIPMENT_TYPES.filter((apiType) => levelSelections[apiType]).map((apiType) => {
+    const realStatFlat = realBreakdown.find((b) => b.type === apiType).statFlat;
+    const withoutThisFlat = hypotheticalArmorFlat - perPieceFlat[apiType] + realStatFlat;
+    const withoutThisTotal = totalWithArmorFlat(withoutThisFlat);
+    const efficiencyPercent = ((hypotheticalTotal / withoutThisTotal) - 1) * 100;
+    return { key: apiType, label: ARMOR_TYPE_LABELS[apiType], value: `Lv.${levelSelections[apiType]}`, efficiencyPercent };
+  });
+
+  return { rows, totalChangePercent };
 }
 
 // equipmentList(팔찌 제외)에서 힘/민첩/지능 중 가장 큰 stat 이름을 반환 — 클래스의 "주스탯"을
@@ -807,7 +897,8 @@ function calculateCharacterStats(data) {
     깨달음_퍼센트: enlightenmentPercent,
   };
 
-  const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars, wanjibStats.primaryStatFlat);
+  const armorPrimaryStatFlat = getArmorPrimaryStatFlat(data.equipment);
+  const primaryStat = getMaxPrimaryStat(data.equipment, braceletText, data.avatars, wanjibStats.primaryStatFlat + armorPrimaryStatFlat);
   const purePower = calculatePureAttackPower(primaryStat, weaponAttack);
 
   const gemPercent = getGemsBaseAttackPercent(data.gems);
@@ -830,7 +921,7 @@ function calculateCharacterStats(data) {
     weaponAttack, weaponAttackBreakdown, primaryStat, purePower, basePower,
     accessoryAttackFlat, chaosCoreAttack, earringAttackPercent, arkgridGemsAttackPercent,
     statWindowAttack,
-    wanjibStats,
+    wanjibStats, armorPrimaryStatFlat,
     braceletOptions,
   };
 }

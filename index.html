@@ -31,6 +31,9 @@
     .braceletTierBtn.selected { border-color: #222; }
     .braceletSimRemoveBtn { flex: 0 0 auto; }
     .braceletSimTotal { font-weight: bold; margin-top: 8px; }
+    .armorSimRow { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+    .armorSimLabel { width: 70px; flex: 0 0 auto; }
+    .armorSimTotal { font-weight: bold; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -645,15 +648,25 @@
       addBtn.style.display = braceletSimState.grant.length >= BRACELET_SIM_MAX.grant ? 'none' : '';
     }
 
-    // 선택된 옵션들로 calculateHypotheticalBraceletEfficiency를 다시 돌려 결과 표를 갱신
-    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데,
-    // 팔찌 시뮬레이터에서 가상 팔찌를 골랐을 때는 그 값 대신 시뮬레이터의 totalChangePercent를 보여준다
-    // (defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 팔찌 교체로는 안 바뀌는
-    // 상수라 before/after 비율 계산에서 그대로 약분되므로, 4개 곱연산만으로 구한 totalChangePercent가
-    // 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다).
-    function updateSurgeBarFromBracelet(totalChangePercent) {
+    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데, 팔찌/장비
+    // 시뮬레이터에서 가상 조합을 고르면 그 값 대신 시뮬레이터들의 totalChangePercent를 보여준다
+    // (defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 팔찌·방어구 교체로는
+    // 안 바뀌는 상수라 before/after 비율 계산에서 그대로 약분되므로, 각 시뮬레이터가 독립적으로 구한
+    // totalChangePercent가 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다). 팔찌·장비 두 시뮬레이터가
+    // 동시에 활성화될 수 있으므로 각자의 값을 따로 기억해뒀다가 곱연산으로 합쳐서 표시한다.
+    const surgeBarSimContributions = { bracelet: 0, armor: 0 };
+    function updateSurgeBar() {
+      const combined = (toMultiplier(surgeBarSimContributions.bracelet) * toMultiplier(surgeBarSimContributions.armor) - 1) * 100;
       const surgeEl = document.getElementById('surgeBarValue');
-      if (surgeEl) surgeEl.textContent = pct(totalChangePercent);
+      if (surgeEl) surgeEl.textContent = pct(combined);
+    }
+    function updateSurgeBarFromBracelet(totalChangePercent) {
+      surgeBarSimContributions.bracelet = totalChangePercent;
+      updateSurgeBar();
+    }
+    function updateSurgeBarFromArmor(totalChangePercent) {
+      surgeBarSimContributions.armor = totalChangePercent;
+      updateSurgeBar();
     }
 
     function recomputeBraceletSimulator() {
@@ -727,9 +740,107 @@
       setupBraceletSimulator(ctx);
     }
 
+    // 방어구 5종 실제 착용 정보(부위/아이템명/레벨/힘·민첩·지능 기여치 + 합계) 표
+    function buildArmorInfoSectionHtml(ctx) {
+      const breakdown = getArmorBreakdown(ctx.dealerData.equipment);
+      const rows = breakdown
+        .map((b) => `<tr><th>${ARMOR_TYPE_LABELS[b.type]}</th><td>${b.item ? stripHtml(b.item.Name) : '(미장착)'}</td><td>Lv.${b.level}</td><td>${b.statFlat.toLocaleString()}</td></tr>`)
+        .join('');
+      const total = breakdown.reduce((sum, b) => sum + b.statFlat, 0);
+      return `
+        <div class="fieldGroup">
+          <h4>장비 정보 (방어구 5종)</h4>
+          <table class="statTable">
+            <tr><th>부위</th><th>아이템</th><th>레벨</th><th>힘/민첩/지능</th></tr>
+            ${rows}
+            <tr><th>합계</th><td></td><td></td><td>${total.toLocaleString()}</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    // 장비 시뮬레이터 상태: 방어구 5종 각각 가상 레벨(10~25, 0이면 실제 착용 유지)
+    const armorSimState = {};
+    let armorSimCtx = null;
+
+    function renderArmorSimRows() {
+      const container = document.querySelector('.armorSimRows');
+      container.innerHTML = '';
+      ARMOR_EQUIPMENT_TYPES.forEach((apiType) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'armorSimRow';
+
+        const labelEl = document.createElement('span');
+        labelEl.className = 'armorSimLabel';
+        labelEl.textContent = ARMOR_TYPE_LABELS[apiType];
+
+        const select = document.createElement('select');
+        const keepOption = document.createElement('option');
+        keepOption.value = '';
+        keepOption.textContent = '실제 착용 유지';
+        select.appendChild(keepOption);
+        for (let lv = 10; lv <= 25; lv++) {
+          const optionEl = document.createElement('option');
+          optionEl.value = lv;
+          optionEl.textContent = `Lv.${lv}`;
+          if (armorSimState[apiType] === lv) optionEl.selected = true;
+          select.appendChild(optionEl);
+        }
+        select.addEventListener('change', () => {
+          armorSimState[apiType] = select.value ? parseInt(select.value, 10) : 0;
+          recomputeArmorSimulator();
+        });
+
+        rowEl.appendChild(labelEl);
+        rowEl.appendChild(select);
+        container.appendChild(rowEl);
+      });
+    }
+
+    function recomputeArmorSimulator() {
+      const resultEl = document.querySelector('.armorSimResult');
+      const hasSelection = ARMOR_EQUIPMENT_TYPES.some((t) => armorSimState[t]);
+      if (!hasSelection) {
+        resultEl.innerHTML = '<p>레벨을 선택하면 결과가 표시됩니다.</p>';
+        updateSurgeBarFromArmor(0);
+        return;
+      }
+      const result = calculateHypotheticalArmorEfficiency(armorSimCtx.dealerData, armorSimCtx.dealerStats, armorSimCtx, armorSimState);
+      const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      resultEl.innerHTML = `
+        <table class="statTable"><tr><th>부위</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
+        <p class="armorSimTotal">실제 장비 대비 변화: ${pct(result.totalChangePercent)}%</p>
+      `;
+      updateSurgeBarFromArmor(result.totalChangePercent);
+    }
+
+    function setupArmorSimulator(ctx) {
+      armorSimCtx = ctx;
+      ARMOR_EQUIPMENT_TYPES.forEach((t) => { armorSimState[t] = 0; });
+      renderArmorSimRows();
+      recomputeArmorSimulator();
+    }
+
+    // "장비" 탭: 왼쪽에 실제 착용 방어구 기준 정보, 오른쪽에 가상 레벨을 시험해보는 시뮬레이터.
+    function renderDealerEquipTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="equip"]');
+      panel.innerHTML = `
+        <div class="braceletColumns">
+          <div>${buildArmorInfoSectionHtml(ctx)}</div>
+          <div class="braceletSimBox">
+            <h4>장비 시뮬레이터 (가상 레벨)</h4>
+            <div class="armorSimRows"></div>
+            <div class="armorSimResult"></div>
+          </div>
+        </div>
+      `;
+      setupArmorSimulator(ctx);
+    }
+
     function renderDealerView(ctx) {
       const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
       renderDealerInfoTab(ctx, info);
+      renderDealerEquipTab(ctx);
       renderDealerBraceletTab(ctx, info);
     }
 
