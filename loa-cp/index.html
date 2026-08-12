@@ -648,15 +648,15 @@
       addBtn.style.display = braceletSimState.grant.length >= BRACELET_SIM_MAX.grant ? 'none' : '';
     }
 
-    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데, 팔찌/장비
-    // 시뮬레이터에서 가상 조합을 고르면 그 값 대신 시뮬레이터들의 totalChangePercent를 보여준다
-    // (defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 팔찌·방어구 교체로는
+    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데, 팔찌/장비/
+    // 어빌리티스톤 시뮬레이터에서 가상 조합을 고르면 그 값 대신 시뮬레이터들의 totalChangePercent를
+    // 보여준다(defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 장비 교체로는
     // 안 바뀌는 상수라 before/after 비율 계산에서 그대로 약분되므로, 각 시뮬레이터가 독립적으로 구한
-    // totalChangePercent가 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다). 팔찌·장비 두 시뮬레이터가
+    // totalChangePercent가 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다). 세 시뮬레이터가
     // 동시에 활성화될 수 있으므로 각자의 값을 따로 기억해뒀다가 곱연산으로 합쳐서 표시한다.
-    const surgeBarSimContributions = { bracelet: 0, armor: 0 };
+    const surgeBarSimContributions = { bracelet: 0, armor: 0, abilityStone: 0 };
     function updateSurgeBar() {
-      const combined = (toMultiplier(surgeBarSimContributions.bracelet) * toMultiplier(surgeBarSimContributions.armor) - 1) * 100;
+      const combined = (toMultiplier(surgeBarSimContributions.bracelet) * toMultiplier(surgeBarSimContributions.armor) * toMultiplier(surgeBarSimContributions.abilityStone) - 1) * 100;
       const surgeEl = document.getElementById('surgeBarValue');
       if (surgeEl) surgeEl.textContent = pct(combined);
     }
@@ -666,6 +666,10 @@
     }
     function updateSurgeBarFromArmor(totalChangePercent) {
       surgeBarSimContributions.armor = totalChangePercent;
+      updateSurgeBar();
+    }
+    function updateSurgeBarFromAbilityStone(totalChangePercent) {
+      surgeBarSimContributions.abilityStone = totalChangePercent;
       updateSurgeBar();
     }
 
@@ -837,11 +841,151 @@
       setupArmorSimulator(ctx);
     }
 
+    // 실제 착용 중인 어빌리티 스톤 정보(각인 효과 2개 + 레벨 보너스 + 각인별 환산 기여도) 표
+    function buildAbilityStoneInfoSectionHtml(ctx) {
+      const equipment = ctx.dealerData.equipment;
+      const stone = equipment.find((it) => it.Type === '어빌리티 스톤');
+      const effects = getAbilityStoneEngravingEffects(equipment);
+      const effectRows = effects.map((e) => `<tr><th>${e.name}</th><td>Lv.${e.level}</td></tr>`).join('');
+      const otherBonus = getAbilityStoneOtherEngravingBonus(ctx.dealerData.engravings);
+      const adrenalineBonus = getAdrenalineStoneBonus(equipment);
+      const sharpWeaponBonus = getSharpWeaponStoneBonus(ctx.dealerData.engravings);
+      return `
+        <div class="fieldGroup">
+          <h4>어빌리티 스톤 정보</h4>
+          <table class="statTable">
+            <tr><th>아이템</th><td>${stone ? stripHtml(stone.Name) : '(미장착)'}</td></tr>
+            ${effectRows || '<tr><td colspan="2">각인 효과 없음</td></tr>'}
+            <tr><th>레벨 보너스(기본 공격력)</th><td>${pct(getAbilityStoneBaseAttackPercent(equipment))}%</td></tr>
+            <tr><th>레벨 보너스(치명타 피해)</th><td>${pct(getAbilityStoneCritDamagePercent(equipment))}%</td></tr>
+            <tr><th>환산: 적주피%</th><td>${pct(otherBonus.enemyDamagePercent)}%</td></tr>
+            <tr><th>환산: 치명타 적중률%</th><td>${pct(otherBonus.critRatePercent)}%</td></tr>
+            <tr><th>환산: 공격력%(아드레날린)</th><td>${pct(adrenalineBonus)}%</td></tr>
+            <tr><th>환산: 치명타 피해%(예리한 둔기)</th><td>${pct(sharpWeaponBonus)}%</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    // "9/7 어빌리티 스톤 최적화" — 현재 착용 중인 5개 각인 중 Lv.3+Lv.2 조합 전수 탐색 결과
+    function buildAbilityStone97OptimizationHtml(ctx) {
+      const opt = calculateAbilityStone97Optimization(ctx.dealerData, ctx.dealerStats, ctx);
+      if (!opt) return '<p>착용 중인 각인이 부족해서 계산할 수 없습니다.</p>';
+      return `
+        <table class="statTable">
+          <tr><th>Lv.3 각인</th><td>${opt.lv3}</td></tr>
+          <tr><th>Lv.2 각인</th><td>${opt.lv2}</td></tr>
+          <tr><th>실제 스톤 대비 변화</th><td>${pct(opt.changePercent)}%</td></tr>
+        </table>
+      `;
+    }
+
+    // 어빌리티 스톤 시뮬레이터 상태: 최대 2슬롯(실제 스톤과 동일), 각각 각인명 + 레벨(1~4)
+    const abilityStoneSimState = [{ name: '', level: 0 }, { name: '', level: 0 }];
+    let abilityStoneSimCtx = null;
+
+    function renderAbilityStoneSimRows() {
+      const container = document.querySelector('.abilityStoneSimRows');
+      container.innerHTML = '';
+      abilityStoneSimState.forEach((row, index) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'braceletSimGrantRow';
+
+        const select = document.createElement('select');
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '각인 선택';
+        select.appendChild(emptyOption);
+        const othersPicked = abilityStoneSimState.filter((_, i) => i !== index).map((r) => r.name).filter(Boolean);
+        Object.keys(ABILITY_STONE_FULL_CATALOG).filter((name) => !othersPicked.includes(name)).forEach((name) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = name;
+          optionEl.textContent = name;
+          if (name === row.name) optionEl.selected = true;
+          select.appendChild(optionEl);
+        });
+        select.addEventListener('change', () => {
+          row.name = select.value;
+          renderAbilityStoneSimRows();
+          recomputeAbilityStoneSimulator();
+        });
+
+        const levelSelect = document.createElement('select');
+        const emptyLevelOption = document.createElement('option');
+        emptyLevelOption.value = '';
+        emptyLevelOption.textContent = '레벨';
+        levelSelect.appendChild(emptyLevelOption);
+        for (let lv = 1; lv <= 4; lv++) {
+          const optionEl = document.createElement('option');
+          optionEl.value = lv;
+          optionEl.textContent = `Lv.${lv}`;
+          if (row.level === lv) optionEl.selected = true;
+          levelSelect.appendChild(optionEl);
+        }
+        levelSelect.addEventListener('change', () => {
+          row.level = levelSelect.value ? parseInt(levelSelect.value, 10) : 0;
+          recomputeAbilityStoneSimulator();
+        });
+
+        rowEl.appendChild(select);
+        rowEl.appendChild(levelSelect);
+        container.appendChild(rowEl);
+      });
+    }
+
+    function recomputeAbilityStoneSimulator() {
+      const resultEl = document.querySelector('.abilityStoneSimResult');
+      const selections = abilityStoneSimState.filter((r) => r.name && r.level).map((r) => ({ name: r.name, level: r.level }));
+      if (!selections.length) {
+        resultEl.innerHTML = '<p>각인과 레벨을 선택하면 결과가 표시됩니다.</p>';
+        updateSurgeBarFromAbilityStone(0);
+        return;
+      }
+      const result = calculateHypotheticalAbilityStoneEfficiency(abilityStoneSimCtx.dealerData, abilityStoneSimCtx.dealerStats, abilityStoneSimCtx, selections);
+      const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      resultEl.innerHTML = `
+        <table class="statTable"><tr><th>각인</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
+        <p class="braceletSimTotal">실제 스톤 대비 변화: ${pct(result.totalChangePercent)}%</p>
+      `;
+      updateSurgeBarFromAbilityStone(result.totalChangePercent);
+    }
+
+    function setupAbilityStoneSimulator(ctx) {
+      abilityStoneSimCtx = ctx;
+      abilityStoneSimState[0] = { name: '', level: 0 };
+      abilityStoneSimState[1] = { name: '', level: 0 };
+      renderAbilityStoneSimRows();
+      recomputeAbilityStoneSimulator();
+    }
+
+    // "어빌리티스톤" 탭: 왼쪽에 실제 착용 스톤 정보 + 9/7 최적화, 오른쪽에 가상 각인 조합 시뮬레이터.
+    function renderDealerAbilityStoneTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="stone"]');
+      panel.innerHTML = `
+        <div class="braceletColumns">
+          <div>
+            ${buildAbilityStoneInfoSectionHtml(ctx)}
+            <div class="fieldGroup">
+              <h4>9/7 어빌리티 스톤 최적화</h4>
+              ${buildAbilityStone97OptimizationHtml(ctx)}
+            </div>
+          </div>
+          <div class="braceletSimBox">
+            <h4>어빌리티 스톤 시뮬레이터 (가상 조합)</h4>
+            <div class="abilityStoneSimRows"></div>
+            <div class="abilityStoneSimResult"></div>
+          </div>
+        </div>
+      `;
+      setupAbilityStoneSimulator(ctx);
+    }
+
     function renderDealerView(ctx) {
       const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
       renderDealerInfoTab(ctx, info);
       renderDealerEquipTab(ctx);
       renderDealerBraceletTab(ctx, info);
+      renderDealerAbilityStoneTab(ctx);
     }
 
     function renderSupportView(ctx) {
