@@ -16,6 +16,15 @@
     .hoverInfo { cursor: help; border-bottom: 1px dotted #888; }
     .fieldGroup h4 { margin: 4px 0; }
     .surgeBar { border: 1px solid #999; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; }
+    .braceletColumns { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+    .braceletColumns > div { flex: 1 1 320px; min-width: 280px; }
+    .braceletSimBox { border: 1px solid #ccc; padding: 10px; }
+    .braceletSimGroup { border: 1px solid #ddd; padding: 8px; margin-bottom: 10px; }
+    .braceletSimGroup h5 { margin: 0 0 6px 0; }
+    .braceletSimRow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .braceletSimRow select { flex: 1 1 auto; }
+    .braceletSimRow input { width: 80px; }
+    .braceletSimTotal { font-weight: bold; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -345,16 +354,18 @@
 
     // 팔찌 옵션별 "적에게 주는 피해" 기준 환산 효율표. 값이 0인 옵션(팔찌에 없는 옵션)은 표에서 뺀다.
     function buildBraceletEfficiencySectionHtml(info) {
-      const rows = info.braceletEfficiency
-        .filter((item) => item.value)
+      const activeRows = info.braceletEfficiency.filter((item) => item.value);
+      const rows = activeRows
         .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td><td>${item.method}</td></tr>`)
         .join('');
+      const total = activeRows.reduce((sum, item) => sum + item.efficiencyPercent, 0);
       return `
         <div class="fieldGroup">
           <h4>팔찌 효율표 (적에게 주는 피해 기준 환산)</h4>
           <table class="statTable">
             <tr><th>옵션</th><th>값</th><th>환산 효율</th><th>방식</th></tr>
             ${rows || '<tr><td colspan="4">팔찌에 환산 가능한 옵션이 없습니다</td></tr>'}
+            ${activeRows.length ? `<tr><th>합산</th><td></td><td>${pct(total)}%</td><td></td></tr>` : ''}
           </table>
         </div>
       `;
@@ -481,14 +492,140 @@
       document.getElementById('darkGrenadeCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
     }
 
-    // "팔찌" 탭: 지금은 현재 정보 탭과 동일한 효율표를 읽기 전용으로 보여준다.
-    // 옵션을 가상으로 바꿔보는 편집 기능은 이후 단계에서 이 패널 위에 추가할 예정.
+    // 팔찌 시뮬레이터 상태: 기본 옵션 최대 2개(힘/민첩/지능/특화/신속/치명 중), 부여 옵션 최대 3개
+    const BRACELET_SIM_MAX = { basic: 2, grant: 3 };
+    const braceletSimState = { basic: [{ type: '', value: '' }], grant: [{ type: '', value: '' }] };
+    let braceletSimCtx = null;
+
+    function braceletSimOptionPool(group) {
+      return group === 'basic'
+        ? BRACELET_BASIC_OPTION_TYPES.map((t) => ({ value: t, label: t }))
+        : BRACELET_GRANT_OPTION_TYPES.map((o) => ({ value: o.key, label: o.label }));
+    }
+
+    // 각 그룹의 행들을 다시 그린다. 같은 그룹 내 다른 행이 이미 고른 옵션은 드롭다운에서 빼서
+    // 중복 선택을 막는다(본인이 고른 값은 유지).
+    function renderBraceletSimRows(group) {
+      const container = document.querySelector(`.braceletSimRows[data-group="${group}"]`);
+      container.innerHTML = '';
+      const pool = braceletSimOptionPool(group);
+      braceletSimState[group].forEach((row, index) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'braceletSimRow';
+
+        const select = document.createElement('select');
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '옵션 선택';
+        select.appendChild(emptyOption);
+        const othersPicked = braceletSimState[group].filter((_, i) => i !== index).map((r) => r.type).filter(Boolean);
+        pool.filter((opt) => !othersPicked.includes(opt.value)).forEach((opt) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = opt.value;
+          optionEl.textContent = opt.label;
+          if (opt.value === row.type) optionEl.selected = true;
+          select.appendChild(optionEl);
+        });
+        select.addEventListener('change', () => {
+          row.type = select.value;
+          renderBraceletSimRows(group);
+          recomputeBraceletSimulator();
+        });
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.placeholder = '값';
+        input.value = row.value;
+        input.addEventListener('input', () => {
+          row.value = parseFloat(input.value) || 0;
+          recomputeBraceletSimulator();
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          braceletSimState[group].splice(index, 1);
+          if (braceletSimState[group].length === 0) braceletSimState[group].push({ type: '', value: '' });
+          renderBraceletSimRows(group);
+          recomputeBraceletSimulator();
+        });
+
+        rowEl.appendChild(select);
+        rowEl.appendChild(input);
+        rowEl.appendChild(removeBtn);
+        container.appendChild(rowEl);
+      });
+
+      const addBtn = document.querySelector(`.braceletSimAddBtn[data-group="${group}"]`);
+      addBtn.style.display = braceletSimState[group].length >= BRACELET_SIM_MAX[group] ? 'none' : '';
+    }
+
+    // 선택된 옵션들로 calculateHypotheticalBraceletEfficiency를 다시 돌려 결과 표를 갱신
+    function recomputeBraceletSimulator() {
+      const resultEl = document.querySelector('.braceletSimResult');
+      const selections = {
+        basic: braceletSimState.basic.filter((r) => r.type && r.value).map((r) => ({ type: r.type, value: r.value })),
+        grant: braceletSimState.grant.filter((r) => r.type && r.value).map((r) => ({ type: r.type, value: r.value })),
+      };
+      if (!selections.basic.length && !selections.grant.length) {
+        resultEl.innerHTML = '<p>옵션을 선택하고 값을 입력하면 결과가 표시됩니다.</p>';
+        return;
+      }
+      const result = calculateHypotheticalBraceletEfficiency(braceletSimCtx.dealerData, braceletSimCtx.supportData, braceletSimCtx, selections);
+      const rows = result.rows
+        .filter((item) => item.value)
+        .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`)
+        .join('');
+      resultEl.innerHTML = `
+        <table class="statTable"><tr><th>옵션</th><th>값</th><th>환산 효율</th></tr>${rows}</table>
+        <p class="braceletSimTotal">실제 팔찌 대비 변화: ${pct(result.totalChangePercent)}%</p>
+      `;
+    }
+
+    function setupBraceletSimulator(ctx) {
+      braceletSimCtx = ctx;
+      braceletSimState.basic = [{ type: '', value: '' }];
+      braceletSimState.grant = [{ type: '', value: '' }];
+      renderBraceletSimRows('basic');
+      renderBraceletSimRows('grant');
+      recomputeBraceletSimulator();
+
+      document.querySelectorAll('.braceletSimAddBtn').forEach((btn) => {
+        btn.onclick = () => {
+          const group = btn.dataset.group;
+          if (braceletSimState[group].length < BRACELET_SIM_MAX[group]) {
+            braceletSimState[group].push({ type: '', value: '' });
+            renderBraceletSimRows(group);
+            recomputeBraceletSimulator();
+          }
+        };
+      });
+    }
+
+    // "팔찌" 탭: 왼쪽에 실제 착용 팔찌 기준 효율표, 오른쪽에 가상 옵션 조합을 시험해보는 시뮬레이터.
     function renderDealerBraceletTab(ctx, info) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="bracelet"]');
       panel.innerHTML = `
-        ${buildBraceletSectionHtml(info)}
-        <p>※ 지금은 실제 착용 중인 팔찌 기준 효율표만 보여줍니다. 옵션을 가상으로 바꿔보는 기능은 추후 추가됩니다.</p>
+        <div class="braceletColumns">
+          <div>${buildBraceletSectionHtml(info)}</div>
+          <div class="braceletSimBox">
+            <h4>팔찌 시뮬레이터 (가상 조합)</h4>
+            <div class="braceletSimGroup">
+              <h5>팔찌 기본 옵션 (최대 2개)</h5>
+              <div class="braceletSimRows" data-group="basic"></div>
+              <button type="button" class="braceletSimAddBtn" data-group="basic">+ 옵션 추가</button>
+            </div>
+            <div class="braceletSimGroup">
+              <h5>팔찌 부여 옵션 (최대 3개)</h5>
+              <div class="braceletSimRows" data-group="grant"></div>
+              <button type="button" class="braceletSimAddBtn" data-group="grant">+ 옵션 추가</button>
+            </div>
+            <div class="braceletSimResult"></div>
+          </div>
+        </div>
       `;
+      setupBraceletSimulator(ctx);
     }
 
     function renderDealerView(ctx) {
