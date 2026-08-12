@@ -2150,7 +2150,7 @@ function buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primar
     .map((key) => BRACELET_HOOKED_FIELD_SENTENCES[key](braceletOptions[key]));
 
   ['힘', '민첩', '지능'].forEach((stat) => {
-    if (primaryStatFlat[stat]) sentences.push(`${stat} +${primaryStatFlat[stat]} 증가한다.`);
+    if (stat !== excludeKey && primaryStatFlat[stat]) sentences.push(`${stat} +${primaryStatFlat[stat]} 증가한다.`);
   });
 
   const equipment = (dealerData.equipment || []).map((item) => ({ ...item }));
@@ -2168,6 +2168,8 @@ function buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primar
 // 방법: 실제 스펙에서 그 옵션 "하나만 빠졌다고 가정"한 팔찌로 전체 딜(최종데미지×치명타×추가피해×적주피)을
 // 다시 계산해서 실제값과 비교한 비율을 쓴다. 적주피 자체가 이 곱연산 체인의 한 항이라, 이 비율이 곧
 // "적주피 몇 %와 동급인가"가 된다 (예: 적주피 옵션 자체는 항상 정확히 자기 자신의 값이 나옴).
+// - 주스탯(힘/민첩/지능): purePower=sqrt(주스탯×무기공격력/6)에 직접 들어가므로 같은 "옵션 하나만 빠졌다고
+//   가정" 방식으로 환산.
 // - 특화/신속: 사용자가 지정한 고정 환산치(스탯 1당 0.03%/0.02%)를 그대로 사용 — 재계산하지 않음.
 // - 백어택/헤드어택/비방향성/보호효과 대상 피해%: 조건부지만 "상시 발동"을 가정(이 코드베이스의 기존
 //   컨벤션과 동일)하면 적주피와 수학적으로 동치라 1:1로 취급.
@@ -2189,10 +2191,9 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
 
   const baseTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
 
-  function sensitivityPercent(key) {
-    const value = braceletOptions[key];
+  function sensitivityPercent(excludeKey, value) {
     if (!value) return 0;
-    const withoutData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, key);
+    const withoutData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, excludeKey);
     const newStats = calculateCharacterStats(withoutData);
     const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames });
     const newExtra = calculateExtraDamageMultiplier(withoutData);
@@ -2206,12 +2207,16 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
     return ((baseTotal / withoutTotal) - 1) * 100;
   }
 
+  // 팔찌 주스탯(힘/민첩/지능)은 셋 중 하나만 값이 있다 — 있는 것 하나만 표에 넣는다
+  const primaryStatName = ['힘', '민첩', '지능'].find((stat) => primaryStatFlat[stat]);
+
   return [
-    { key: 'weaponAttackFlat', label: '고정 무기공격력', value: braceletOptions.weaponAttackFlat, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('weaponAttackFlat') },
-    { key: 'critRatePercent', label: '치명타 적중률%', value: braceletOptions.critRatePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critRatePercent') },
-    { key: 'critDamagePercent', label: '치명타 피해%', value: braceletOptions.critDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critDamagePercent') },
-    { key: 'critHitExtraDamagePercent', label: '치명타 적중 시 추가 피해%', value: braceletOptions.critHitExtraDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critHitExtraDamagePercent') },
-    { key: 'additionalDamagePercent', label: '추가 피해%', value: braceletOptions.additionalDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('additionalDamagePercent') },
+    ...(primaryStatName ? [{ key: 'primaryStat', label: `주스탯(${primaryStatName})`, value: primaryStatFlat[primaryStatName], method: '실스펙 환산', efficiencyPercent: sensitivityPercent(primaryStatName, primaryStatFlat[primaryStatName]) }] : []),
+    { key: 'weaponAttackFlat', label: '고정 무기공격력', value: braceletOptions.weaponAttackFlat, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('weaponAttackFlat', braceletOptions.weaponAttackFlat) },
+    { key: 'critRatePercent', label: '치명타 적중률%', value: braceletOptions.critRatePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critRatePercent', braceletOptions.critRatePercent) },
+    { key: 'critDamagePercent', label: '치명타 피해%', value: braceletOptions.critDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critDamagePercent', braceletOptions.critDamagePercent) },
+    { key: 'critHitExtraDamagePercent', label: '치명타 적중 시 추가 피해%', value: braceletOptions.critHitExtraDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('critHitExtraDamagePercent', braceletOptions.critHitExtraDamagePercent) },
+    { key: 'additionalDamagePercent', label: '추가 피해%', value: braceletOptions.additionalDamagePercent, method: '실스펙 환산', efficiencyPercent: sensitivityPercent('additionalDamagePercent', braceletOptions.additionalDamagePercent) },
     { key: 'enemyDamagePercent', label: '적에게 주는 피해%', value: braceletOptions.enemyDamagePercent, method: '기준값(1:1)', efficiencyPercent: braceletOptions.enemyDamagePercent || 0 },
     { key: 'backAttackDamagePercent', label: '백어택 시 주는 피해%', value: braceletOptions.backAttackDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.backAttackDamagePercent || 0 },
     { key: 'headAttackDamagePercent', label: '헤드어택 시 주는 피해%', value: braceletOptions.headAttackDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.headAttackDamagePercent || 0 },
