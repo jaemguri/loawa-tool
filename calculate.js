@@ -1119,6 +1119,45 @@ function getSharpWeaponStoneBonus(engravingsData) {
   return SHARP_WEAPON_STONE_BONUS[eng.AbilityStoneLevel] || 0;
 }
 
+// 어빌리티 스톤 "무작위 각인 효과"의 각인별 레벨(1~4)당 추가 보너스 — 사용자가 실측해서 정리해준 표
+// (아드레날린/예리한 둔기는 위의 ADRENALINE_STONE_BONUS/SHARP_WEAPON_STONE_BONUS와 동일 수치로 이미
+// 반영 중이라 여기서는 제외 — 중복 방지). method:
+// - 'enemyDamage': 적주피%(곱연산, 조건부인 것들은 기존 컨벤션대로 "상시 발동" 가정)
+// - 'critRate': 치명타 적중률%(합연산)
+// 돌격대장은 "이동속도 증가량의 X%" → 적주피 전환 공식(이동속도 40% 고정 가정, getChargeCaptainEnemyDamagePercent
+// 참고)을 거쳐야 하므로, 원래 값(7.5/9.4/13.2/15)에 미리 ×0.4를 적용해서 적주피% 단위로 저장.
+const ABILITY_STONE_ENGRAVING_CATALOG = {
+  '결투의 대가': { method: 'enemyDamage', levels: [2.7, 3.4, 4.7, 5.4] },
+  '기습의 대가': { method: 'enemyDamage', levels: [2.7, 3.4, 4.7, 5.4] },
+  '달인의 저력': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '바리케이드': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '속전속결': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '슈퍼 차지': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '안정된 상태': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '원한': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '저주받은 인형': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '질량 증가': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '타격의 대가': { method: 'enemyDamage', levels: [3, 3.75, 5.25, 6] },
+  '마나 효율 증가': { method: 'enemyDamage', levels: [3.0, 3.75, 5.25, 6.0] },
+  '돌격대장': { method: 'enemyDamage', levels: [3.0, 3.76, 5.28, 6.0] },
+  '정밀 단도': { method: 'critRate', levels: [3, 3.75, 5.25, 6] },
+};
+
+// 실제 착용 중인 어빌리티 스톤의 각인 효과(ArkPassiveEffects의 AbilityStoneLevel)를 ABILITY_STONE_ENGRAVING_CATALOG로
+// 환산해서 method별로 합산 — 아드레날린/예리한 둔기는 별도 함수로 이미 처리되므로 여기선 제외.
+function getAbilityStoneOtherEngravingBonus(engravingsData) {
+  const result = { enemyDamagePercent: 0, critRatePercent: 0 };
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return result;
+  engravingsData.ArkPassiveEffects.forEach((eng) => {
+    const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[eng.Name];
+    if (!catalogEntry || !eng.AbilityStoneLevel) return;
+    const value = catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0;
+    if (catalogEntry.method === 'enemyDamage') result.enemyDamagePercent += value;
+    if (catalogEntry.method === 'critRate') result.critRatePercent += value;
+  });
+  return result;
+}
+
 // 어빌리티 스톤 "레벨 보너스"의 치명타 피해 % (기존 getAbilityStoneBaseAttackPercent와 같은 구조)
 function getAbilityStoneCritDamagePercent(equipmentList) {
   const stone = (equipmentList || []).find((it) => it.Type === '어빌리티 스톤');
@@ -1236,6 +1275,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     치명스탯: critStatRate,
     백사멸: autoSameolType === 'back' ? 10 : 0,
     시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
+    어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
@@ -1838,6 +1878,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
+  const abilityStoneOtherBonus = getAbilityStoneOtherEngravingBonus(dealerData.engravings);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -1848,6 +1889,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(dealerBracelet.enemyDamagePercent) *
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
+    toMultiplier(abilityStoneOtherBonus.enemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -1866,6 +1908,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해: evolutionDamagePercent,
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
+      어빌리티스톤_각인보너스_적주피: abilityStoneOtherBonus.enemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
@@ -2722,6 +2765,115 @@ const EMPTY_BRACELET_OPTIONS = {
   protectedTargetDamagePercent: 0, incapacitatedDamagePercent: 0,
   allyShieldHealPercent: 0, allyAttackBuffPercent: 0, allyDamageBuffPercent: 0,
 };
+
+// 어빌리티 스톤 시뮬레이터/9-7 최적화용 통합 카탈로그(16종) — ABILITY_STONE_ENGRAVING_CATALOG(엔진 계산에
+// 이미 반영된 14종)에 아드레날린/예리한 둔기(기존 ADRENALINE_STONE_BONUS/SHARP_WEAPON_STONE_BONUS와
+// 동일 수치)를 더한 전체 목록. 드롭다운/9-7 최적화 후보 나열용.
+const ABILITY_STONE_FULL_CATALOG = {
+  ...ABILITY_STONE_ENGRAVING_CATALOG,
+  '아드레날린': { method: 'attackPower', levels: [ADRENALINE_STONE_BONUS[1], ADRENALINE_STONE_BONUS[2], ADRENALINE_STONE_BONUS[3], ADRENALINE_STONE_BONUS[4]] },
+  '예리한 둔기': { method: 'critDamage', levels: [SHARP_WEAPON_STONE_BONUS[1], SHARP_WEAPON_STONE_BONUS[2], SHARP_WEAPON_STONE_BONUS[3], SHARP_WEAPON_STONE_BONUS[4]] },
+};
+
+// engravingsData를 복제하고, 모든 항목의 AbilityStoneLevel을 일단 초기화(=실제 스톤 효과 제거)한 뒤
+// selections([{name, level}])의 각인만 AbilityStoneLevel을 설정 — 실제 5개 각인 중 이름이 일치하면 그
+// 항목을 쓰고, 없으면(가상 조합용) 새 항목을 추가한다(Description은 비워둠 — getEngravingEnemyDamageByName
+// 등 다른 함수가 엉뚱한 각인 자체 효과를 잘못 집계하지 않도록). 아드레날린은 여기 포함하지 않음(다른
+// 데이터 경로 — calculateAbilityStoneTotal에서 별도 처리).
+function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
+  const effects = ((engravingsData && engravingsData.ArkPassiveEffects) || []).map((e) => ({ ...e, AbilityStoneLevel: null }));
+  (selections || []).forEach(({ name, level }) => {
+    if (!name || !level || name === '아드레날린') return;
+    const existing = effects.find((e) => e.Name === name);
+    if (existing) {
+      existing.AbilityStoneLevel = level;
+    } else {
+      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '' });
+    }
+  });
+  return { ...engravingsData, ArkPassiveEffects: effects };
+}
+
+// 어빌리티 스톤 시뮬레이터/9-7 최적화가 공유하는 핵심 계산 — selections(최대 2개, {name, level})를
+// "실제 스톤과 교체"했다고 가정한 전체 딜(최종데미지×치명타×추가피해×적주피)을 반환.
+// extraBaseAttackPercent: 9-7(3lv&2lv) 스톤 고정 보너스(기본 공격력 +1.5%)처럼, 스톤의 "레벨 보너스"
+// 슬롯에 추가로 얹을 기본 공격력%(합연산, calculateAbilityStoneBaseAttackPercent와 같은 자리).
+function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, extraBaseAttackPercent) {
+  const validSelections = (selections || []).filter((s) => s.name && s.level);
+  const adrenalineSelection = validSelections.find((s) => s.name === '아드레날린');
+  const adrenalineDelta = adrenalineSelection ? (ADRENALINE_STONE_BONUS[adrenalineSelection.level] || 0) : 0;
+  const realAdrenalineStoneBonus = getAdrenalineStoneBonus(dealerData.equipment);
+  const hypotheticalAdrenalineBonusBase = ctx.adrenalineBonusBase - realAdrenalineStoneBonus + adrenalineDelta;
+
+  const modifiedDealerData = {
+    ...dealerData,
+    engravings: buildEngravingsWithAbilityStoneSelections(dealerData.engravings, validSelections),
+  };
+
+  const newCrit = calculateCritMultiplier(modifiedDealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames });
+  const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
+  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+
+  const gemPercent = getGemsBaseAttackPercent(dealerData.gems);
+  const stonePercent = getAbilityStoneBaseAttackPercent(dealerData.equipment);
+  const basePower = calculateBaseAttackPower(
+    dealerStats.purePower, gemPercent, stonePercent + (extraBaseAttackPercent || 0) + dealerStats.wanjibStats.baseAttackPercent
+  ) + dealerStats.wanjibStats.baseAttackFlat;
+
+  const newFinalDamage = calculateFinalDamage(
+    basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, dealerStats.arkgridGemsAttackPercent,
+    hypotheticalAdrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+  return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+}
+
+// 어빌리티 스톤 시뮬레이터: 가상 각인 조합(최대 2개, 실제 스톤과 동일한 슬롯 수)을 실제 스톤과
+// "교체"했다고 가정하고 효율표 + 총 변화율을 계산.
+function calculateHypotheticalAbilityStoneEfficiency(dealerData, dealerStats, ctx, selections) {
+  const validSelections = (selections || []).filter((s) => s.name && s.level);
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const hypotheticalTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, validSelections, 0);
+  const totalChangePercent = ((hypotheticalTotal / realTotal) - 1) * 100;
+
+  const rows = validSelections.map((sel) => {
+    const withoutSelections = validSelections.filter((s) => s !== sel);
+    const withoutTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, withoutSelections, 0);
+    const efficiencyPercent = ((hypotheticalTotal / withoutTotal) - 1) * 100;
+    return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
+  });
+
+  return { rows, totalChangePercent };
+}
+
+// "9/7 어빌리티 스톤 최적화": 현재 착용 중인 5개 각인 중 어떤 조합(Lv.3 + Lv.2)이 가장 높은 딜을 주는지
+// 전수 탐색(20가지 순서쌍). 3lv&2lv(구 9/7) 스톤은 기본 공격력 +1.5%가 고정으로 붙는다고 가정 —
+// 모든 후보에 동일하게 적용되므로 "어느 조합이 최선인지"에는 영향 없지만, 실제 착용 스톤 대비 변화율
+// 계산에는 포함해야 정확하다.
+const STONE_3_2_BASE_ATTACK_BONUS = 1.5;
+
+function calculateAbilityStone97Optimization(dealerData, dealerStats, ctx) {
+  const equippedNames = ((dealerData.engravings && dealerData.engravings.ArkPassiveEffects) || []).map((e) => e.Name);
+  if (equippedNames.length < 2) return null;
+
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+
+  let best = null;
+  equippedNames.forEach((lv3Name) => {
+    equippedNames.forEach((lv2Name) => {
+      if (lv3Name === lv2Name) return;
+      const selections = [{ name: lv3Name, level: 3 }, { name: lv2Name, level: 2 }];
+      const total = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, STONE_3_2_BASE_ATTACK_BONUS);
+      if (!best || total > best.total) best = { lv3Name, lv2Name, total };
+    });
+  });
+
+  return {
+    lv3: best.lv3Name,
+    lv2: best.lv2Name,
+    changePercent: ((best.total / realTotal) - 1) * 100,
+  };
+}
 
 // 아크그리드 6개 코어 슬롯을 이름/투자 포인트/등급 그대로 나열 (Slot.Name에 "질서의 해 코어 : ..." 형태로
 // 질서·혼돈/해·달·별 구분이 이미 포함되어 있어 별도 텍스트 파싱 없이 그대로 사용)
