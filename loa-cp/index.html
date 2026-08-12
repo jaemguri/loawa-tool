@@ -416,12 +416,12 @@
       // Phase 1에서는 편집 가능한 탭이 없어 baseline과 현재값이 같으므로 항상 0.00%.
       const surgePercent = ((ctx.fullBuffFinalOutputResult.output - ctx.baselineFullBuffOutput) / ctx.baselineFullBuffOutput) * 100;
 
-      const buildEngravingName = getClassBuildEngravingName(ctx.dealerStats.className, ctx.dealerData.engravings);
+      const buildEngravingName = getClassBuildEngravingName(ctx.dealerData.arkpassive);
 
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>${ctx.dealerLabel} (${ctx.dealerStats.className})</h4>
-          <p>직업각인 명: ${buildEngravingName || '(미확인 — 이 클래스는 아직 목록에 없거나 직업 각인을 채용하지 않음)'}</p>
+          <p>직업각인 명: ${buildEngravingName || '(확인 불가)'}</p>
         </div>
         ${buildArkgridSectionHtml(info)}
         <div class="fieldGroup">
