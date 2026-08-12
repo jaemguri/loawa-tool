@@ -2449,7 +2449,10 @@ const BRACELET_TIER_COLORS = ['#4FC3F7', '#9C6ADE', '#FF9F40'];
 const BRACELET_TIER_LABELS = ['1단계', '2단계', '3단계'];
 
 // buildDealerDataWithoutBraceletField의 다중 필드 버전 — 팔찌 시뮬레이터에서 "이 옵션 슬롯(1~2개 필드에
-// 걸칠 수 있음) 하나가 통째로 없다고 가정"한 dealerData를 만들 때 쓴다.
+// 걸칠 수 있음) 하나가 통째로 없다고 가정"한 dealerData를 만들 때 쓴다. excludeKeys에 넣은 필드는 값과
+// 무관하게 "이 슬롯 말고는 아무도 이 필드를 안 쓴다"고 전제하므로, 다른 슬롯도 같은 필드를 건드리는 경우
+// (예: "치명타 피해 단독"과 "치명타 피해+치명타 적중 시 적주피"를 동시에 골라 둘 다 critDamagePercent를
+// 올리는 경우)에는 쓰면 안 된다 — 그럴 땐 buildDealerDataWithFieldDeltas를 쓸 것.
 function buildDealerDataWithoutBraceletFields(dealerData, braceletOptions, primaryStatFlat, excludeKeys) {
   const excludeSet = new Set(excludeKeys);
   const sentences = Object.keys(BRACELET_HOOKED_FIELD_SENTENCES)
@@ -2458,6 +2461,31 @@ function buildDealerDataWithoutBraceletFields(dealerData, braceletOptions, prima
 
   ['힘', '민첩', '지능'].forEach((stat) => {
     if (!excludeSet.has(stat) && primaryStatFlat[stat]) sentences.push(`${stat} +${primaryStatFlat[stat]} 증가한다.`);
+  });
+
+  const equipment = (dealerData.equipment || []).map((item) => ({ ...item }));
+  const braceletIdx = equipment.findIndex((it) => it.Type === '팔찌');
+  if (braceletIdx === -1) return { ...dealerData, equipment };
+
+  const syntheticTooltip = {};
+  sentences.forEach((s, i) => { syntheticTooltip['S' + i] = { value: s }; });
+  equipment[braceletIdx] = { ...equipment[braceletIdx], Tooltip: JSON.stringify(syntheticTooltip) };
+  return { ...dealerData, equipment };
+}
+
+// buildDealerDataWithoutBraceletFields와 달리 필드를 통째로 지우지 않고, fieldDeltas에 들어있는 만큼만
+// braceletOptions/primaryStatFlat 값에서 빼서(음수 delta) 재구성한다. 팔찌 시뮬레이터에서 같은 필드를
+// 건드리는 슬롯을 여러 개 고른 경우, "이 슬롯 하나만 뺐을 때"를 정확히 계산하려면 이걸 써야 한다
+// (다른 슬롯의 기여분은 그대로 남겨둬야 함).
+function buildDealerDataWithFieldDeltas(dealerData, braceletOptions, primaryStatFlat, fieldDeltas) {
+  const sentences = Object.keys(BRACELET_HOOKED_FIELD_SENTENCES)
+    .map((key) => ({ key, value: (braceletOptions[key] || 0) + (fieldDeltas[key] || 0) }))
+    .filter(({ value }) => value > 0)
+    .map(({ key, value }) => BRACELET_HOOKED_FIELD_SENTENCES[key](value));
+
+  ['힘', '민첩', '지능'].forEach((stat) => {
+    const value = (primaryStatFlat[stat] || 0) + (fieldDeltas[stat] || 0);
+    if (value > 0) sentences.push(`${stat} +${value} 증가한다.`);
   });
 
   const equipment = (dealerData.equipment || []).map((item) => ({ ...item }));
@@ -2524,13 +2552,21 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
   // cooldownPenaltyPercent는 어떤 계산식에도 안 꽂혀 있어 재계산으로는 0이 나오므로, 실제 팔찌 효율표와
   // 동일한 고정 환산치(1당 -0.931%)를 별도로 빼준다.
   function slotEfficiencyPercent(catalogEntry, tierIndex) {
-    // 실제 계산식에 꽂혀서 recompute로 잡히는 필드(BRACELET_HOOKED_FIELD_SENTENCES)만 "없다고 가정"하고
-    // 다시 계산 — 백어택/헤드어택/비방향성/보호효과대상/무력화처럼 recompute로는 안 잡히는 "상시발동 가정
-    // 1:1" 필드나, 재사용대기 페널티(고정환산)는 실제 팔찌 효율표와 동일하게 별도로 더/빼준다.
-    const hookedFields = [...new Set(catalogEntry.effects.map((e) => e.field).filter((f) => BRACELET_HOOKED_FIELD_SENTENCES[f]))];
+    // 실제 계산식에 꽂혀서 recompute로 잡히는 필드(BRACELET_HOOKED_FIELD_SENTENCES)만 "이 슬롯이 기여한
+    // 만큼만" 빼고 다시 계산 — 필드를 통째로 지우면(buildDealerDataWithoutBraceletFields) 다른 슬롯이 같은
+    // 필드에 얹은 값까지 같이 사라져서, 같은 필드를 건드리는 슬롯을 2개 이상 고르면 각 슬롯의 효율이
+    // 부풀려지는 버그가 났었음(예: "치명타 피해 단독"과 "치명타 피해+치명타 적중 시 적주피"를 동시에
+    // 고르면 둘 다 서로의 크리티컬 피해까지 포함해서 계산됐음) — buildDealerDataWithFieldDeltas로 이 슬롯의
+    // 기여분만 빼도록 수정. 백어택/헤드어택/비방향성/보호효과대상/무력화처럼 recompute로는 안 잡히는
+    // "상시발동 가정 1:1" 필드나, 재사용대기 페널티(고정환산)는 실제 팔찌 효율표와 동일하게 별도로 더/빼준다.
+    const fieldDeltas = {};
+    catalogEntry.effects.forEach((e) => {
+      if (!BRACELET_HOOKED_FIELD_SENTENCES[e.field]) return;
+      fieldDeltas[e.field] = (fieldDeltas[e.field] || 0) - e.tiers[tierIndex] * (e.stackMultiplier || 1);
+    });
     let percent = 0;
-    if (hookedFields.length) {
-      const withoutData = buildDealerDataWithoutBraceletFields(hypotheticalDealerData, braceletOptions, primaryStatFlat, hookedFields);
+    if (Object.keys(fieldDeltas).length) {
+      const withoutData = buildDealerDataWithFieldDeltas(hypotheticalDealerData, braceletOptions, primaryStatFlat, fieldDeltas);
       const newStats = calculateCharacterStats(withoutData);
       const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames });
       const newExtra = calculateExtraDamageMultiplier(withoutData);
