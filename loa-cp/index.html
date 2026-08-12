@@ -491,7 +491,7 @@
           <label><input type="checkbox" id="adrenalineUseCheckbox"> 아드 사용 (공격력 +30%)</label>
           <label style="margin-left:12px;"><input type="checkbox" id="darkGrenadeCheckbox"> 암수 사용 (암흑 수류탄 방어력감소 20%)</label>
         </div>
-        <div class="surgeBar">최종 딜 상승량: ${surgePercent.toFixed(2)}%</div>
+        <div class="surgeBar">최종 딜 상승량: <span id="surgeBarValue">${surgePercent.toFixed(2)}</span>%</div>
       `;
 
       document.getElementById('adrenalineUseCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
@@ -646,6 +646,16 @@
     }
 
     // 선택된 옵션들로 calculateHypotheticalBraceletEfficiency를 다시 돌려 결과 표를 갱신
+    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데,
+    // 팔찌 시뮬레이터에서 가상 팔찌를 골랐을 때는 그 값 대신 시뮬레이터의 totalChangePercent를 보여준다
+    // (defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 팔찌 교체로는 안 바뀌는
+    // 상수라 before/after 비율 계산에서 그대로 약분되므로, 4개 곱연산만으로 구한 totalChangePercent가
+    // 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다).
+    function updateSurgeBarFromBracelet(totalChangePercent) {
+      const surgeEl = document.getElementById('surgeBarValue');
+      if (surgeEl) surgeEl.textContent = pct(totalChangePercent);
+    }
+
     function recomputeBraceletSimulator() {
       const resultEl = document.querySelector('.braceletSimResult');
       const selections = {
@@ -654,6 +664,7 @@
       };
       if (!selections.basic.length && !selections.grant.length) {
         resultEl.innerHTML = '<p>옵션을 선택하면 결과가 표시됩니다.</p>';
+        updateSurgeBarFromBracelet(0);
         return;
       }
       const result = calculateHypotheticalBraceletEfficiency(braceletSimCtx.dealerData, braceletSimCtx.supportData, braceletSimCtx, selections);
@@ -668,6 +679,7 @@
         <table class="statTable"><tr><th>옵션</th><th>값</th><th>환산 효율</th></tr>${rows}</table>
         <p class="braceletSimTotal">실제 팔찌 대비 변화: ${pct(result.totalChangePercent)}%</p>
       `;
+      updateSurgeBarFromBracelet(result.totalChangePercent);
     }
 
     function setupBraceletSimulator(ctx) {
