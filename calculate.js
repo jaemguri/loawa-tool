@@ -2170,14 +2170,16 @@ function buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primar
 // "적주피 몇 %와 동급인가"가 된다 (예: 적주피 옵션 자체는 항상 정확히 자기 자신의 값이 나옴).
 // - 주스탯(힘/민첩/지능): purePower=sqrt(주스탯×무기공격력/6)에 직접 들어가므로 같은 "옵션 하나만 빠졌다고
 //   가정" 방식으로 환산.
-// - 특화/신속: 사용자가 지정한 고정 환산치(스탯 1당 0.03%/0.02%)를 그대로 사용 — 재계산하지 않음.
+// - 특화/신속/재사용대기 증가(페널티): 사용자가 지정한 고정 환산치(1당 0.03%/0.02%/-0.931%)를
+//   그대로 사용 — 재계산하지 않음. 재사용대기 증가는 페널티라 부호가 음수.
 // - 백어택/헤드어택/비방향성/보호효과 대상 피해%: 조건부지만 "상시 발동"을 가정(이 코드베이스의 기존
 //   컨벤션과 동일)하면 적주피와 수학적으로 동치라 1:1로 취급.
-// - 악마 피해%/재사용대기 증가(페널티)/치명타(적)저항감소%(딜러 자신의 팔찌)/아군 버프 계열: 현재 엔진에
+// - 악마 피해%/치명타(적)저항감소%(딜러 자신의 팔찌)/아군 버프 계열: 현재 엔진에
 //   딜러 자신에게 적용되는 계산식이 없어 0으로 처리 (필요해지면 나중에 보강 대상).
 function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, braceletOptions, ctx) {
   const SPECIALIZATION_RATE = 0.03; // 특화 1당 0.03% (사용자 지정 고정치)
   const SWIFTNESS_RATE = 0.02; // 신속 1당 0.02% (사용자 지정 고정치)
+  const COOLDOWN_PENALTY_RATE = 0.01 * 93.1; // 재사용대기 증가 1%당 -0.931% 페널티 (사용자 지정 고정치)
 
   const braceletItem = (dealerData.equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -2225,7 +2227,7 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
     { key: 'specialization', label: '특화(스탯)', value: specStat, method: '고정환산(1당 0.03%)', efficiencyPercent: specStat * SPECIALIZATION_RATE },
     { key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: swiftStat * SWIFTNESS_RATE },
     { key: 'demonDamagePercent', label: '악마 계열 피해%', value: braceletOptions.demonDamagePercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
-    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
+    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '고정환산(1당 -0.931%)', efficiencyPercent: -(braceletOptions.cooldownPenaltyPercent || 0) * COOLDOWN_PENALTY_RATE },
     { key: 'defenseReductionPercent', label: '적 방어력 감소%', value: braceletOptions.defenseReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critResistReductionPercent', label: '치명타 저항 감소%', value: braceletOptions.critResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critDmgResistReductionPercent', label: '치명타 피해 저항 감소%', value: braceletOptions.critDmgResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
