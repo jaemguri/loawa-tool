@@ -864,6 +864,26 @@
             <tr><th>환산: 치명타 피해%(예리한 둔기)</th><td>${pct(sharpWeaponBonus)}%</td></tr>
           </table>
         </div>
+        ${buildAbilityStoneEfficiencySectionHtml(ctx)}
+      `;
+    }
+
+    // 현재 착용 중인 어빌리티 스톤의 각인 효과별 환산 효율 + 총 환산 효율("스톤이 아예 없었다면"과 비교) —
+    // 팔찌/장비 효율표와 같은 성격.
+    function buildAbilityStoneEfficiencySectionHtml(ctx) {
+      const result = calculateCurrentAbilityStoneEfficiency(ctx.dealerData, ctx.dealerStats, ctx);
+      const rows = result.rows
+        .map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`)
+        .join('');
+      return `
+        <div class="fieldGroup">
+          <h4>어빌리티 스톤 효율표 (스톤 없음 대비 환산)</h4>
+          <table class="statTable">
+            <tr><th>각인</th><th>레벨</th><th>환산 효율</th></tr>
+            ${rows || '<tr><td colspan="3">각인 효과 없음</td></tr>'}
+            <tr><th>합산</th><td></td><td>${pct(result.totalEfficiencyPercent)}%</td></tr>
+          </table>
+        </div>
       `;
     }
 

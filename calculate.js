@@ -2852,6 +2852,24 @@ function calculateHypotheticalAbilityStoneEfficiency(dealerData, dealerStats, ct
   return { rows, totalChangePercent };
 }
 
+// 현재 착용 중인 어빌리티 스톤의 실제 각인 효과(최대 2개) 각각의 환산 효율 + 스톤 전체의 총 환산 효율
+// ("스톤이 아예 없었다면"과 비교) — 팔찌/장비 정보 표의 효율표·합산 행과 같은 성격.
+function calculateCurrentAbilityStoneEfficiency(dealerData, dealerStats, ctx) {
+  const realSelections = getAbilityStoneEngravingEffects(dealerData.equipment);
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const noStoneTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, [], 0);
+  const totalEfficiencyPercent = ((realTotal / noStoneTotal) - 1) * 100;
+
+  const rows = realSelections.map((sel) => {
+    const otherSelections = realSelections.filter((s) => s !== sel).map((s) => ({ name: s.name, level: s.level }));
+    const withoutTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, otherSelections);
+    const efficiencyPercent = ((realTotal / withoutTotal) - 1) * 100;
+    return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
+  });
+
+  return { rows, totalEfficiencyPercent };
+}
+
 // "9/7 어빌리티 스톤 최적화": 현재 착용 중인 5개 각인 중 어떤 조합(Lv.3 + Lv.2)이 가장 높은 딜을 주는지
 // 전수 탐색(20가지 순서쌍). 3lv&2lv(구 9/7) 스톤은 기본 공격력 +1.5%가 고정으로 붙는다고 가정 —
 // 모든 후보에 동일하게 적용되므로 "어느 조합이 최선인지"에는 영향 없지만, 실제 착용 스톤 대비 변화율
