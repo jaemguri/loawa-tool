@@ -1291,6 +1291,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     예리한둔기_각인_최종값: sharpWeaponDmg,
     반지: ringCritDmg,
     스톤_레벨보너스: stoneLevelBonusDmg,
+    스톤_예리한둔기_전용보너스: sharpWeaponStoneDmg,
     딜러팔찌: dealerBracelet.critDamagePercent,
     아크그리드: arkgridCrit.critDamagePercent,
   };
@@ -2798,7 +2799,7 @@ function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
 // "실제 스톤과 교체"했다고 가정한 전체 딜(최종데미지×치명타×추가피해×적주피)을 반환.
 // extraBaseAttackPercent: 9-7(3lv&2lv) 스톤 고정 보너스(기본 공격력 +1.5%)처럼, 스톤의 "레벨 보너스"
 // 슬롯에 추가로 얹을 기본 공격력%(합연산, calculateAbilityStoneBaseAttackPercent와 같은 자리).
-function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, extraBaseAttackPercent) {
+function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, overrideBaseAttackPercent) {
   const validSelections = (selections || []).filter((s) => s.name && s.level);
   const adrenalineSelection = validSelections.find((s) => s.name === '아드레날린');
   const adrenalineDelta = adrenalineSelection ? (ADRENALINE_STONE_BONUS[adrenalineSelection.level] || 0) : 0;
@@ -2814,10 +2815,15 @@ function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, ex
   const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
   const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
 
+  // overrideBaseAttackPercent가 주어지면(9-7 최적화용 — 모든 후보가 "새로 뽑은 3lv&2lv 스톤"이라는
+  // 가정이라 실제 스톤의 레벨 보너스와 무관하게 고정 +1.5%로 교체) 그 값을 쓰고, 없으면(일반 시뮬레이터 —
+  // 어떤 레벨 보너스가 나올지 모르므로 건드리지 않음) 실제 스톤의 레벨 보너스를 그대로 유지한다.
+  // 실제 스톤의 레벨 보너스에 더하는 게 아니라 통째로 교체하는 것이 핵심 — 안 그러면 실제 스톤이 이미
+  // 3lv&2lv라 레벨 보너스 1.5%를 갖고 있는 경우 이중으로 합산된다.
   const gemPercent = getGemsBaseAttackPercent(dealerData.gems);
-  const stonePercent = getAbilityStoneBaseAttackPercent(dealerData.equipment);
+  const stonePercent = overrideBaseAttackPercent !== undefined ? overrideBaseAttackPercent : getAbilityStoneBaseAttackPercent(dealerData.equipment);
   const basePower = calculateBaseAttackPower(
-    dealerStats.purePower, gemPercent, stonePercent + (extraBaseAttackPercent || 0) + dealerStats.wanjibStats.baseAttackPercent
+    dealerStats.purePower, gemPercent, stonePercent + dealerStats.wanjibStats.baseAttackPercent
   ) + dealerStats.wanjibStats.baseAttackFlat;
 
   const newFinalDamage = calculateFinalDamage(
@@ -2833,12 +2839,12 @@ function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, ex
 function calculateHypotheticalAbilityStoneEfficiency(dealerData, dealerStats, ctx, selections) {
   const validSelections = (selections || []).filter((s) => s.name && s.level);
   const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
-  const hypotheticalTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, validSelections, 0);
+  const hypotheticalTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, validSelections);
   const totalChangePercent = ((hypotheticalTotal / realTotal) - 1) * 100;
 
   const rows = validSelections.map((sel) => {
     const withoutSelections = validSelections.filter((s) => s !== sel);
-    const withoutTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, withoutSelections, 0);
+    const withoutTotal = calculateAbilityStoneTotal(dealerData, dealerStats, ctx, withoutSelections);
     const efficiencyPercent = ((hypotheticalTotal / withoutTotal) - 1) * 100;
     return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
   });
