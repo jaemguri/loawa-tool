@@ -2136,21 +2136,10 @@ function getEngravingList(engravingsData) {
   return engravingsData.ArkPassiveEffects.map((e) => ({ name: e.Name, level: e.Level }));
 }
 
-// 클래스별 "직업 각인"(그 클래스 전용 빌드 각인) 이름 목록. 사용자가 확인해준 것만 채움 —
-// 아직 대부분의 클래스는 비어 있어서 getClassBuildEngravingName이 null을 반환함 (틀린 이름을 넣지 않기 위해
-// 확인되지 않은 클래스는 일부러 비워둠). 사용자가 추가로 알려주는 대로 채워나갈 것.
-const CLASS_BUILD_ENGRAVING_NAMES = {
-  '블래스터': ['포격 강화'],
-  '기상술사': ['질풍노도'],
-};
-
-// 캐릭터의 직업에 해당하는 "직업 각인"(전용 각인) 이름을 engravings.ArkPassiveEffects에서 찾아 반환.
-// 해당 클래스가 아직 CLASS_BUILD_ENGRAVING_NAMES에 없거나 못 찾으면 null.
-function getClassBuildEngravingName(className, engravingsData) {
-  const candidates = CLASS_BUILD_ENGRAVING_NAMES[className];
-  if (!candidates || !engravingsData || !engravingsData.ArkPassiveEffects) return null;
-  const found = engravingsData.ArkPassiveEffects.find((e) => candidates.includes(e.Name));
-  return found ? found.Name : null;
+// 캐릭터의 "직업 각인"(빌드 이름) 반환. arkpassive API 응답의 최상위 Title 필드가 바로 그 값
+// (예: "잔재된 기운") — 클래스별 하드코딩 테이블 없이 전 클래스 공통으로 동작.
+function getClassBuildEngravingName(arkpassiveData) {
+  return (arkpassiveData && arkpassiveData.Title) || null;
 }
 
 // 서포터 아덴기(정체성 스킬) 피해량 증가 배율
