@@ -282,22 +282,30 @@ function getBraceletWeaponAttackFlatBase(braceletText) {
   return total;
 }
 
-// 팔찌 텍스트에서 조건부/스택형 무기 공격력만 합산 (실제 효율용, 최대치 가정)
-function getBraceletWeaponAttackFlatConditional(braceletText) {
-  if (!braceletText) return 0;
+// 팔찌 텍스트의 조건부/스택형 "고정 무기공격력" 옵션들을 종류별로 감지해서
+// [{ variantKey, rawValue(칸당 값), multiplier }] 로 반환 (실제로는 팔찌 하나에 보통 최대 1개).
+// getBraceletWeaponAttackFlatConditional과 팔찌 효율표(계산·표시 양쪽)가 이 결과를 공유해서 쓴다.
+function getBraceletWeaponAttackConditionalBreakdown(braceletText) {
+  if (!braceletText) return [];
   const text = braceletText.replace(/무력화 상태의[^.]*\./g, '');
-  let total = 0;
+  const found = [];
 
   let m = text.match(/무기\s*공격력이\s*([\d,]+)[^()]*\(최대\s*6\s*중첩\)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 6;
+  if (m) found.push({ variantKey: 'weaponAttackFlatStack6', rawValue: parseFloat(m[1].replace(/,/g, '')), multiplier: 6 });
 
   m = text.match(/무기\s*공격력이\s*([\d,]+)\s*증가한다\s*\(최대\s*30\s*중첩\)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, '')) * 30;
+  if (m) found.push({ variantKey: 'weaponAttackFlatStack30', rawValue: parseFloat(m[1].replace(/,/g, '')), multiplier: 30 });
 
   m = text.match(/생명력이\s*50%[^무]*무기\s*공격력이\s*([\d,]+)/);
-  if (m) total += parseFloat(m[1].replace(/,/g, ''));
+  if (m) found.push({ variantKey: 'weaponAttackFlatLife50', rawValue: parseFloat(m[1].replace(/,/g, '')), multiplier: 1 });
 
-  return total;
+  return found;
+}
+
+// 팔찌 텍스트에서 조건부/스택형 무기 공격력만 합산 (실제 효율용, 최대치 가정)
+function getBraceletWeaponAttackFlatConditional(braceletText) {
+  return getBraceletWeaponAttackConditionalBreakdown(braceletText)
+    .reduce((sum, v) => sum + v.rawValue * v.multiplier, 0);
 }
 
 // 기존 함수는 base + conditional 합(=실제 총합)으로 유지
@@ -2270,7 +2278,24 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
     critStat: extractFlat(braceletText, '치명'),
   };
   const baseTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
-  return calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStats, inputs, ctx.finalDamage, ctx.extraDamageResult.multiplier, ctx, baseTotal);
+  const rows = calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStats, inputs, ctx.finalDamage, ctx.extraDamageResult.multiplier, ctx, baseTotal);
+
+  // "고정 무기공격력" 한 행을, 실제로 감지된 종류(일반/최대 6중첩/최대 30중첩/생명력 50% 이상)별
+  // 행으로 바꿔서 어떤 옵션인지 구분되게 보여준다 (효율%는 동일 — 실제 팔찌엔 보통 한 종류만 있음).
+  const weaponAttackRowIndex = rows.findIndex((r) => r.key === 'weaponAttackFlat');
+  if (weaponAttackRowIndex !== -1) {
+    const originalRow = rows[weaponAttackRowIndex];
+    const variants = getBraceletWeaponAttackVariants(braceletText);
+    if (variants.length) {
+      const variantRows = variants.map((v) => ({
+        key: v.variantKey, label: v.label, value: v.rawValue,
+        method: originalRow.method, efficiencyPercent: originalRow.efficiencyPercent,
+      }));
+      rows.splice(weaponAttackRowIndex, 1, ...variantRows);
+    }
+  }
+
+  return rows;
 }
 
 // "팔찌 기본 옵션" 드롭다운에 쓰이는 스탯 목록 (팔찌 시뮬레이터용)
@@ -2286,6 +2311,19 @@ const WEAPON_ATTACK_GRANT_VARIANTS = {
   weaponAttackFlatStack30: { label: '고정 무기공격력 (최대 30중첩)', multiplier: 30 },
   weaponAttackFlatLife50: { label: '고정 무기공격력 (생명력 50% 이상)', multiplier: 1 },
 };
+
+// 실제 팔찌 텍스트에 "고정 무기공격력" 계열 중 어떤 종류가 있는지 감지해서
+// [{ variantKey, label, rawValue(칸당 값) }] 로 반환 (실제로는 보통 최대 1개).
+function getBraceletWeaponAttackVariants(braceletText) {
+  const variants = getBraceletWeaponAttackConditionalBreakdown(braceletText).map((v) => ({
+    variantKey: v.variantKey, rawValue: v.rawValue, label: WEAPON_ATTACK_GRANT_VARIANTS[v.variantKey].label,
+  }));
+  const baseValue = getBraceletWeaponAttackFlatBase(braceletText);
+  if (baseValue) {
+    variants.push({ variantKey: 'weaponAttackFlatPlain', rawValue: baseValue, label: WEAPON_ATTACK_GRANT_VARIANTS.weaponAttackFlatPlain.label });
+  }
+  return variants;
+}
 
 // "팔찌 부여 옵션" 드롭다운에 쓰이는 옵션 목록 (팔찌 시뮬레이터용). 비슷한 항목끼리 묶어서 순서를 정함.
 // key는 parseBraceletOptions 결과 필드명과 동일 (weaponAttackFlatBase는 내부 역산용이라 제외) —
