@@ -2276,10 +2276,22 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
 // "팔찌 기본 옵션" 드롭다운에 쓰이는 스탯 목록 (팔찌 시뮬레이터용)
 const BRACELET_BASIC_OPTION_TYPES = ['힘', '민첩', '지능', '특화', '신속', '치명'];
 
+// "고정 무기공격력" 부여 옵션은 실제로는 조건이 다른 4가지 옵션(일반/최대 6중첩/최대 30중첩/생명력 50%
+// 이상)인데, parseBraceletOptions의 weaponAttackFlat 하나로 합쳐서 관리한다(getBraceletWeaponAttackFlatBase/
+// Conditional 참고). 시뮬레이터에서 사용자가 실제 팔찌 툴팁에 적힌 "칸당(스택당) 값" 그대로 입력할 수 있도록
+// 종류별 배율을 따로 두고, calculateHypotheticalBraceletEfficiency에서 weaponAttackFlat 총합으로 환산한다.
+const WEAPON_ATTACK_GRANT_VARIANTS = {
+  weaponAttackFlatPlain: { label: '고정 무기공격력 (일반)', multiplier: 1 },
+  weaponAttackFlatStack6: { label: '고정 무기공격력 (최대 6중첩)', multiplier: 6 },
+  weaponAttackFlatStack30: { label: '고정 무기공격력 (최대 30중첩)', multiplier: 30 },
+  weaponAttackFlatLife50: { label: '고정 무기공격력 (생명력 50% 이상)', multiplier: 1 },
+};
+
 // "팔찌 부여 옵션" 드롭다운에 쓰이는 옵션 목록 (팔찌 시뮬레이터용). 비슷한 항목끼리 묶어서 순서를 정함.
-// key는 parseBraceletOptions 결과 필드명과 동일 (weaponAttackFlatBase는 내부 역산용이라 제외).
+// key는 parseBraceletOptions 결과 필드명과 동일 (weaponAttackFlatBase는 내부 역산용이라 제외) —
+// 단 고정 무기공격력만 WEAPON_ATTACK_GRANT_VARIANTS의 4개 key로 대체.
 const BRACELET_GRANT_OPTION_TYPES = [
-  { key: 'weaponAttackFlat', label: '고정 무기공격력' },
+  ...Object.keys(WEAPON_ATTACK_GRANT_VARIANTS).map((key) => ({ key, label: WEAPON_ATTACK_GRANT_VARIANTS[key].label })),
   { key: 'critRatePercent', label: '치명타 적중률%' },
   { key: 'critDamagePercent', label: '치명타 피해%' },
   { key: 'critHitExtraDamagePercent', label: '치명타 적중 시 추가 피해%' },
@@ -2302,7 +2314,8 @@ const BRACELET_GRANT_OPTION_TYPES = [
 // 팔찌 시뮬레이터: 사용자가 고른 가상 옵션 조합(기본 옵션 최대 2개 + 부여 옵션 최대 3개)을 실제 팔찌와
 // "교체"했다고 가정하고 효율표 + 총 변화율을 계산.
 // selections = { basic: [{type, value}], grant: [{type, value}] } (type은 BRACELET_BASIC_OPTION_TYPES 값
-// 또는 BRACELET_GRANT_OPTION_TYPES의 key).
+// 또는 BRACELET_GRANT_OPTION_TYPES의 key). 고정 무기공격력 계열 4종(WEAPON_ATTACK_GRANT_VARIANTS)을 고르면
+// 입력값(칸당 값)에 종류별 배율을 곱해 weaponAttackFlat 총합으로 합산.
 // 치명 스탯은 실제 팔찌가 이미 가진 치명 스탯 기여분을 고려하지 않고(즉 실제 팔찌에 치명이 있었어도 무시하고)
 // "이 가상 치명 스탯만큼 추가로 있다"고 가정 — 실제 팔찌에 치명 스탯이 있는 경우는 드물어서 일단 이렇게 단순화.
 function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, selections) {
@@ -2319,9 +2332,20 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
     else if (type === '신속') swiftStat = value;
     else if (type === '치명') critStat = value;
   });
+  // 고정 무기공격력 계열(4종) 선택 — 실제 옵션 종류별 배율로 weaponAttackFlat 총합으로 환산.
+  // 화면에는 사용자가 입력한 "칸당 값"과 종류 라벨을 그대로 보여줘야 하므로 따로 기억해둔다.
+  let weaponAttackVariantLabel = null;
+  let weaponAttackVariantValue = 0;
   (selections.grant || []).forEach(({ type, value }) => {
     if (!type || !value) return;
-    braceletOptions[type] = value;
+    const variant = WEAPON_ATTACK_GRANT_VARIANTS[type];
+    if (variant) {
+      braceletOptions.weaponAttackFlat += value * variant.multiplier;
+      weaponAttackVariantLabel = variant.label;
+      weaponAttackVariantValue = value;
+    } else {
+      braceletOptions[type] = value;
+    }
   });
 
   let hypotheticalDealerData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, null);
@@ -2346,6 +2370,14 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
     hypotheticalDealerData, supportData, hypotheticalStats, inputs,
     hypotheticalFinalDamage, hypotheticalExtra.multiplier, ctx, hypotheticalTotal
   );
+
+  if (weaponAttackVariantLabel) {
+    const weaponAttackRow = rows.find((r) => r.key === 'weaponAttackFlat');
+    if (weaponAttackRow) {
+      weaponAttackRow.label = weaponAttackVariantLabel;
+      weaponAttackRow.value = weaponAttackVariantValue;
+    }
+  }
 
   return { rows, totalChangePercent };
 }
