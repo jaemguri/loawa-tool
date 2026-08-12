@@ -263,6 +263,7 @@
       const equipment = dealerData.equipment || [];
       const weaponItem = findEquip(equipment, '무기');
       const wanjibItem = findEquip(equipment, '완갑');
+      const braceletOptions = getBraceletOptionsFromEquipment(equipment);
 
       return {
         arkgridCores: getArkgridCoreSummary(dealerData.arkgrid),
@@ -274,7 +275,8 @@
         })),
         weaponName: weaponItem ? stripHtml(weaponItem.Name) : '(미장착)',
         wanjibName: wanjibItem ? stripHtml(wanjibItem.Name) : '(미장착)',
-        braceletOptions: getBraceletOptionsFromEquipment(equipment),
+        braceletOptions,
+        braceletEfficiency: calculateBraceletEfficiencyTable(dealerData, extra.supportData, dealerStats, braceletOptions, extra),
         necklace: findEquip(equipment, '목걸이'),
         earrings: findEquipAll(equipment, '귀걸이'),
         rings: findEquipAll(equipment, '반지'),
@@ -336,6 +338,24 @@
         <div class="fieldGroup">
           <h4>팔찌 정보</h4>
           <table class="statTable">${rows || '<tr><td>팔찌 미장착 또는 옵션 없음</td></tr>'}</table>
+        </div>
+        ${buildBraceletEfficiencySectionHtml(info)}
+      `;
+    }
+
+    // 팔찌 옵션별 "적에게 주는 피해" 기준 환산 효율표. 값이 0인 옵션(팔찌에 없는 옵션)은 표에서 뺀다.
+    function buildBraceletEfficiencySectionHtml(info) {
+      const rows = info.braceletEfficiency
+        .filter((item) => item.value)
+        .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td><td>${item.method}</td></tr>`)
+        .join('');
+      return `
+        <div class="fieldGroup">
+          <h4>팔찌 효율표 (적에게 주는 피해 기준 환산)</h4>
+          <table class="statTable">
+            <tr><th>옵션</th><th>값</th><th>환산 효율</th><th>방식</th></tr>
+            ${rows || '<tr><td colspan="4">팔찌에 환산 가능한 옵션이 없습니다</td></tr>'}
+          </table>
         </div>
       `;
     }
@@ -408,8 +428,7 @@
       document.getElementById('liveFullBuffOutput').textContent = fullBuffFinalOutputResult.output.toLocaleString();
     }
 
-    function renderDealerInfoTab(ctx) {
-      const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
+    function renderDealerInfoTab(ctx, info) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="info"]');
 
       // 최종 딜 상승량은 항상 체크박스 OFF 상태로 고정 계산한 풀버프 최종 산출식을 기준으로 비교한다.
@@ -462,8 +481,20 @@
       document.getElementById('darkGrenadeCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
     }
 
+    // "팔찌" 탭: 지금은 현재 정보 탭과 동일한 효율표를 읽기 전용으로 보여준다.
+    // 옵션을 가상으로 바꿔보는 편집 기능은 이후 단계에서 이 패널 위에 추가할 예정.
+    function renderDealerBraceletTab(ctx, info) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="bracelet"]');
+      panel.innerHTML = `
+        ${buildBraceletSectionHtml(info)}
+        <p>※ 지금은 실제 착용 중인 팔찌 기준 효율표만 보여줍니다. 옵션을 가상으로 바꿔보는 기능은 추후 추가됩니다.</p>
+      `;
+    }
+
     function renderDealerView(ctx) {
-      renderDealerInfoTab(ctx);
+      const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
+      renderDealerInfoTab(ctx, info);
+      renderDealerBraceletTab(ctx, info);
     }
 
     function renderSupportView(ctx) {
@@ -585,6 +616,7 @@
         const ctx = {
           dealerData: data.dealer, supportData: data.support,
           dealerStats, supportStats, dealerLabel, supportLabel,
+          partyClassNames, brandEffectiveRatio,
           allyBuffPercent, buffGemPercent, supportBuffPower,
           adrenalineBonusBase, classSynergyAttackPercent, classSynergyDefenseReductionPercent, arkPassiveAttackPercent,
           finalDamage, critResult, extraDamageResult, enemyDamageResult, brandResult,
