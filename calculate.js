@@ -437,6 +437,19 @@ function getStatTotalFromEquipment(equipmentList, statName) {
   return total;
 }
 
+// equipmentList(팔찌 제외)에서 힘/민첩/지능 중 가장 큰 stat 이름을 반환 — 클래스의 "주스탯"을
+// 클래스명 테이블이 아니라 실제 장비 데이터(무기의 주스탯 고정 보너스가 압도적으로 커서 신뢰 가능)로
+// 판별한다. 팔찌 시뮬레이터에서 힘/민첩/지능을 따로 고르게 하지 않고 "주스탯" 하나로 통합해
+// 자동으로 이 stat에 적용할 때 사용.
+function getPrimaryStatName(equipmentList) {
+  const str = getStatTotalFromEquipment(equipmentList, '힘');
+  const dex = getStatTotalFromEquipment(equipmentList, '민첩');
+  const int_ = getStatTotalFromEquipment(equipmentList, '지능');
+  if (str >= dex && str >= int_) return '힘';
+  if (dex >= int_) return '민첩';
+  return '지능';
+}
+
 // 아바타 중 실제 적용되는(덧입기에 가려지지 않은) 것들의 힘/민첩/지능 % 합산, 최대 8%
 function getAvatarPrimaryStatPercent(avatarsData) {
   let total = 0;
@@ -2305,8 +2318,9 @@ function calculateBraceletEfficiencyTable(dealerData, supportData, dealerStats, 
   return rows;
 }
 
-// "팔찌 기본 옵션" 드롭다운에 쓰이는 스탯 목록 (팔찌 시뮬레이터용)
-const BRACELET_BASIC_OPTION_TYPES = ['힘', '민첩', '지능', '특화', '신속', '치명'];
+// "팔찌 기본 옵션" 드롭다운에 쓰이는 스탯 목록 (팔찌 시뮬레이터용). 힘/민첩/지능은 클래스마다 하나만
+// 쓰이므로 "주스탯" 하나로 통합 — 실제로 어느 stat인지는 getPrimaryStatName으로 자동 판별한다.
+const BRACELET_BASIC_OPTION_TYPES = ['주스탯', '특화', '신속', '치명'];
 
 // 실제 팔찌 텍스트에 "고정 무기공격력" 계열 중 어떤 종류가 있는지 감지해서
 // [{ variantKey, label, rawValue(칸당 값) }] 로 반환 (실제로는 보통 최대 1개).
@@ -2472,7 +2486,7 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
 
   (selections.basic || []).forEach(({ type, value }) => {
     if (!type || !value) return;
-    if (type === '힘' || type === '민첩' || type === '지능') primaryStatFlat[type] = value;
+    if (type === '주스탯') primaryStatFlat[getPrimaryStatName(dealerData.equipment)] = value;
     else if (type === '특화') specStat = value;
     else if (type === '신속') swiftStat = value;
     else if (type === '치명') critStat = value;
