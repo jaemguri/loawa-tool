@@ -1314,7 +1314,14 @@ function calculateCritMultiplier(dealerData, supportData, options) {
   let onHitMultiplier = 1;
   Object.values(onHitBreakdown).forEach((p) => { onHitMultiplier *= toMultiplier(p); });
 
-  const rate = Math.min(critRatePercent, 100) / 100;
+  // '뭉툭한 가시' 채용 시 표시용 치명타 적중률(critRatePercent)은 그대로 두되, 실제 치명타 발동
+  // 기댓값 계산에는 임계값(보통 80%) 상한을 적용 — 초과분은 진화형 피해로 전환되어 이미 반영되므로
+  // (calculateEnemyDamageMultiplier의 뭉툭한가시_전환보너스 참고) 여기서 그대로 쓰면 이중 반영된다.
+  const bluntThornCritRateCapPercent = getBluntThornCritRateCapPercent(dealerData.arkpassive);
+  const effectiveCritRatePercent = bluntThornCritRateCapPercent !== null
+    ? Math.min(critRatePercent, bluntThornCritRateCapPercent)
+    : critRatePercent;
+  const rate = Math.min(effectiveCritRatePercent, 100) / 100;
   const critDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
   const sharpWeaponPenalty = getSharpWeaponDamagePenaltyMultiplier(dealerData.engravings);
   const classSynergyCritDamagePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT);
@@ -1326,6 +1333,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     sharpWeaponPenalty,
     시너지_치명타시피해량: classSynergyCritDamagePercent,
     자동감지_사멸타입: autoSameolType,
+    뭉툭한가시_치명타발동상한: bluntThornCritRateCapPercent,
   };
 }
 
@@ -1784,6 +1792,37 @@ function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   return result;
 }
 
+// '뭉툭한 가시' 노드 원문에서 임계값(threshold, 보통 80%)/전환율(rate, 보통 150%)/진화형 피해 상한(maxTotal)/
+// 기본 고정 증가분(baseFlat)을 파싱 — 채용하지 않았으면 null. getBluntThornConversionBonusPercent(진화형 피해
+// 전환량)와 getBluntThornCritRateCapPercent(실제 치명타 발동률 상한)가 공유하는 파싱 로직.
+function getBluntThornConfig(arkpassiveData) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return null;
+  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('뭉툭한 가시'));
+  if (!eng) return null;
+
+  let text = '';
+  try {
+    const obj = JSON.parse(eng.ToolTip);
+    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
+  } catch (e) {
+    return null;
+  }
+
+  const thresholdMatch = text.match(/확률[을이]\s*최대\s*([\d.]+)\s*%\s*로\s*제한/);
+  const rateMatch = text.match(/확률의\s*([\d.]+)\s*%\s*[가를]?\s*진화형\s*피해로\s*전환/);
+  const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%\s*까지/);
+  const baseFlatMatch = text.match(/진화형\s*피해(?:가|이)?\s*([\d.]+)\s*%\s*증가/);
+
+  if (!thresholdMatch || !rateMatch || !maxTotalMatch) return null;
+
+  return {
+    threshold: parseFloat(thresholdMatch[1]),
+    rate: parseFloat(rateMatch[1]),
+    maxTotal: parseFloat(maxTotalMatch[1]),
+    baseFlat: baseFlatMatch ? parseFloat(baseFlatMatch[1]) : 0,
+  };
+}
+
 // '뭉툭한 가시' 채용 시, 치명타 적중률이 임계값(보통 80%)을 넘는 초과분을 전환율(보통 150%)로
 // 추가 진화형 피해로 전환 (최대 한도 - 기본 15%는 이미 위 함수에서 잡히므로 초과분만 반환)
 function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
@@ -1796,41 +1835,27 @@ function getBluntThornConversionBonusPercent(arkpassiveData, critRatePercent) {
     maxTotal매치: false,
   };
 
-  if (!arkpassiveData || !arkpassiveData.Effects) return { bonus: 0, debug };
-  const eng = arkpassiveData.Effects.find((e) => (e.Description || '').includes('뭉툭한 가시'));
-  if (!eng) return { bonus: 0, debug };
+  const config = getBluntThornConfig(arkpassiveData);
+  if (!config) return { bonus: 0, debug };
   debug.엔그레이빙_찾음 = true;
+  debug.threshold매치 = true;
+  debug.rate매치 = true;
+  debug.maxTotal매치 = true;
 
-  let text = '';
-  try {
-    const obj = JSON.parse(eng.ToolTip);
-    text = obj.Element_002 ? stripHtml(obj.Element_002.value) : '';
-  } catch (e) {
-    return { bonus: 0, debug };
-  }
-  debug.원문 = text;
-
-  const thresholdMatch = text.match(/확률[을이]\s*최대\s*([\d.]+)\s*%\s*로\s*제한/);
-  const rateMatch = text.match(/확률의\s*([\d.]+)\s*%\s*[가를]?\s*진화형\s*피해로\s*전환/);
-  const maxTotalMatch = text.match(/진화형\s*피해는\s*최대\s*([\d.]+)\s*%\s*까지/);
-  const baseFlatMatch = text.match(/진화형\s*피해(?:가|이)?\s*([\d.]+)\s*%\s*증가/);
-
-  debug.threshold매치 = !!thresholdMatch;
-  debug.rate매치 = !!rateMatch;
-  debug.maxTotal매치 = !!maxTotalMatch;
-
-  if (!thresholdMatch || !rateMatch || !maxTotalMatch) return { bonus: 0, debug };
-
-  const threshold = parseFloat(thresholdMatch[1]);
-  const rate = parseFloat(rateMatch[1]);
-  const maxTotal = parseFloat(maxTotalMatch[1]);
-  const baseFlat = baseFlatMatch ? parseFloat(baseFlatMatch[1]) : 0;
-
-  const excess = Math.max((critRatePercent || 0) - threshold, 0);
-  const converted = (excess * rate) / 100;
-  const maxBonus = maxTotal - baseFlat;
+  const excess = Math.max((critRatePercent || 0) - config.threshold, 0);
+  const converted = (excess * config.rate) / 100;
+  const maxBonus = config.maxTotal - config.baseFlat;
 
   return { bonus: Math.min(converted, maxBonus), debug };
+}
+
+// '뭉툭한 가시' 채용 시 실제로 치명타가 발동하는 확률의 상한(보통 80) — 채용하지 않았으면 null.
+// 화면에 표시하는 치명타 적중률(critRatePercent)은 그대로 두고, 데미지 계산(치명타 피해 기댓값)에만
+// 이 상한을 적용해야 한다(임계값을 넘는 초과분은 대신 진화형 피해로 전환되므로 이미 반영됨 —
+// getBluntThornConversionBonusPercent 참고, 이중 반영 방지).
+function getBluntThornCritRateCapPercent(arkpassiveData) {
+  const config = getBluntThornConfig(arkpassiveData);
+  return config ? config.threshold : null;
 }
 
 // 백/헤드 사멸 체크박스의 적에게 주는 피해 보너스 %
