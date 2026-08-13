@@ -932,8 +932,14 @@ function hasAdrenalineEngraving(engravingsData) {
   return JSON.stringify(engravingsData).includes('아드레날린');
 }
 
-// 아드레날린 각인 레벨(1~4)별 추가 보너스 %
-const ADRENALINE_STONE_BONUS = { 1: 0.48, 2: 0.60, 3: 0.83, 4: 0.95 };
+// 어빌리티 스톤 "아드레날린" 효과의 1중첩당 공격력 증가% (사용자 실측표) — 실제로는 최대 6중첩까지
+// 쌓이므로(다른 어빌리티 스톤 각인 효과들이 "상시 발동" 가정으로 최댓값을 쓰는 것과 같은 컨벤션),
+// 최종적으로 쓰는 ADRENALINE_STONE_BONUS는 이 값에 ×6을 적용한 최대 중첩 기준 수치다.
+const ADRENALINE_STONE_BONUS_PER_STACK = { 1: 0.48, 2: 0.60, 3: 0.83, 4: 0.95 };
+const ADRENALINE_STONE_MAX_STACK = 6;
+const ADRENALINE_STONE_BONUS = Object.fromEntries(
+  Object.entries(ADRENALINE_STONE_BONUS_PER_STACK).map(([level, v]) => [level, v * ADRENALINE_STONE_MAX_STACK])
+);
 
 // 어빌리티 스톤의 "무작위 각인 효과"에서 "아드레날린 Lv.N"을 찾아 대응하는 보너스 % 반환
 function getAdrenalineStoneBonus(equipmentList) {
