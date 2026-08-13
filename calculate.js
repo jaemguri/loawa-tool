@@ -1807,9 +1807,11 @@ function getArkPassiveNodeIcons(arkpassiveData, category) {
     .filter((e) => e.Name === category)
     .map((e) => {
       let nodeName = '';
+      let effectText = '';
       try {
         const obj = JSON.parse(e.ToolTip);
         nodeName = obj.Element_000 ? stripHtml(obj.Element_000.value) : '';
+        effectText = obj.Element_002 ? stripHtml(obj.Element_002.value).replace(/\|+\s*$/, '').trim() : '';
       } catch (err) {}
       const desc = stripHtml(e.Description || '');
       const tierMatch = desc.match(/(\d+)티어/);
@@ -1820,6 +1822,7 @@ function getArkPassiveNodeIcons(arkpassiveData, category) {
         level: levelMatch ? parseInt(levelMatch[1], 10) : null,
         icon: e.Icon || '',
         description: desc,
+        effectText,
       };
     });
 }
@@ -1834,6 +1837,36 @@ const EVOLUTION_TREE_LAYOUT = [
   ['회심', '달인', '분쇄', '선각자', '진군', '기원'],
   ['뭉툭한 가시', '음속 돌파', '인파이팅', '입식 타격가', '마나 용광로', '안정된 관리자'],
 ];
+
+// 안 찍힌(미투자) 상태 노드의 효과 설명 — API로는 실제로 찍은 노드의 효과만 알 수 있어서, 미투자 노드는
+// 사용자가 제공한 영문 참고표(이미지)의 원문 그대로 사용(번역 없음, 정확도 우선). 4티어(회심 그룹)는
+// 이 참고표에 없어서 미포함 — 미투자 상태에서는 이름만 표시됨.
+const EVOLUTION_NODE_STATIC_EFFECT = {
+  '치명': 'Crit +50',
+  '특화': 'Spec +50',
+  '제압': 'Dom +50',
+  '신속': 'Swift +50',
+  '인내': 'Endurance +50',
+  '숙련': 'Expertise +50',
+  '끝없는 마나': 'CDR +7/14% for Mana Skills. Mana Consumption -10/20%',
+  '금단의 주문': 'Evolution Damage +5/10%. Additional +5/10% if the skill costs mana. Mana Consumption -6/12%',
+  '예리한 감각': 'Crit Chance +4/8%. Evolution Damage +5/10%',
+  '한계 돌파': 'Evolution Damage +10/20/30%',
+  '최적화 훈련': 'Skill CDR +4/8% except Awakening. Evolution Damage +5/10%',
+  '축복의 여신': "Grants 'Battle Blessing' on self and party members when in combat. (Lasts for 20s, refresh for every second.) Battle Blessing: Attack and Movement Speed +3/6/9%",
+  '무한한 마력': 'Evolution Damage +8/16%. Mana Skills CDR +7/14%. Mana Consumption -8/16%',
+  '혼신의 강타': 'Crit Chance +12/24%. Evolution Damage +2/4%',
+  '일격': 'Crit Damage of Directional Skills +16/32%',
+  '파괴 전차': 'Evolution Damage +12/24%. Attack Speed +4/8%',
+  '타이밍 지배': 'Skill CDR +5/10% except Awakening. Evolution Damage +8/16%',
+  '정열의 춤사위': "Requires Goddess of Blessings (lvl3). Grants 'Identity Gauge Gain' on self and party members when in combat. (Lasts for 20s, refresh for every second.) Dance of Passion: Evolution Damage +7/14%",
+  '뭉툭한 가시': 'Evolution Damage 7.5/15%. Your max Crit Rate caps to 80%. 120/140% of Exceeded Crit Chance will be converted into Evolution Damage. (Up to 50/70% Evolution Damage)',
+  '음속 돌파': 'On hit, 5/10% of BONUS Attack Speed and Movement Speed convert into Evolution Damage. If both Attack Speed and Movement Speed exceed the limit, you also gain additional 4/8% Evolution Damage and 10/20% excess of bonus speed as bonus Evolution Damage on hit. Bonus damage from this node is up to 12/24%',
+  '인파이팅': "On hit, grants 'Head On' (Lasts for 10s, Cooldown 5s). Head On: Evolution Damage +9/18%",
+  '입식 타격가': "When you enter combat, you gain maximum stack of 'Stand-up Fighting'. You lose 1 stack when you get paralysis, or 3 stacks when you get pushed down. You can regen a stack every 2 seconds. Stand-up Fighting: Evolution Damage +0.75/1.5% (Up to 6 stacks)",
+  '마나 용광로': 'Skills that cost mana consume extra 2% of your max MP. Using those skills increase Evolution Damage by 0.25/0.5% per 10 mana cost. Up to 12/24%',
+  '안정된 관리자': 'Brand Power +10/20%. -3/6% Identity Gauge Gain',
+};
 
 // 안 찍힌(미투자) 상태의 노드 아이콘 — API로는 구할 수 없는 미투자 노드 아이콘을 이미지에서 칸 위치별로
 // 잘라 `loa-cp/icons/evolution/t{티어}c{열}.png`로 저장해 둠(30개 전부 커버). 소스: 1~3/5티어는 사용자가
@@ -1855,8 +1888,16 @@ function getArkPassiveEvolutionFullTree(arkpassiveData) {
 
   return EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => row.map((name, colIdx) => {
     const node = byName[name];
-    if (node) return { name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon, description: node.description };
-    return { name, tier: tierIdx + 1, invested: false, icon: getEvolutionPlaceholderIconPath(tierIdx + 1, colIdx) };
+    if (node) {
+      return {
+        name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon,
+        description: node.description, effectText: node.effectText,
+      };
+    }
+    return {
+      name, tier: tierIdx + 1, invested: false, icon: getEvolutionPlaceholderIconPath(tierIdx + 1, colIdx),
+      effectText: EVOLUTION_NODE_STATIC_EFFECT[name] || '',
+    };
   }));
 }
 
