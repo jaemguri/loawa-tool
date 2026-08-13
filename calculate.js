@@ -1245,22 +1245,66 @@ function calculateCombatAnalysisWeightedCrit(dealerData, supportData, options, s
 // %를 피해량 지분(전투분석 표의 맨 오른쪽 컬럼)으로, 첫 숫자 앞까지의 텍스트를 스킬 이름 후보로 추출한다.
 // 이름 후보는 OCR 잡음(아이콘 오인식 등)이 섞이는 경우가 많아서 그대로 못 쓰고 fuzzyMatchSkillName으로
 // 실제 캐릭터 스킬 이름과 대조해야 한다.
+function parseCombatAnalysisLine(line) {
+  const percentMatches = [...line.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
+  if (percentMatches.length === 0) return null;
+  const sharePercent = parseFloat(percentMatches[percentMatches.length - 1][1]);
+  if (Number.isNaN(sharePercent)) return null;
+  const numIdx = line.search(/[0-9]/);
+  // 줄이 숫자로 바로 시작하면(아이콘 오인식 등으로 이름이 아예 안 남은 경우) 이름 후보를 만들지 않고
+  // 매칭 실패로 남겨서(사용자가 드롭다운으로 직접 고름), 숫자 잡음 전체를 이름처럼 오매칭하지 않는다.
+  const nameCandidate = numIdx > 1 ? line.slice(0, numIdx).trim() : '';
+  return { rawName: nameCandidate, sharePercent };
+}
+
 function parseCombatAnalysisOcrText(rawText) {
   if (!rawText) return [];
   const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
   const rows = [];
   lines.forEach((line) => {
-    const percentMatches = [...line.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
-    if (percentMatches.length === 0) return;
-    const sharePercent = parseFloat(percentMatches[percentMatches.length - 1][1]);
-    if (Number.isNaN(sharePercent)) return;
-    const numIdx = line.search(/[0-9]/);
-    // 줄이 숫자로 바로 시작하면(아이콘 오인식 등으로 이름이 아예 안 남은 경우) 이름 후보를 만들지 않고
-    // 매칭 실패로 남겨서(사용자가 드롭다운으로 직접 고름), 숫자 잡음 전체를 이름처럼 오매칭하지 않는다.
-    const nameCandidate = numIdx > 1 ? line.slice(0, numIdx).trim() : '';
-    rows.push({ rawName: nameCandidate, sharePercent });
+    const row = parseCombatAnalysisLine(line);
+    if (row) rows.push(row);
   });
   return rows;
+}
+
+// parseCombatAnalysisOcrText와 동일하지만, Tesseract의 줄 단위 바운딩 박스(lines: [{text, bbox}])를 받아
+// 각 행에 bbox를 그대로 실어서 반환 — 아이콘 교차 검증(그 줄의 텍스트 시작 위치로 아이콘 영역을 잘라내기
+// 위해) 좌표가 필요한 호출부에서 사용.
+function parseCombatAnalysisOcrLines(lines) {
+  if (!Array.isArray(lines)) return [];
+  const rows = [];
+  lines.forEach((line) => {
+    const text = (line.text || '').trim();
+    if (!text) return;
+    const row = parseCombatAnalysisLine(text);
+    if (row) rows.push({ ...row, bbox: line.bbox });
+  });
+  return rows;
+}
+
+// 두 그레이스케일 픽셀 배열(같은 길이, 0~255 값)의 유사도를 정규화 상관계수(Pearson correlation, -1~1)로
+// 반환 — 아이콘 교차 검증에서 사진 크롭(고대비 그레이스케일 전처리를 거침)과 실제 API 아이콘(원본 컬러,
+// 부드러운 톤)을 비교할 때 씀. 단순 픽셀 차이(MAE) 기반은 두 이미지의 밝기/대비 스타일이 서로 달라서
+// 실측 검증 시 정답 쌍과 오답 쌍의 점수 차이가 거의 안 났는데, 상관계수는 밝기/대비 차이에 영향받지 않고
+// 형태(엣지 패턴) 유사성만 반영해서 훨씬 안정적으로 구분됨(실측: 올바른 쌍 0.87 vs 틀린 쌍 -0.001).
+function compareGrayscalePixelArrays(a, b) {
+  if (!a || !b || a.length === 0 || a.length !== b.length) return 0;
+  const n = a.length;
+  const meanA = a.reduce((s, v) => s + v, 0) / n;
+  const meanB = b.reduce((s, v) => s + v, 0) / n;
+  let num = 0;
+  let denA = 0;
+  let denB = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    num += da * db;
+    denA += da * da;
+    denB += db * db;
+  }
+  if (denA === 0 || denB === 0) return 0;
+  return num / Math.sqrt(denA * denB);
 }
 
 // OCR로 읽은 이름 후보 문자열을 실제 캐릭터의 스킬 이름 목록과 대조해서 가장 비슷한 것을 찾음(문자 단위
