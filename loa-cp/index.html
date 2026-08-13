@@ -1118,7 +1118,11 @@
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
-        <p class="braceletSimTotal">미투자 상태 대비 총 상승량: ${pct(result.totalChangePercent)}%</p>
+        <table class="statTable">
+          <tr><th>미투자 대비 커스텀 선택</th><td>${pct(result.totalChangePercent)}%</td></tr>
+          <tr><th>미투자 대비 현재 실제 트리</th><td>${pct(result.realChangePercent)}%</td></tr>
+          <tr><th>현재 실제 트리 대비 커스텀 선택</th><td>${pct(result.vsRealPercent)}%</td></tr>
+        </table>
         <p style="font-size:11px;color:#888;">※ 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체는 아직 계산식이 없어 선택해도 0%로 반영됩니다(추후 추가 예정).</p>
       `;
     }

@@ -2030,6 +2030,7 @@ function buildDealerDataWithEvolutionSelections(dealerData, selections) {
 // 아니라, 이 함수들 자체가 EVOLUTION_NODE_LEVEL_TEXT/치명 특수처리에 없는 이름이라 그냥 0으로 남는 것).
 function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, selections) {
   const validSelections = (selections || []).filter((s) => s.name && s.level > 0);
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
 
   function totalFor(sels) {
     const modifiedDealerData = buildDealerDataWithEvolutionSelections(dealerData, sels);
@@ -2049,9 +2050,13 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
   // — 커스텀 시뮬레이터는 "내 현재 빌드 대비"가 아니라 "찍는 노드가 늘어날수록 얼마나 상승하는지"를
   // 처음부터 누적해서 보여주는 게 목적이라(사용자 요청), 실제 빌드를 기준으로 하면 실제 투자분(최대 140P)을
   // 통째로 빼는 셈이라 선택 몇 개만으로는 항상 큰 폭의 음수로 나와 오해를 준다.
+  // 다만 실제 빌드도 "같은 미투자(0) 기준선" 대비로 환산해서(realChangePercent) 같이 보여주면, 두 값을
+  // 나눠서(1+커스텀%)/(1+실제%) 커스텀 선택이 실제 빌드 대비 몇 %인지도 비교 가능해진다(사용자 제안).
   const zeroTotal = totalFor([]);
   const hypotheticalTotal = totalFor(validSelections);
   const totalChangePercent = ((hypotheticalTotal / zeroTotal) - 1) * 100;
+  const realChangePercent = ((realTotal / zeroTotal) - 1) * 100;
+  const vsRealPercent = ((hypotheticalTotal / realTotal) - 1) * 100;
 
   const rows = validSelections.map((sel) => {
     const withoutSelections = validSelections.filter((s) => s !== sel);
@@ -2060,7 +2065,7 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
     return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
   });
 
-  return { rows, totalChangePercent };
+  return { rows, totalChangePercent, realChangePercent, vsRealPercent };
 }
 
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
