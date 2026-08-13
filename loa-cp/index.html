@@ -44,7 +44,8 @@
     .evolutionCell { width: 76px; text-align: center; }
     .evolutionCell img { width: 44px; height: 44px; border: 1px solid #ccc; border-radius: 50%; }
     .evolutionCellPlaceholder { width: 44px; height: 44px; border-radius: 50%; background: #444; opacity: 0.4; margin: 0 auto; }
-    .evolutionCell.notInvested { opacity: 0.45; }
+    .evolutionCell.notInvested img { filter: grayscale(100%) brightness(0.55); opacity: 0.55; }
+    .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.55; }
     .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
   </style>
 </head>
@@ -1012,51 +1013,47 @@
       setupAbilityStoneSimulator(ctx);
     }
 
-    // 아크패시브 진화 탭: 직업별 전체 트리(5티어×6칸)를 아는 경우 안 찍힌 칸까지 회색으로 함께 표시,
-    // 모르는 직업이면 기존처럼 찍은 노드만 아이콘으로 나열 (읽기 전용)
+    // 아크패시브 진화 탭: 전체 트리(5티어×6칸, 모든 직업 공통)를 그리고, 찍은 칸은 실제 아이콘, 안 찍힌
+    // 칸은 (알려진 경우) 실제 아이콘을 흐리게, 모르는 경우만 회색 placeholder로 표시 (읽기 전용)
     function renderDealerEvolutionTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="evolution"]');
-      const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive, ctx.dealerStats.className);
+      const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive);
 
-      if (fullTree) {
-        const rowsHtml = fullTree.map((row, i) => `
-          <div class="evolutionTierRow">
-            <div class="evolutionTierLabel">${i + 1}티어</div>
-            <div class="evolutionTierNodes">
-              ${row.map((cell) => cell.invested ? `
-                <div class="evolutionCell" title="${cell.description}">
-                  <img src="${cell.icon}" alt="${cell.name}">
-                  <div class="evolutionCellLabel">${cell.name}${cell.level ? ' Lv.' + cell.level : ''}</div>
-                </div>
-              ` : `
-                <div class="evolutionCell notInvested" title="${cell.name} (미투자)">
+      const rowsHtml = fullTree.map((row, i) => `
+        <div class="evolutionTierRow">
+          <div class="evolutionTierLabel">${i + 1}티어</div>
+          <div class="evolutionTierNodes">
+            ${row.map((cell) => {
+              if (cell.invested) {
+                return `
+                  <div class="evolutionCell" title="${cell.description}">
+                    <img src="${cell.icon}" alt="${cell.name}">
+                    <div class="evolutionCellLabel">${cell.name}${cell.level ? ' Lv.' + cell.level : ''}</div>
+                  </div>
+                `;
+              }
+              if (cell.icon) {
+                return `
+                  <div class="evolutionCell notInvested" title="${cell.name} (미투자)">
+                    <img src="${cell.icon}" alt="${cell.name}">
+                    <div class="evolutionCellLabel">${cell.name}</div>
+                  </div>
+                `;
+              }
+              return `
+                <div class="evolutionCell notInvested" title="${cell.name} (미투자, 아이콘 미확보)">
                   <div class="evolutionCellPlaceholder"></div>
                   <div class="evolutionCellLabel">${cell.name}</div>
                 </div>
-              `).join('')}
-            </div>
+              `;
+            }).join('')}
           </div>
-        `).join('');
-        panel.innerHTML = `
-          <div class="fieldGroup">
-            <h4>아크패시브 진화 - 전체 트리 (${ctx.dealerStats.className})</h4>
-            ${rowsHtml}
-          </div>
-        `;
-        return;
-      }
-
-      const nodes = getArkPassiveNodeIcons(ctx.dealerData.arkpassive, '진화');
-      const nodeHtml = nodes.map((n) => `
-        <div class="evolutionNode" title="${n.description}">
-          <img src="${n.icon}" alt="${n.name}">
-          <div class="evolutionNodeLabel">${n.tier ? n.tier + '티어 ' : ''}${n.name}${n.level ? ' Lv.' + n.level : ''}</div>
         </div>
       `).join('');
       panel.innerHTML = `
         <div class="fieldGroup">
-          <h4>아크패시브 진화 - 현재 찍은 노드</h4>
-          <div class="evolutionNodeGrid">${nodeHtml || '<p>진화 노드 없음</p>'}</div>
+          <h4>아크패시브 진화 - 전체 트리</h4>
+          ${rowsHtml}
         </div>
       `;
     }
