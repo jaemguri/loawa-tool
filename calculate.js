@@ -1099,18 +1099,53 @@ function getCombatSkillsInnateEffectsText(combatSkillsData) {
     .join(' ');
 }
 
-// 스킬 부가효과 중 "N초 동안/간 치명타 적중률이 X% 증가한다" 패턴 합산 — 지속시간과 무관하게 우선 상시
-// 발동한다고 가정(사용자 지정 컨벤션, 예외 상황은 추후 개별 입력 예정 — 기존 아크패시브 "조건부는 상시
-// 발동 가정" 컨벤션과 동일선상).
-function getCombatSkillPersistentCritRatePercent(combatSkillsData) {
-  return extractPercent(getCombatSkillsInnateEffectsText(combatSkillsData), '치명타 적중률');
+// 실제로 찍은(IsSelected) 트라이포드 전체의 효과 텍스트를 이어붙임 — 예: "다크 오더" 트라이포드처럼
+// 스킬 자체 설명이 아니라 트라이포드에 지속형 버프가 달려있는 경우를 잡기 위함(스킬 부가효과와 트라이포드
+// 둘 다에서 지속형 버프가 나올 수 있다는 걸 사용자가 "마엘스톰" 실측으로 확인시켜줌).
+function getCombatSkillsSelectedTripodsText(combatSkillsData) {
+  if (!Array.isArray(combatSkillsData)) return '';
+  const parts = [];
+  combatSkillsData.forEach((sk) => {
+    (sk.Tripods || []).forEach((t) => {
+      if (t.IsSelected) parts.push(stripHtml(t.Tooltip));
+    });
+  });
+  return parts.join(' ');
 }
 
-// 스킬 부가효과 중 이동속도 증가% 합산 — 아크패시브 진화 5티어 "음속 돌파" 노드의 초과 이동속도 전환
-// 공식에 쓰기 위해 값만 우선 확보해 둔 것(그 전환 공식 자체는 5티어 조건부 로직이라 아직 미구현,
-// 다음 단계에서 연결 예정 — 지금은 어디에도 반영되지 않는 순수 조회용 함수).
+// "N초간"/"N초 동안"이 명시된 문장만 남김 — 지속시간이 있는 일시적 버프(1단계 대상, 상시 가동 가정)와
+// 지속시간 언급 없이 그 스킬/트라이포드 자체에 항상 붙어있는 상시 패시브(예: "치명타 적중률이 40% 증가한다"
+// — 스킬 전용이라 사용 비중에 따라 달라져야 하므로 "전투분석 사진 등록" 2단계 대상)를 구분하기 위함.
+// 문장 경계는 ". " (마침표+공백)로 나누는데, "12.8%" 같은 소수점은 마침표 뒤에 공백이 없어서 안 걸림.
+function filterDurationSentences(text) {
+  if (!text) return '';
+  return text
+    .split(/(?<=\.)\s+/)
+    .filter((s) => /\d+(?:\.\d+)?\s*초\s*(?:간|동안)/.test(s))
+    .join(' ');
+}
+
+// 스킬 자체 부가효과 + 실제로 찍은 트라이포드 전체를 합쳐서, 그중 지속시간이 명시된(=일시적 버프) 문장만
+// 남긴 텍스트 — 1단계(지속형 버프, 상시 가동 가정)에서 재사용할 공통 소스.
+function getCombatSkillsPersistentBuffText(combatSkillsData) {
+  const innate = getCombatSkillsInnateEffectsText(combatSkillsData);
+  const tripods = getCombatSkillsSelectedTripodsText(combatSkillsData);
+  return filterDurationSentences(`${innate} ${tripods}`);
+}
+
+// 지속형 버프 중 "N초 동안/간 치명타 적중률이 X% 증가한다" 패턴 합산(스킬 부가효과 + 트라이포드 모두 포함) —
+// 지속시간과 무관하게 우선 상시 발동한다고 가정(사용자 지정 컨벤션, 예외 상황은 추후 개별 입력 예정 —
+// 기존 아크패시브 "조건부는 상시 발동 가정" 컨벤션과 동일선상).
+function getCombatSkillPersistentCritRatePercent(combatSkillsData) {
+  return extractPercent(getCombatSkillsPersistentBuffText(combatSkillsData), '치명타 적중률');
+}
+
+// 지속형 버프 중 이동속도 증가% 합산(스킬 부가효과 + 트라이포드 모두 포함, "이동속도"/"이동 속도" 두 표기
+// 다 매칭) — 아크패시브 진화 5티어 "음속 돌파" 노드의 초과 이동속도 전환 공식에 쓰기 위해 값만 우선
+// 확보해 둔 것(그 전환 공식 자체는 5티어 조건부 로직이라 아직 미구현, 다음 단계에서 연결 예정 — 지금은
+// 어디에도 반영되지 않는 순수 조회용 함수).
 function getCombatSkillPersistentMoveSpeedPercent(combatSkillsData) {
-  return extractPercent(getCombatSkillsInnateEffectsText(combatSkillsData), '이동속도');
+  return extractPercent(getCombatSkillsPersistentBuffText(combatSkillsData), '이동\\s*속도');
 }
 
 // 아크패시브(진화)의 치명타 피해 % 합산
