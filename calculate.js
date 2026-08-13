@@ -2380,15 +2380,23 @@ function buildDealerDataWithCritStatDelta(dealerData, delta) {
 // 정확히 자기 자신의 값이 나옴).
 // - 주스탯(힘/민첩/지능)/치명(스탯): purePower/치명타 적중률에 직접 들어가므로 같은 "옵션 하나만 빠졌다고
 //   가정" 방식으로 환산.
-// - 특화/신속/재사용대기 증가(페널티): 사용자가 지정한 고정 환산치(1당 0.03%/0.02%/-0.931%)를
-//   그대로 사용 — 재계산하지 않음. 재사용대기 증가는 페널티라 부호가 음수.
+// - 특화/신속: 사용자가 지정한 고정 환산치(1당 0.03%/0.02%)를 그대로 사용 — 재계산하지 않음.
+// - 재사용대기 증가(페널티): 항상 2%인 고정 옵션이라, 신속 46.511 상당(=신속 환산율 0.02%를 곱한
+//   46.511×0.02%)을 고정치로 뺀다. 재사용대기 증가는 페널티라 부호가 음수.
 // - 백어택/헤드어택/비방향성/보호효과 대상 피해%: 조건부지만 "상시 발동"을 가정(이 코드베이스의 기존
 //   컨벤션과 동일)하면 적주피와 수학적으로 동치라 1:1로 취급.
+// - 무력화 상태 적에게 주는 피해%: 무력화 상태가 상시 유지되지 않으므로 1:1이 아니라 15/100 효율로 환산
+//   (사용자 지정 고정치).
 // - 악마 피해%/치명타(적)저항감소%(딜러 자신의 팔찌)/아군 버프 계열: 현재 엔진에
 //   딜러 자신에게 적용되는 계산식이 없어 0으로 처리 (필요해지면 나중에 보강 대상).
 const BRACELET_SPECIALIZATION_RATE = 0.03; // 특화 1당 0.03% (사용자 지정 고정치)
 const BRACELET_SWIFTNESS_RATE = 0.02; // 신속 1당 0.02% (사용자 지정 고정치)
-const BRACELET_COOLDOWN_PENALTY_RATE = 0.01 * 93.1; // 재사용대기 증가 1%당 -0.931% 페널티 (사용자 지정 고정치)
+// 재사용대기 증가(2%) 옵션의 고정 페널티 — 신속 스탯 46.511 상당(=2% 재사용대기 감소의 스탯 환산치)을
+// 신속 환산율로 적용. 재사용대기%에 정확히 비례하는 공식이 아니라 "우선은 고정치"로 사용자가 지정.
+const BRACELET_COOLDOWN_PENALTY_FLAT = 46.511 * BRACELET_SWIFTNESS_RATE;
+// 무력화 상태 적주피는 실전에서 무력화 상태가 상시 유지되지 않으므로, 값 그대로(1:1)가 아니라
+// 15/100 효율로 환산 (사용자 지정 고정치)
+const BRACELET_INCAPACITATED_EFFICIENCY_RATE = 0.15;
 
 function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStats, inputs, finalDamage, extraDamageMultiplier, ctx, baseTotal) {
   const { braceletOptions, primaryStatFlat, specStat, swiftStat, critStat } = inputs;
@@ -2433,12 +2441,12 @@ function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStat
     { key: 'headAttackDamagePercent', label: '헤드어택 시 주는 피해%', value: braceletOptions.headAttackDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.headAttackDamagePercent || 0 },
     { key: 'nonDirectionalDamagePercent', label: '비방향성 스킬 주는 피해%', value: braceletOptions.nonDirectionalDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.nonDirectionalDamagePercent || 0 },
     { key: 'protectedTargetDamagePercent', label: '보호효과 대상 주는 피해%', value: braceletOptions.protectedTargetDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.protectedTargetDamagePercent || 0 },
-    { key: 'incapacitatedDamagePercent', label: '무력화 상태 적에게 주는 피해%', value: braceletOptions.incapacitatedDamagePercent, method: '1:1 (상시발동 가정)', efficiencyPercent: braceletOptions.incapacitatedDamagePercent || 0 },
+    { key: 'incapacitatedDamagePercent', label: '무력화 상태 적에게 주는 피해%', value: braceletOptions.incapacitatedDamagePercent, method: '고정환산(15/100 효율)', efficiencyPercent: (braceletOptions.incapacitatedDamagePercent || 0) * BRACELET_INCAPACITATED_EFFICIENCY_RATE },
     { key: 'specialization', label: '특화(스탯)', value: specStat, method: '고정환산(1당 0.03%)', efficiencyPercent: (specStat || 0) * BRACELET_SPECIALIZATION_RATE },
     { key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: (swiftStat || 0) * BRACELET_SWIFTNESS_RATE },
     { key: 'critStat', label: '치명(스탯)', value: critStat, method: '실스펙 환산', efficiencyPercent: critStatSensitivityPercent(critStat) },
     { key: 'demonDamagePercent', label: '악마 계열 피해%', value: braceletOptions.demonDamagePercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
-    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '고정환산(1당 -0.931%)', efficiencyPercent: -(braceletOptions.cooldownPenaltyPercent || 0) * BRACELET_COOLDOWN_PENALTY_RATE },
+    { key: 'cooldownPenaltyPercent', label: '재사용대기 증가(페널티)', value: braceletOptions.cooldownPenaltyPercent, method: '고정환산(-46.511×0.02%)', efficiencyPercent: braceletOptions.cooldownPenaltyPercent ? -BRACELET_COOLDOWN_PENALTY_FLAT : 0 },
     { key: 'defenseReductionPercent', label: '적 방어력 감소%', value: braceletOptions.defenseReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critResistReductionPercent', label: '치명타 저항 감소%', value: braceletOptions.critResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
     { key: 'critDmgResistReductionPercent', label: '치명타 피해 저항 감소%', value: braceletOptions.critDmgResistReductionPercent, method: '미지원(0 처리)', efficiencyPercent: 0 },
@@ -2608,7 +2616,7 @@ const BRACELET_OPTION_CATALOG = [
 // 경로로 정확히 잡히므로, 여기 넣으면 중복 합산된다.
 const BRACELET_DIRECT_1TO1_FIELDS = new Set([
   'backAttackDamagePercent', 'headAttackDamagePercent',
-  'nonDirectionalDamagePercent', 'protectedTargetDamagePercent', 'incapacitatedDamagePercent',
+  'nonDirectionalDamagePercent', 'protectedTargetDamagePercent',
 ]);
 
 const BRACELET_TIER_COLORS = ['#4FC3F7', '#9C6ADE', '#FF9F40'];
@@ -2716,7 +2724,8 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
 
   // 슬롯 하나(1~2개 필드)가 통째로 없다고 가정하고 다시 계산해서 hypotheticalTotal과 비교한 비율.
   // cooldownPenaltyPercent는 어떤 계산식에도 안 꽂혀 있어 재계산으로는 0이 나오므로, 실제 팔찌 효율표와
-  // 동일한 고정 환산치(1당 -0.931%)를 별도로 빼준다.
+  // 동일한 고정 환산치(-46.511×0.02%)를 별도로 빼준다. incapacitatedDamagePercent도 재계산 대상이 아니라서
+  // 15/100 효율 고정치를 별도로 더해준다.
   function slotEfficiencyPercent(catalogEntry, tierIndex) {
     // 실제 계산식에 꽂혀서 recompute로 잡히는 필드(BRACELET_HOOKED_FIELD_SENTENCES)만 "이 슬롯이 기여한
     // 만큼만" 빼고 다시 계산 — 필드를 통째로 지우면(buildDealerDataWithoutBraceletFields) 다른 슬롯이 같은
@@ -2748,7 +2757,8 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
 
     catalogEntry.effects.forEach((e) => {
       if (BRACELET_DIRECT_1TO1_FIELDS.has(e.field)) percent += e.tiers[tierIndex];
-      if (e.field === 'cooldownPenaltyPercent') percent -= e.tiers[tierIndex] * BRACELET_COOLDOWN_PENALTY_RATE;
+      if (e.field === 'incapacitatedDamagePercent') percent += e.tiers[tierIndex] * BRACELET_INCAPACITATED_EFFICIENCY_RATE;
+      if (e.field === 'cooldownPenaltyPercent') percent -= BRACELET_COOLDOWN_PENALTY_FLAT;
     });
 
     return percent;
