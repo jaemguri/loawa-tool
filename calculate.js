@@ -1839,33 +1839,36 @@ const EVOLUTION_TREE_LAYOUT = [
 ];
 
 // 안 찍힌(미투자) 상태 노드의 효과 설명 — API로는 실제로 찍은 노드의 효과만 알 수 있어서, 미투자 노드는
-// 사용자가 제공한 영문 참고표(이미지)의 원문 그대로 사용(번역 없음, 정확도 우선). 4티어(회심 그룹)는
-// 이 참고표에 없어서 미포함 — 미투자 상태에서는 이름만 표시됨.
+// 사용자가 제공한 영문 참고표(이미지) 원문을 한국어로 옮김. 실제 API에서 확인된 진짜 한국어 효과 문구
+// 패턴(예: "예리한 감각" Lv.1 실측 = "치명타 적중률이 4.0% 증가하고, 진화형 피해가 5.0% 증가합니다."가
+// 참고표의 "Crit Chance +4/8%. Evolution Damage +5/10%"와 값이 정확히 일치)으로 용어·어투를 맞춰서
+// 번역했고, "최적화 훈련"은 실측 문구("각성기, 이동 및 기상기를 제외한...")를 그대로 반영. 4티어(회심
+// 그룹)는 이 참고표에 없어서 미포함 — 미투자 상태에서는 이름만 표시됨.
 const EVOLUTION_NODE_STATIC_EFFECT = {
-  '치명': 'Crit +50',
-  '특화': 'Spec +50',
-  '제압': 'Dom +50',
-  '신속': 'Swift +50',
-  '인내': 'Endurance +50',
-  '숙련': 'Expertise +50',
-  '끝없는 마나': 'CDR +7/14% for Mana Skills. Mana Consumption -10/20%',
-  '금단의 주문': 'Evolution Damage +5/10%. Additional +5/10% if the skill costs mana. Mana Consumption -6/12%',
-  '예리한 감각': 'Crit Chance +4/8%. Evolution Damage +5/10%',
-  '한계 돌파': 'Evolution Damage +10/20/30%',
-  '최적화 훈련': 'Skill CDR +4/8% except Awakening. Evolution Damage +5/10%',
-  '축복의 여신': "Grants 'Battle Blessing' on self and party members when in combat. (Lasts for 20s, refresh for every second.) Battle Blessing: Attack and Movement Speed +3/6/9%",
-  '무한한 마력': 'Evolution Damage +8/16%. Mana Skills CDR +7/14%. Mana Consumption -8/16%',
-  '혼신의 강타': 'Crit Chance +12/24%. Evolution Damage +2/4%',
-  '일격': 'Crit Damage of Directional Skills +16/32%',
-  '파괴 전차': 'Evolution Damage +12/24%. Attack Speed +4/8%',
-  '타이밍 지배': 'Skill CDR +5/10% except Awakening. Evolution Damage +8/16%',
-  '정열의 춤사위': "Requires Goddess of Blessings (lvl3). Grants 'Identity Gauge Gain' on self and party members when in combat. (Lasts for 20s, refresh for every second.) Dance of Passion: Evolution Damage +7/14%",
-  '뭉툭한 가시': 'Evolution Damage 7.5/15%. Your max Crit Rate caps to 80%. 120/140% of Exceeded Crit Chance will be converted into Evolution Damage. (Up to 50/70% Evolution Damage)',
-  '음속 돌파': 'On hit, 5/10% of BONUS Attack Speed and Movement Speed convert into Evolution Damage. If both Attack Speed and Movement Speed exceed the limit, you also gain additional 4/8% Evolution Damage and 10/20% excess of bonus speed as bonus Evolution Damage on hit. Bonus damage from this node is up to 12/24%',
-  '인파이팅': "On hit, grants 'Head On' (Lasts for 10s, Cooldown 5s). Head On: Evolution Damage +9/18%",
-  '입식 타격가': "When you enter combat, you gain maximum stack of 'Stand-up Fighting'. You lose 1 stack when you get paralysis, or 3 stacks when you get pushed down. You can regen a stack every 2 seconds. Stand-up Fighting: Evolution Damage +0.75/1.5% (Up to 6 stacks)",
-  '마나 용광로': 'Skills that cost mana consume extra 2% of your max MP. Using those skills increase Evolution Damage by 0.25/0.5% per 10 mana cost. Up to 12/24%',
-  '안정된 관리자': 'Brand Power +10/20%. -3/6% Identity Gauge Gain',
+  '치명': '치명 +50',
+  '특화': '특화 +50',
+  '제압': '제압 +50',
+  '신속': '신속 +50',
+  '인내': '인내 +50',
+  '숙련': '숙련 +50',
+  '끝없는 마나': '마나 스킬의 재사용 대기시간이 7/14% 감소하고, 마나 소모량이 10/20% 감소합니다.',
+  '금단의 주문': '진화형 피해가 5/10% 증가합니다. 마나를 소모하는 스킬이라면 추가로 5/10% 증가합니다. 마나 소모량이 6/12% 감소합니다.',
+  '예리한 감각': '치명타 적중률이 4/8% 증가하고, 진화형 피해가 5/10% 증가합니다.',
+  '한계 돌파': '진화형 피해가 10/20/30% 증가합니다.',
+  '최적화 훈련': '각성기, 이동 및 기상기를 제외한 스킬의 재사용 대기시간이 4/8% 감소하고, 진화형 피해가 5/10% 증가합니다.',
+  '축복의 여신': '전투 중 자신과 파티원에게 [전투의 축복]을 부여합니다. (20초간 지속되며, 매초 갱신됩니다.) 전투의 축복: 공격 및 이동 속도가 3/6/9% 증가합니다.',
+  '무한한 마력': '진화형 피해가 8/16% 증가하고, 마나 스킬의 재사용 대기시간이 7/14% 감소하며, 마나 소모량이 8/16% 감소합니다.',
+  '혼신의 강타': '치명타 적중률이 12/24% 증가하고, 진화형 피해가 2/4% 증가합니다.',
+  '일격': '방향성 스킬의 치명타 피해가 16/32% 증가합니다.',
+  '파괴 전차': '진화형 피해가 12/24% 증가하고, 공격 속도가 4/8% 증가합니다.',
+  '타이밍 지배': '각성기를 제외한 스킬의 재사용 대기시간이 5/10% 감소하고, 진화형 피해가 8/16% 증가합니다.',
+  '정열의 춤사위': '[축복의 여신] 3레벨이 필요합니다. 전투 중 자신과 파티원에게 [특성 게이지 획득량 증가]를 부여합니다. (20초간 지속되며, 매초 갱신됩니다.) 정열의 춤사위: 진화형 피해가 7/14% 증가합니다.',
+  '뭉툭한 가시': '진화형 피해가 7.5/15% 증가합니다. 최대 치명타 적중률이 80%로 제한되며, 초과한 치명타 확률의 120/140%가 진화형 피해로 전환됩니다. (최대 50/70% 진화형 피해)',
+  '음속 돌파': '적중 시, 초과 공격 속도와 이동 속도의 5/10%가 진화형 피해로 전환됩니다. 공격 속도와 이동 속도가 모두 한계를 초과하면 적중 시 추가로 진화형 피해가 4/8% 증가하며, 초과분의 10/20%도 추가 진화형 피해로 전환됩니다. 이 노드로 인한 추가 피해는 최대 12/24%까지 적용됩니다.',
+  '인파이팅': '적중 시 [정면 승부]를 부여합니다. (10초간 지속, 재사용 대기시간 5초) 정면 승부: 진화형 피해가 9/18% 증가합니다.',
+  '입식 타격가': '전투 진입 시 [입식 타격가] 효과를 최대 중첩으로 얻습니다. 경직 시 1중첩, 다운 시 3중첩이 사라지며, 2초마다 1중첩씩 회복됩니다. 입식 타격가: 진화형 피해가 0.75/1.5% 증가합니다. (최대 6중첩)',
+  '마나 용광로': '마나를 소모하는 스킬 사용 시 최대 마나의 2%를 추가로 소모합니다. 해당 스킬 사용 시 소모 마나 10당 진화형 피해가 0.25/0.5% 증가합니다. (최대 12/24%)',
+  '안정된 관리자': '낙인력이 10/20% 증가하지만, 특성 게이지 획득량이 3/6% 감소합니다.',
 };
 
 // 안 찍힌(미투자) 상태의 노드 아이콘 — API로는 구할 수 없는 미투자 노드 아이콘을 이미지에서 칸 위치별로
