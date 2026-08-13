@@ -1332,9 +1332,14 @@
       const rowsContainer = panel.querySelector('.combatAnalysisRows');
 
       function addRow(rawName, sharePercent, bbox) {
+        // bbox가 있으면 OCR에서 뽑아낸 행(이름 인식에 완전히 실패해서 rawName이 빈 문자열이어도 여전히
+        // 사용자 확인이 필요) — bbox가 없으면 "+ 행 추가"로 사용자가 직접 만든 빈 행(처음부터 비어있는 게
+        // 정상이라 굳이 빨간 테두리로 경고할 필요 없음). 예전엔 rawName이 빈 문자열이면(완전히 못 읽은 경우)
+        // "" && ... 가 falsy라서 경고 표시 자체가 안 되는 버그가 있었음.
+        const isFromOcr = bbox !== undefined && bbox !== null;
         const matched = rawName ? fuzzyMatchSkillName(rawName, skillNames) : null;
         const row = document.createElement('div');
-        row.className = 'combatAnalysisRow' + (rawName && !matched ? ' unmatched' : '');
+        row.className = 'combatAnalysisRow' + (isFromOcr && !matched ? ' unmatched' : '');
         row._bbox = bbox || null;
         const options = ['<option value="">-- 선택 안 함(조건없음) --</option>']
           .concat(skillNames.map((name) => `<option value="${name}" ${name === matched ? 'selected' : ''}>${name}</option>`))

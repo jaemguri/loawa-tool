@@ -1312,20 +1312,32 @@ function compareGrayscalePixelArrays(a, b) {
 // null(매칭 실패, 사용자가 직접 골라야 함) — 예: "래피드 샷"이 "2 uci"처럼 완전히 깨진 경우, 혹은 "실버호크"가
 // "호크 샷"과 두 글자만 우연히 겹치는 것처럼 짧은 이름끼리 오매칭될 위험이 있는 경우. 이 함수는 어디까지나
 // 기본값 미리 채우기용이고, 최종 확정은 UI에서 사용자가 원본 OCR 텍스트를 보고 드롭다운으로 검증/수정한다.
+// 두 문자열의 "가장 긴 연속 부분 문자열" 길이 — 흩어진 글자 겹침(바구니 방식)이 아니라 실제로 이어진
+// 구간만 인정한다. OCR 잡음은 진짜 이름 글자가 우연히 여기저기 흩어져서 나타날 수 있는데(예: "스킬룬 :
+// 중독"이 우연히 "호","크","샷" 세 글자를 순서 상관없이 다 포함하게 되는 경우), 실제 이름은 항상 붙어서
+// 나타나므로(예: "호크 샷") 연속 구간 매칭이 훨씬 안전하다.
+function longestCommonSubstringLength(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  let max = 0;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+        if (dp[i][j] > max) max = dp[i][j];
+      }
+    }
+  }
+  return max;
+}
+
 function fuzzyMatchSkillName(candidateText, skillNames) {
   if (!candidateText || !Array.isArray(skillNames) || skillNames.length === 0) return null;
-  const candChars = candidateText.replace(/\s/g, '').split('');
+  const cand = candidateText.replace(/\s/g, '');
   let best = null;
   let bestScore = 0;
   skillNames.forEach((name) => {
-    const nameChars = name.replace(/\s/g, '').split('');
-    let overlap = 0;
-    const pool = candChars.slice();
-    nameChars.forEach((ch) => {
-      const idx = pool.indexOf(ch);
-      if (idx !== -1) { overlap++; pool.splice(idx, 1); }
-    });
-    const score = overlap / nameChars.length;
+    const nm = name.replace(/\s/g, '');
+    const score = longestCommonSubstringLength(cand, nm) / nm.length;
     if (score > bestScore) { bestScore = score; best = name; }
   });
   return bestScore >= 0.7 ? best : null;
