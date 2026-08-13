@@ -1799,6 +1799,31 @@ function getArkPassiveEvolutionDamagePercent(arkpassiveData) {
   return total;
 }
 
+// 아크패시브 특정 카테고리(진화/깨달음/도약)에서 "현재 실제로 찍혀서 발동 중인 노드"의 이름/티어/레벨/
+// 아이콘 URL 목록을 반환 (Effects 배열엔 애초에 발동 중인 노드만 담김). UI에서 아이콘 그리드로 표시하는 용도.
+function getArkPassiveNodeIcons(arkpassiveData, category) {
+  if (!arkpassiveData || !arkpassiveData.Effects) return [];
+  return arkpassiveData.Effects
+    .filter((e) => e.Name === category)
+    .map((e) => {
+      let nodeName = '';
+      try {
+        const obj = JSON.parse(e.ToolTip);
+        nodeName = obj.Element_000 ? stripHtml(obj.Element_000.value) : '';
+      } catch (err) {}
+      const desc = stripHtml(e.Description || '');
+      const tierMatch = desc.match(/(\d+)티어/);
+      const levelMatch = desc.match(/Lv\.(\d+)/);
+      return {
+        name: nodeName || desc,
+        tier: tierMatch ? parseInt(tierMatch[1], 10) : null,
+        level: levelMatch ? parseInt(levelMatch[1], 10) : null,
+        icon: e.Icon || '',
+        description: desc,
+      };
+    });
+}
+
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
 function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};
