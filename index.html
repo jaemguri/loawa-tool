@@ -42,9 +42,7 @@
     .evolutionTierLabel { width: 40px; flex: 0 0 auto; font-weight: bold; text-align: center; }
     .evolutionTierNodes { display: flex; gap: 8px; }
     .evolutionCell { width: 76px; text-align: center; }
-    .evolutionCell img { width: 44px; height: 44px; border: 1px solid #ccc; border-radius: 50%; }
-    .evolutionCellPlaceholder { width: 44px; height: 44px; border-radius: 50%; background: #444; opacity: 0.4; margin: 0 auto; }
-    .evolutionCell.notInvested img { filter: grayscale(100%) brightness(0.55); opacity: 0.55; }
+    .evolutionCell img { width: 44px; height: 44px; border-radius: 50%; }
     .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.55; }
     .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
   </style>
@@ -1023,30 +1021,17 @@
         <div class="evolutionTierRow">
           <div class="evolutionTierLabel">${i + 1}티어</div>
           <div class="evolutionTierNodes">
-            ${row.map((cell) => {
-              if (cell.invested) {
-                return `
-                  <div class="evolutionCell" title="${cell.description}">
-                    <img src="${cell.icon}" alt="${cell.name}">
-                    <div class="evolutionCellLabel">${cell.name}${cell.level ? ' Lv.' + cell.level : ''}</div>
-                  </div>
-                `;
-              }
-              if (cell.icon) {
-                return `
-                  <div class="evolutionCell notInvested" title="${cell.name} (미투자)">
-                    <img src="${cell.icon}" alt="${cell.name}">
-                    <div class="evolutionCellLabel">${cell.name}</div>
-                  </div>
-                `;
-              }
-              return `
-                <div class="evolutionCell notInvested" title="${cell.name} (미투자, 아이콘 미확보)">
-                  <div class="evolutionCellPlaceholder"></div>
-                  <div class="evolutionCellLabel">${cell.name}</div>
-                </div>
-              `;
-            }).join('')}
+            ${row.map((cell) => cell.invested ? `
+              <div class="evolutionCell" title="${cell.description}">
+                <img src="${cell.icon}" alt="${cell.name}">
+                <div class="evolutionCellLabel">${cell.name}${cell.level ? ' Lv.' + cell.level : ''}</div>
+              </div>
+            ` : `
+              <div class="evolutionCell notInvested" title="${cell.name} (미투자)">
+                <img src="${cell.icon}" alt="${cell.name}">
+                <div class="evolutionCellLabel">${cell.name}</div>
+              </div>
+            `).join('')}
           </div>
         </div>
       `).join('');
