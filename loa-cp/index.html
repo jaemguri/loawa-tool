@@ -48,6 +48,11 @@
     .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
     .evolutionCustomCell { width: 76px; text-align: center; }
     .evolutionCustomCell select { width: 100%; font-size: 11px; margin-top: 2px; }
+    .combatAnalysisRow { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+    .combatAnalysisRow .rawText { flex: 1 1 220px; font-size: 12px; color: #666; }
+    .combatAnalysisRow select { flex: 1 1 200px; }
+    .combatAnalysisRow input[type="number"] { width: 70px; }
+    .combatAnalysisRow.unmatched select { border-color: #d9534f; }
   </style>
 </head>
 <body>
@@ -70,6 +75,9 @@
     <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select></p>
     <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
 
+    <p>전투분석 사진 등록(선택): <input type="file" id="combatAnalysisPhoto" accept="image/*"></p>
+    <div id="combatAnalysisOcrStatus" style="font-size:12px;color:#888;"></div>
+
     <button id="searchBtn">조회하기</button>
     <div id="searchMessage"></div>
   </div>
@@ -83,6 +91,7 @@
       <button class="innerTabBtn" data-tab="bracelet">팔찌</button>
       <button class="innerTabBtn" data-tab="stone">어빌리티스톤</button>
       <button class="innerTabBtn" data-tab="evolution">아크패시브 진화</button>
+      <button class="innerTabBtn" data-tab="analysis">전투분석</button>
       <button class="innerTabBtn" data-tab="gem">보석</button>
       <button class="innerTabBtn" data-tab="synergy">시너지</button>
     </div>
@@ -91,6 +100,7 @@
     <div class="tabPanel" data-panel="bracelet" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="stone" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="evolution" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="analysis" hidden></div>
     <div class="tabPanel" data-panel="gem" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
   </div>
@@ -108,6 +118,7 @@
   </div>
 
   <script src="/calculate.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script>
     const searchScreen = document.getElementById('searchScreen');
     const searchBtn = document.getElementById('searchBtn');
@@ -120,6 +131,46 @@
     const effectiveRatio2Input = document.getElementById('effectiveRatio2');
     const synergyClass2Select = document.getElementById('synergyClass2');
     const synergyClass3Select = document.getElementById('synergyClass3');
+    const combatAnalysisPhotoInput = document.getElementById('combatAnalysisPhoto');
+    const combatAnalysisOcrStatus = document.getElementById('combatAnalysisOcrStatus');
+
+    // 전투분석 사진 등록에서 OCR로 뽑은 [{rawName, sharePercent}] — 캐릭터 조회 전에 미리 처리해두고,
+    // 실제 스킬 이름 매칭은 조회 후(딜러 스킬 목록이 있어야 하므로) 전투분석 탭에서 이루어진다.
+    let pendingCombatAnalysisRows = [];
+
+    // 업로드된 이미지를 캔버스에 3배 확대 + 흑백 + 대비 강화해서 그림 — 원본 그대로 OCR 돌리면 게임 UI
+    // 작은 글씨/색상 배경 때문에 인식률이 크게 떨어져서(이름 텍스트가 거의 다 깨짐), 전처리가 필수임을
+    // 실제 스크린샷으로 사전 검증함.
+    function preprocessCombatAnalysisImage(img) {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * 3;
+      canvas.height = img.height * 3;
+      const ctx2d = canvas.getContext('2d');
+      ctx2d.filter = 'grayscale(1) contrast(1.5)';
+      ctx2d.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+
+    combatAnalysisPhotoInput.addEventListener('change', async () => {
+      const file = combatAnalysisPhotoInput.files[0];
+      if (!file) return;
+      pendingCombatAnalysisRows = [];
+      combatAnalysisOcrStatus.textContent = 'OCR 처리 중...';
+      try {
+        const img = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = URL.createObjectURL(file);
+        });
+        const canvas = preprocessCombatAnalysisImage(img);
+        const { data } = await Tesseract.recognize(canvas, 'kor+eng');
+        pendingCombatAnalysisRows = parseCombatAnalysisOcrText(data.text);
+        combatAnalysisOcrStatus.textContent = `OCR 완료 — ${pendingCombatAnalysisRows.length}개 행 인식됨 (조회 후 "전투분석" 탭에서 확인/수정)`;
+      } catch (error) {
+        combatAnalysisOcrStatus.textContent = 'OCR 처리 중 오류: ' + error.message;
+      }
+    });
 
     const views = {
       dealer: document.getElementById('dealerView'),
@@ -1154,6 +1205,87 @@
       setupEvolutionSimulator(ctx);
     }
 
+    // 전투분석 사진 등록 탭: OCR로 뽑은 스킬명/지분%를 실제 캐릭터 스킬 목록과 매칭한 편집 가능한 표로
+    // 보여주고, "재계산"을 누르면 calculateCombatAnalysisWeightedCrit로 지분 가중 평균피해배율을 계산해서
+    // 기본(스킬 영향 없음) 배율과 비교한다. 다른 실험용 시뮬레이터(진화 커스텀 등)와 동일하게, 최종
+    // 산출식/최종 데미지에는 아직 자동 반영하지 않고 이 탭 안에서 독립적으로 확인하는 용도.
+    function renderDealerAnalysisTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="analysis"]');
+      const skillNames = (ctx.dealerData.combatSkills || []).map((s) => s.Name);
+
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>전투분석 사진 등록${pendingCombatAnalysisRows.length ? ' — OCR 인식 결과 (확인/수정 후 재계산)' : ''}</h4>
+          <p style="font-size:12px;color:#888;">
+            ${pendingCombatAnalysisRows.length
+              ? '이름이 자동으로 안 맞혀진 행은 빨간 테두리로 표시됩니다 — 원본 OCR 텍스트를 참고해 직접 스킬을 선택해주세요.'
+              : '조회 화면에서 전투분석 사진을 등록하지 않았습니다. 아래에서 직접 스킬/지분을 입력할 수도 있습니다.'}
+            지분 2% 미만이거나 "선택 안 함"인 스킬/트라이포드는 조건 없이(상시 계산 기준) 처리됩니다.
+          </p>
+          <div class="combatAnalysisRows"></div>
+          <button type="button" class="combatAnalysisAddRow">+ 행 추가</button>
+          <button type="button" class="combatAnalysisRecalc">재계산</button>
+          <div class="combatAnalysisResult"></div>
+        </div>
+      `;
+
+      const rowsContainer = panel.querySelector('.combatAnalysisRows');
+
+      function addRow(rawName, sharePercent) {
+        const matched = rawName ? fuzzyMatchSkillName(rawName, skillNames) : null;
+        const row = document.createElement('div');
+        row.className = 'combatAnalysisRow' + (rawName && !matched ? ' unmatched' : '');
+        const options = ['<option value="">-- 선택 안 함(조건없음) --</option>']
+          .concat(skillNames.map((name) => `<option value="${name}" ${name === matched ? 'selected' : ''}>${name}</option>`))
+          .join('');
+        row.innerHTML = `
+          <span class="rawText">${rawName ? 'OCR: ' + rawName : '(직접 입력)'}</span>
+          <select class="combatAnalysisSkillSelect">${options}</select>
+          <input type="number" class="combatAnalysisShareInput" min="0" max="100" step="0.01" value="${sharePercent === undefined || sharePercent === '' ? '' : sharePercent}" placeholder="지분%">
+          <button type="button" class="combatAnalysisRemoveRow">✕</button>
+        `;
+        row.querySelector('.combatAnalysisRemoveRow').addEventListener('click', () => row.remove());
+        rowsContainer.appendChild(row);
+      }
+
+      pendingCombatAnalysisRows.forEach((r) => addRow(r.rawName, r.sharePercent));
+      panel.querySelector('.combatAnalysisAddRow').addEventListener('click', () => addRow('', ''));
+
+      function recalc() {
+        const skillShares = [];
+        rowsContainer.querySelectorAll('.combatAnalysisRow').forEach((row) => {
+          const name = row.querySelector('.combatAnalysisSkillSelect').value;
+          const sharePercent = parseFloat(row.querySelector('.combatAnalysisShareInput').value) || 0;
+          skillShares.push({ name, sharePercent });
+        });
+        const result = calculateCombatAnalysisWeightedCrit(ctx.dealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames }, skillShares);
+        const rowsHtml = result.skillRows.map((r) => `
+          <tr>
+            <td>${r.name || '(선택 안 함)'}</td>
+            <td>${r.sharePercent.toFixed(2)}%</td>
+            <td>${r.matched ? '✓' : '-'}</td>
+            <td>${r.critRateBonus}%</td>
+            <td>${r.critDamageBonus}%</td>
+            <td>${r.avgDamageMultiplier.toFixed(4)}</td>
+          </tr>
+        `).join('');
+        panel.querySelector('.combatAnalysisResult').innerHTML = `
+          <table class="statTable">
+            <tr><th>스킬</th><th>지분</th><th>매칭</th><th>치적 보너스</th><th>치피 보너스</th><th>평균피해배율</th></tr>
+            ${rowsHtml}
+          </table>
+          <table class="statTable">
+            <tr><th>기본(스킬 영향 없음) 평균피해배율</th><td>${result.baseAvgDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>지분 가중 평균피해배율</th><td>${result.weightedAvgDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>변화율</th><td>${(((result.weightedAvgDamageMultiplier / result.baseAvgDamageMultiplier) - 1) * 100).toFixed(2)}%</td></tr>
+          </table>
+        `;
+      }
+
+      panel.querySelector('.combatAnalysisRecalc').addEventListener('click', recalc);
+      if (pendingCombatAnalysisRows.length > 0) recalc();
+    }
+
     function renderDealerView(ctx) {
       const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
       renderDealerInfoTab(ctx, info);
@@ -1161,6 +1293,7 @@
       renderDealerBraceletTab(ctx, info);
       renderDealerAbilityStoneTab(ctx);
       renderDealerEvolutionTab(ctx);
+      renderDealerAnalysisTab(ctx);
     }
 
     function renderSupportView(ctx) {

@@ -1148,6 +1148,145 @@ function getCombatSkillPersistentMoveSpeedPercent(combatSkillsData) {
   return extractPercent(getCombatSkillsPersistentBuffText(combatSkillsData), '이동\\s*속도');
 }
 
+// === 전투분석 사진 등록 시스템 (2단계: 스킬/트라이포드 전용 상시 패시브) ===
+// 지속시간(N초) 없이 그 스킬을 쓸 때만 항상 붙는 패시브(예: "예리한 사격" - "치명타 적중률이 40.0%
+// 증가하고, 치명타 피해가 58.0% 증가한다")는 캐릭터 전체에 상시 적용되는 게 아니라, 전투분석에서 그
+// 스킬의 실제 피해량 지분(%)만큼만 반영해야 한다. 사용자가 등록한 전투분석 사진에서 "스킬이름 + 피해량
+// 지분(%)"을 뽑아 넘기면, 지분 2% 이상인 주요 스킬은 그 스킬 전용 보너스를 반영한 개별 배율로, 나머지
+// (지분 2% 미만 스킬들의 합 + 전투분석 API에 없는 스킬 — 예: 소환수 자체 공격, 트라이포드 없는 정체성
+// 스킬)는 "스킬/트라이포드 영향 없음" 기본 배율로 계산한 뒤 지분 가중 평균한다.
+
+// "N초간"/"N초 동안" 없는 문장만 남김 — filterDurationSentences의 역. 지속시간이 없는 스킬/트라이포드
+// 전용 상시 패시브(2단계 대상)를 걸러내기 위함.
+function filterNonDurationSentences(text) {
+  if (!text) return '';
+  return text
+    .split(/(?<=\.)\s+/)
+    .filter((s) => !/\d+(?:\.\d+)?\s*초\s*(?:간|동안)/.test(s))
+    .join(' ');
+}
+
+// combatSkills 배열에서 이름으로 스킬 하나를 찾음(전투분석 사진에서 뽑은 스킬 이름과 매칭용)
+function findCombatSkillByName(combatSkillsData, name) {
+  if (!Array.isArray(combatSkillsData)) return null;
+  return combatSkillsData.find((sk) => sk.Name === name) || null;
+}
+
+// 특정 스킬 하나(전투분석에서 지목된 스킬)의 "스킬 자체 부가효과 + 실제로 찍은 트라이포드" 텍스트 중
+// 지속시간 없는(=그 스킬 전용 상시) 문장만 추출
+function getCombatSkillOwnNonDurationText(skill) {
+  if (!skill) return '';
+  const innate = getCombatSkillInnateEffectText(skill.Tooltip);
+  const tripodParts = (skill.Tripods || []).filter((t) => t.IsSelected).map((t) => stripHtml(t.Tooltip));
+  return filterNonDurationSentences(`${innate} ${tripodParts.join(' ')}`);
+}
+
+// 스킬 하나의 전용(트라이포드 포함) 치명타 적중률/피해 % 추출
+function getCombatSkillSpecificCritBonus(skill) {
+  const text = getCombatSkillOwnNonDurationText(skill);
+  return {
+    critRatePercent: extractPercent(text, '치명타 적중률'),
+    critDamagePercent: extractPercent(text, '치명타\\s*피해'),
+  };
+}
+
+// 전투분석 사진에서 추출된 [{name, sharePercent}] 배열을 받아, 지분 2% 이상 스킬은 그 스킬 전용 보너스를
+// 반영한 개별 평균피해배율로, 나머지 지분은 기본(스킬 영향 없음) 배율로 계산한 뒤 지분 가중 평균한다.
+const COMBAT_ANALYSIS_MAJOR_SHARE_THRESHOLD = 2;
+
+function calculateCombatAnalysisWeightedCrit(dealerData, supportData, options, skillShares) {
+  const baseCrit = calculateCritMultiplier(dealerData, supportData, options);
+  const skillRows = [];
+  let majorShareTotal = 0;
+  let weightedMultiplier = 0;
+
+  (skillShares || []).forEach((row) => {
+    const share = row.sharePercent || 0;
+    if (share < COMBAT_ANALYSIS_MAJOR_SHARE_THRESHOLD) return;
+    const skill = findCombatSkillByName(dealerData.combatSkills, row.name);
+    const hasTripods = skill && (skill.Tripods || []).some((t) => t.IsSelected);
+    if (!skill || !hasTripods) {
+      skillRows.push({
+        name: row.name, sharePercent: share, matched: false,
+        critRateBonus: 0, critDamageBonus: 0, avgDamageMultiplier: baseCrit.avgDamageMultiplier,
+      });
+      majorShareTotal += share;
+      weightedMultiplier += (share / 100) * baseCrit.avgDamageMultiplier;
+      return;
+    }
+    const bonus = getCombatSkillSpecificCritBonus(skill);
+    const skillCrit = calculateCritMultiplier(dealerData, supportData, {
+      ...options,
+      extraCritRatePercent: bonus.critRatePercent,
+      extraCritDamagePercent: bonus.critDamagePercent,
+    });
+    skillRows.push({
+      name: row.name, sharePercent: share, matched: true,
+      critRateBonus: bonus.critRatePercent, critDamageBonus: bonus.critDamagePercent,
+      avgDamageMultiplier: skillCrit.avgDamageMultiplier,
+    });
+    majorShareTotal += share;
+    weightedMultiplier += (share / 100) * skillCrit.avgDamageMultiplier;
+  });
+
+  const remainderSharePercent = Math.max(0, 100 - majorShareTotal);
+  weightedMultiplier += (remainderSharePercent / 100) * baseCrit.avgDamageMultiplier;
+
+  return {
+    baseAvgDamageMultiplier: baseCrit.avgDamageMultiplier,
+    weightedAvgDamageMultiplier: weightedMultiplier,
+    majorShareTotal, remainderSharePercent,
+    skillRows,
+  };
+}
+
+// === 전투분석 사진 등록 시스템: OCR 텍스트 파싱 (DOM/이미지 처리는 index.html, 여기는 순수 텍스트 처리만) ===
+// Tesseract OCR 결과 텍스트(줄 단위)에서, "%로 끝나는 숫자가 있는 줄"만 후보로 삼아 그 줄의 가장 마지막
+// %를 피해량 지분(전투분석 표의 맨 오른쪽 컬럼)으로, 첫 숫자 앞까지의 텍스트를 스킬 이름 후보로 추출한다.
+// 이름 후보는 OCR 잡음(아이콘 오인식 등)이 섞이는 경우가 많아서 그대로 못 쓰고 fuzzyMatchSkillName으로
+// 실제 캐릭터 스킬 이름과 대조해야 한다.
+function parseCombatAnalysisOcrText(rawText) {
+  if (!rawText) return [];
+  const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
+  const rows = [];
+  lines.forEach((line) => {
+    const percentMatches = [...line.matchAll(/(\d+(?:\.\d+)?)\s*%/g)];
+    if (percentMatches.length === 0) return;
+    const sharePercent = parseFloat(percentMatches[percentMatches.length - 1][1]);
+    if (Number.isNaN(sharePercent)) return;
+    const numIdx = line.search(/[0-9]/);
+    // 줄이 숫자로 바로 시작하면(아이콘 오인식 등으로 이름이 아예 안 남은 경우) 이름 후보를 만들지 않고
+    // 매칭 실패로 남겨서(사용자가 드롭다운으로 직접 고름), 숫자 잡음 전체를 이름처럼 오매칭하지 않는다.
+    const nameCandidate = numIdx > 1 ? line.slice(0, numIdx).trim() : '';
+    rows.push({ rawName: nameCandidate, sharePercent });
+  });
+  return rows;
+}
+
+// OCR로 읽은 이름 후보 문자열을 실제 캐릭터의 스킬 이름 목록과 대조해서 가장 비슷한 것을 찾음(문자 단위
+// 교집합 비율 기반 — OCR 잡음이 섞여도 스킬 이름 글자가 부분적으로 남아있으면 매칭됨). 임계값(0.7) 미만이면
+// null(매칭 실패, 사용자가 직접 골라야 함) — 예: "래피드 샷"이 "2 uci"처럼 완전히 깨진 경우, 혹은 "실버호크"가
+// "호크 샷"과 두 글자만 우연히 겹치는 것처럼 짧은 이름끼리 오매칭될 위험이 있는 경우. 이 함수는 어디까지나
+// 기본값 미리 채우기용이고, 최종 확정은 UI에서 사용자가 원본 OCR 텍스트를 보고 드롭다운으로 검증/수정한다.
+function fuzzyMatchSkillName(candidateText, skillNames) {
+  if (!candidateText || !Array.isArray(skillNames) || skillNames.length === 0) return null;
+  const candChars = candidateText.replace(/\s/g, '').split('');
+  let best = null;
+  let bestScore = 0;
+  skillNames.forEach((name) => {
+    const nameChars = name.replace(/\s/g, '').split('');
+    let overlap = 0;
+    const pool = candChars.slice();
+    nameChars.forEach((ch) => {
+      const idx = pool.indexOf(ch);
+      if (idx !== -1) { overlap++; pool.splice(idx, 1); }
+    });
+    const score = overlap / nameChars.length;
+    if (score > bestScore) { bestScore = score; best = name; }
+  });
+  return bestScore >= 0.7 ? best : null;
+}
+
 // 아크패시브(진화)의 치명타 피해 % 합산
 function getArkPassiveCritDamagePercent(arkpassiveData) {
   return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '치명타 피해');
@@ -1363,6 +1502,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
     어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
     스킬_부가효과: getCombatSkillPersistentCritRatePercent(dealerData.combatSkills),
+    전투분석_스킬전용: (options && options.extraCritRatePercent) || 0,
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
@@ -1381,6 +1521,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     스톤_예리한둔기_전용보너스: sharpWeaponStoneDmg,
     딜러팔찌: dealerBracelet.critDamagePercent,
     아크그리드: arkgridCrit.critDamagePercent,
+    전투분석_스킬전용: (options && options.extraCritDamagePercent) || 0,
   };
   const critDamagePercent = Object.values(critDamageBreakdown).reduce((a, b) => a + b, 0);
 
