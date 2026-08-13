@@ -183,7 +183,11 @@
           image.src = URL.createObjectURL(file);
         });
         const canvas = preprocessCombatAnalysisImage(img);
-        worker = await Tesseract.createWorker('kor+eng');
+        // 'kor+eng' 혼합 언어는 애매한 글자를 영어로 잘못 판단하는 경향이 있어서(예: "래피드샷" ->
+        // "> J" 완전 오인식) 실제 스크린샷으로 비교 검증한 결과 'kor' 단독이 훨씬 정확함(같은 사진에서
+        // "라피드샷"으로 인식되어 fuzzyMatchSkillName이 "래피드 샷"과 정상 매칭). 이 전투분석 표는 전부
+        // 한글 스킬명이라 영어 인식을 포기해도 손해가 없음.
+        worker = await Tesseract.createWorker('kor');
         const { data } = await worker.recognize(canvas, {}, { blocks: true });
         const lines = flattenTesseractLines(data.blocks);
         pendingCombatAnalysisRows = parseCombatAnalysisOcrLines(lines);
