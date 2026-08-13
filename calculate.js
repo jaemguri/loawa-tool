@@ -1904,6 +1904,158 @@ function getArkPassiveEvolutionFullTree(arkpassiveData) {
   }));
 }
 
+// 진화 노드별 최대 레벨(실제 게임 화면 기준: 1티어=30, 2티어는 노드마다 2 또는 3, 3~5티어는 2, 4티어는 1)
+const EVOLUTION_NODE_MAX_LEVEL = {
+  치명: 30, 특화: 30, 제압: 30, 신속: 30, 인내: 30, 숙련: 30,
+  '끝없는 마나': 2, '금단의 주문': 2, '예리한 감각': 2, '한계 돌파': 3, '최적화 훈련': 3, '축복의 여신': 3,
+  '무한한 마력': 2, '혼신의 강타': 2, '일격': 2, '파괴 전차': 2, '타이밍 지배': 2, '정열의 춤사위': 2,
+  회심: 1, 달인: 1, 분쇄: 1, 선각자: 1, 진군: 1, 기원: 1,
+  '뭉툭한 가시': 2, '음속 돌파': 2, 인파이팅: 2, '입식 타격가': 2, '마나 용광로': 2, '안정된 관리자': 2,
+};
+
+// 진화 노드별 레벨당 실제 효과 텍스트(한국어, 실측 API 문구와 대조해서 확인된 표현 — EVOLUTION_NODE_STATIC_EFFECT의
+// "N/M%" 범위 표기를 레벨별로 쪼갠 것). 커스텀 진화 시뮬레이터에서 이 텍스트를 진화 Effects에 합성해 넣으면
+// 기존 계산식(진화형피해/치명타적중률/치명타피해/달인 특수처리 등 — getArkPassiveEvolutionDamagePercent,
+// getArkPassiveCritRatePercent 등)이 실제 캐릭터와 동일하게 그대로 인식해서 재사용된다.
+// 1티어(치명 제외 특화/제압/신속/인내/숙련)와 4티어의 분쇄/선각자/진군/기원은 현재 엔진에 대응하는 계산식이
+// 없어 미포함(선택은 가능하지만 데미지 기여는 0). 5티어는 전부 조건부/동적 메커니즘(뭉툭한가시의 치명타
+// 초과분 전환, 음속돌파의 속도 한계 조건, 입식 타격가 중첩, 마나 용광로의 마나 소모 비례 등)이라 이번
+// 1차 시뮬레이터에서는 의도적으로 제외 — 사용자 요청("일단 시뮬레이터를 만들고 그 다음에 조건을 어떻게
+// 활용하는지 만들것임")에 따라 선택 UI만 두고 조건부 계산 로직은 다음 단계에서 추가할 예정.
+const EVOLUTION_NODE_LEVEL_TEXT = {
+  '끝없는 마나': [
+    '마나 스킬의 재사용 대기시간이 7% 감소하고, 마나 소모량이 10% 감소합니다.',
+    '마나 스킬의 재사용 대기시간이 14% 감소하고, 마나 소모량이 20% 감소합니다.',
+  ],
+  '금단의 주문': [
+    '진화형 피해가 5% 증가합니다. 마나를 소모하는 스킬이라면 추가로 5% 증가합니다. 마나 소모량이 6% 감소합니다.',
+    '진화형 피해가 10% 증가합니다. 마나를 소모하는 스킬이라면 추가로 10% 증가합니다. 마나 소모량이 12% 감소합니다.',
+  ],
+  '예리한 감각': [
+    '치명타 적중률이 4% 증가하고, 진화형 피해가 5% 증가합니다.',
+    '치명타 적중률이 8% 증가하고, 진화형 피해가 10% 증가합니다.',
+  ],
+  '한계 돌파': [
+    '진화형 피해가 10% 증가합니다.',
+    '진화형 피해가 20% 증가합니다.',
+    '진화형 피해가 30% 증가합니다.',
+  ],
+  '최적화 훈련': [
+    '각성기, 이동 및 기상기를 제외한 스킬의 재사용 대기시간이 4% 감소하고, 진화형 피해가 5% 증가합니다.',
+    '각성기, 이동 및 기상기를 제외한 스킬의 재사용 대기시간이 8% 감소하고, 진화형 피해가 10% 증가합니다.',
+  ],
+  '무한한 마력': [
+    '진화형 피해가 8% 증가하고, 마나 스킬의 재사용 대기시간이 7% 감소하며, 마나 소모량이 8% 감소합니다.',
+    '진화형 피해가 16% 증가하고, 마나 스킬의 재사용 대기시간이 14% 감소하며, 마나 소모량이 16% 감소합니다.',
+  ],
+  '혼신의 강타': [
+    '치명타 적중률이 12% 증가하고, 진화형 피해가 2% 증가합니다.',
+    '치명타 적중률이 24% 증가하고, 진화형 피해가 4% 증가합니다.',
+  ],
+  '일격': [
+    '방향성 스킬의 치명타 피해가 16% 증가합니다.',
+    '방향성 스킬의 치명타 피해가 32% 증가합니다.',
+  ],
+  '파괴 전차': [
+    '진화형 피해가 12% 증가하고, 공격 속도가 4% 증가합니다.',
+    '진화형 피해가 24% 증가하고, 공격 속도가 8% 증가합니다.',
+  ],
+  '타이밍 지배': [
+    '각성기를 제외한 스킬의 재사용 대기시간이 5% 감소하고, 진화형 피해가 8% 증가합니다.',
+    '각성기를 제외한 스킬의 재사용 대기시간이 10% 감소하고, 진화형 피해가 16% 증가합니다.',
+  ],
+  '정열의 춤사위': [
+    '진화형 피해가 7% 증가합니다.',
+    '진화형 피해가 14% 증가합니다.',
+  ],
+  회심: [
+    '공격이 치명타로 적중 시 적에게 주는 피해가 12% 증가하며, 받는 피해가 4% 감소합니다.',
+  ],
+  달인: [
+    "받는 피해가 4% 감소하며, 이동기 및 기상기를 제외한 스킬 사용시 10초간 '달인' 효과를 얻습니다. 달인 : 치명타 적중률 +1.4% / 추가 피해 +1.7% , 최대 5중첩",
+  ],
+};
+
+// name이 EVOLUTION_TREE_LAYOUT의 몇 티어에 속하는지 반환
+function getEvolutionNodeTier(name) {
+  for (let t = 0; t < EVOLUTION_TREE_LAYOUT.length; t++) {
+    if (EVOLUTION_TREE_LAYOUT[t].includes(name)) return t + 1;
+  }
+  return null;
+}
+
+// 가상 진화 노드 선택 하나를 실제 arkpassive.Effects 항목과 같은 모양으로 합성 — Description에 "N티어
+// 이름 Lv.X" 형식을 그대로 써서 hasArkPassiveEffect 등 이름 매칭 기반 특수처리(예: 달인의 고정 7%/8.5%)도
+// 실제 캐릭터와 동일하게 자동으로 반응한다.
+function buildSyntheticEvolutionEffect(name, level) {
+  const tier = getEvolutionNodeTier(name);
+  if (!tier) return null;
+  const levelText = EVOLUTION_NODE_LEVEL_TEXT[name];
+  const effectText = levelText ? (levelText[Math.min(level, levelText.length) - 1] || '') : '';
+  return {
+    Name: '진화',
+    Description: `진화 ${tier}티어 ${name} Lv.${level}`,
+    ToolTip: JSON.stringify({ Element_000: { value: name }, Element_002: { value: effectText } }),
+  };
+}
+
+// 선택된 진화 노드 조합(selections=[{name, level}])으로 실제 진화 트리를 통째로 교체한 dealerData를 생성.
+// 치명(1티어)은 진화 Effects 텍스트가 아니라 profiles.Stats의 치명 스탯 자체에 직접 반영되는 값이라(실제
+// 캐릭터도 이렇게 반영됨) buildDealerDataWithCritStatDelta로 별도 처리 — 다만 실제 팔찌 치명 스탯 시뮬레이터와
+// 같은 한계로, 실제 캐릭터가 이미 갖고 있는 치명 스탯을 빼지 않고 가상 값만큼 "추가로 있다"고 가정한다.
+function buildDealerDataWithEvolutionSelections(dealerData, selections) {
+  const validSelections = (selections || []).filter((s) => s.level > 0);
+  const critSelection = validSelections.find((s) => s.name === '치명');
+  const textSelections = validSelections.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
+
+  const nonEvolutionEffects = ((dealerData.arkpassive && dealerData.arkpassive.Effects) || []).filter((e) => e.Name !== '진화');
+  const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
+  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects] };
+
+  let modifiedDealerData = { ...dealerData, arkpassive: modifiedArkpassive };
+  if (critSelection) modifiedDealerData = buildDealerDataWithCritStatDelta(modifiedDealerData, critSelection.level * 50);
+  return modifiedDealerData;
+}
+
+// 아크패시브 진화 커스텀 시뮬레이터: 가상 노드 조합을 실제 진화 트리와 "교체"했다고 가정하고 효율표 +
+// 총 변화율을 계산. 5티어(조건부) 및 계산식 없는 노드(1티어 치명 외 스탯 5종, 4티어 분쇄/선각자/진군/기원)는
+// 선택은 되지만 기여도가 0으로 나옴(getEvolutionNodeTier가 EVOLUTION_TREE_LAYOUT에서 티어를 못 찾는 경우가
+// 아니라, 이 함수들 자체가 EVOLUTION_NODE_LEVEL_TEXT/치명 특수처리에 없는 이름이라 그냥 0으로 남는 것).
+function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, selections) {
+  const validSelections = (selections || []).filter((s) => s.name && s.level > 0);
+
+  function totalFor(sels) {
+    const modifiedDealerData = buildDealerDataWithEvolutionSelections(dealerData, sels);
+    const newStats = calculateCharacterStats(modifiedDealerData);
+    const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames });
+    const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
+    const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+    const newFinalDamage = calculateFinalDamage(
+      newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+      newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
+      ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+    );
+    return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+  }
+
+  // 실제 캐릭터의 현재 진화 투자 상태가 아니라, "진화 트리에 아무것도 안 찍은 상태(0)"를 기준선으로 비교
+  // — 커스텀 시뮬레이터는 "내 현재 빌드 대비"가 아니라 "찍는 노드가 늘어날수록 얼마나 상승하는지"를
+  // 처음부터 누적해서 보여주는 게 목적이라(사용자 요청), 실제 빌드를 기준으로 하면 실제 투자분(최대 140P)을
+  // 통째로 빼는 셈이라 선택 몇 개만으로는 항상 큰 폭의 음수로 나와 오해를 준다.
+  const zeroTotal = totalFor([]);
+  const hypotheticalTotal = totalFor(validSelections);
+  const totalChangePercent = ((hypotheticalTotal / zeroTotal) - 1) * 100;
+
+  const rows = validSelections.map((sel) => {
+    const withoutSelections = validSelections.filter((s) => s !== sel);
+    const withoutTotal = totalFor(withoutSelections);
+    const efficiencyPercent = ((hypotheticalTotal / withoutTotal) - 1) * 100;
+    return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
+  });
+
+  return { rows, totalChangePercent };
+}
+
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
 function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};

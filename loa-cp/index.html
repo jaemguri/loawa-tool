@@ -46,6 +46,8 @@
     .evolutionCell.notInvested img { filter: grayscale(100%) brightness(0.65); opacity: 0.7; }
     .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.55; }
     .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
+    .evolutionCustomCell { width: 76px; text-align: center; }
+    .evolutionCustomCell select { width: 100%; font-size: 11px; margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -684,6 +686,9 @@
       surgeBarSimContributions.abilityStone = totalChangePercent;
       updateSurgeBar();
     }
+    // 진화 커스텀 시뮬레이터는 "실제 빌드 대비"가 아니라 "미투자(0) 대비"로 비교하는 게 목적이 달라서
+    // (실제 트리를 통째로 지우고 비교하면 항상 큰 폭의 음수로 나와 오해를 줌 — buildDealerDataWithEvolutionSelections
+    // 주석 참고), 다른 세 시뮬레이터와 같은 surgeBar 곱연산에는 섞지 않고 자체 결과 박스에만 표시한다.
 
     function recomputeBraceletSimulator() {
       const resultEl = document.querySelector('.braceletSimResult');
@@ -1014,11 +1019,8 @@
 
     // 아크패시브 진화 탭: 전체 트리(5티어×6칸, 모든 직업 공통)를 그리고, 찍은 칸은 실제 아이콘, 안 찍힌
     // 칸은 (알려진 경우) 실제 아이콘을 흐리게, 모르는 경우만 회색 placeholder로 표시 (읽기 전용)
-    function renderDealerEvolutionTab(ctx) {
-      const panel = views.dealer.querySelector('.tabPanel[data-panel="evolution"]');
-      const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive);
-
-      const rowsHtml = fullTree.map((row, i) => `
+    function buildEvolutionTreeHtml(fullTree) {
+      return fullTree.map((row, i) => `
         <div class="evolutionTierRow">
           <div class="evolutionTierLabel">${i + 1}티어</div>
           <div class="evolutionTierNodes">
@@ -1041,12 +1043,93 @@
           </div>
         </div>
       `).join('');
+    }
+
+    // 커스텀 진화 시뮬레이터: 실제 트리와 같은 5x6 배치를 그대로 쓰되, 각 칸을 레벨 선택 드롭다운으로 대체.
+    // evolutionSimState[티어][열] = 선택된 레벨(0 = 미투자). 아이콘 이미지는 안 쓰고 이름/레벨만 표시
+    // (읽기 전용 트리와 시각적으로 구분되도록).
+    let evolutionSimCtx = null;
+    const evolutionSimState = EVOLUTION_TREE_LAYOUT.map((row) => row.map(() => 0));
+
+    function renderEvolutionCustomGrid() {
+      const container = document.querySelector('.evolutionCustomGrid');
+      const rowsHtml = EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => `
+        <div class="evolutionTierRow">
+          <div class="evolutionTierLabel">${tierIdx + 1}티어</div>
+          <div class="evolutionTierNodes">
+            ${row.map((name, colIdx) => {
+              const maxLevel = EVOLUTION_NODE_MAX_LEVEL[name] || 1;
+              const current = evolutionSimState[tierIdx][colIdx];
+              const options = [];
+              for (let lv = 0; lv <= maxLevel; lv++) {
+                options.push(`<option value="${lv}" ${lv === current ? 'selected' : ''}>${lv === 0 ? '-' : 'Lv.' + lv}</option>`);
+              }
+              return `
+                <div class="evolutionCustomCell">
+                  <div class="evolutionCellLabel">${name}</div>
+                  <select data-tier="${tierIdx}" data-col="${colIdx}">${options.join('')}</select>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `).join('');
+      container.innerHTML = rowsHtml;
+      container.querySelectorAll('select').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          evolutionSimState[sel.dataset.tier][sel.dataset.col] = parseInt(sel.value, 10);
+          recomputeEvolutionSimulator();
+        });
+      });
+    }
+
+    function recomputeEvolutionSimulator() {
+      const resultEl = document.querySelector('.evolutionSimResult');
+      const selections = [];
+      EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => {
+        row.forEach((name, colIdx) => {
+          const level = evolutionSimState[tierIdx][colIdx];
+          if (level > 0) selections.push({ name, level });
+        });
+      });
+      if (!selections.length) {
+        resultEl.innerHTML = '<p>노드를 선택하면 결과가 표시됩니다.</p>';
+        return;
+      }
+      const result = calculateHypotheticalEvolutionEfficiency(evolutionSimCtx.dealerData, evolutionSimCtx.supportData, evolutionSimCtx, selections);
+      const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      resultEl.innerHTML = `
+        <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
+        <p class="braceletSimTotal">미투자 상태 대비 총 상승량: ${pct(result.totalChangePercent)}%</p>
+        <p style="font-size:11px;color:#888;">※ 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체는 아직 계산식이 없어 선택해도 0%로 반영됩니다(추후 추가 예정).</p>
+      `;
+    }
+
+    function setupEvolutionSimulator(ctx) {
+      evolutionSimCtx = ctx;
+      EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => { row.forEach((_, colIdx) => { evolutionSimState[tierIdx][colIdx] = 0; }); });
+      renderEvolutionCustomGrid();
+      recomputeEvolutionSimulator();
+    }
+
+    function renderDealerEvolutionTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="evolution"]');
+      const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive);
+
       panel.innerHTML = `
-        <div class="fieldGroup">
-          <h4>아크패시브 진화 - 전체 트리</h4>
-          ${rowsHtml}
+        <div class="braceletColumns">
+          <div class="fieldGroup">
+            <h4>아크패시브 진화 - 전체 트리</h4>
+            ${buildEvolutionTreeHtml(fullTree)}
+          </div>
+          <div>
+            <h4>커스텀 진화 시뮬레이터</h4>
+            <div class="evolutionCustomGrid"></div>
+            <div class="evolutionSimResult"></div>
+          </div>
         </div>
       `;
+      setupEvolutionSimulator(ctx);
     }
 
     function renderDealerView(ctx) {
