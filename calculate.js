@@ -1835,46 +1835,26 @@ const EVOLUTION_TREE_LAYOUT = [
   ['뭉툭한 가시', '음속 돌파', '인파이팅', '입식 타격가', '마나 용광로', '안정된 관리자'],
 ];
 
-// 안 찍힌 노드도 실제 아이콘을 희미하게 보여주기 위한 이름→아이콘 URL 캐시 — 실제로 그 노드를 찍은
-// 캐릭터가 있어야만 API로 아이콘을 구할 수 있어서, 여러 실캐릭터(포구릿/히유시/햄현이/잼구릿/쩡구릿 등)를
-// 조회해 모은 값. 30개 중 21개 확보(2026-08-13 기준) — 나머지(제압/인내/숙련/끝없는 마나/파괴 전차/
-// 타이밍 지배/진군/인파이팅/안정된 관리자)는 아직 아무도 투자한 걸 못 봐서 비어있음, 채워지면 추가할 것.
-const EVOLUTION_NODE_ICON_CACHE = {
-  '치명': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_1.png',
-  '특화': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_2.png',
-  '신속': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_4.png',
-  '금단의 주문': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_12.png',
-  '무한한 마력': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_14.png',
-  '입식 타격가': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_18.png',
-  '축복의 여신': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_19.png',
-  '뭉툭한 가시': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_20.png',
-  '음속 돌파': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_21.png',
-  '최적화 훈련': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_22.png',
-  '마나 용광로': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_24.png',
-  '혼신의 강타': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_27.png',
-  '예리한 감각': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_29.png',
-  '일격': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_32.png',
-  '정열의 춤사위': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_33.png',
-  '한계 돌파': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_34.png',
-  '회심': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_40.png',
-  '달인': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_41.png',
-  '선각자': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_42.png',
-  '분쇄': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_44.png',
-  '기원': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_45.png',
-};
+// 안 찍힌(미투자) 상태의 노드 아이콘 — 사용자가 실제 게임의 "전부 미투자" 화면 스크린샷 2장을 캡처해서
+// 준 것을 칸 위치(티어/열)별로 잘라 `loa-cp/icons/evolution/t{티어}c{열}.png`로 저장해 둠(30개 전부
+// 커버, API로는 구할 수 없는 미투자 상태 그림이라 이 방법이 유일한 소스). 인게임에서 실제로 보이는
+// "잠김" 톤(어둡고 흐릿한)이 스크린샷에 이미 그대로 담겨 있어서 별도 CSS 흐림 처리 없이도 재현됨.
+function getEvolutionPlaceholderIconPath(tier, colIndex) {
+  return `icons/evolution/t${tier}c${colIndex + 1}.png`;
+}
 
 // 전체 진화 트리(5티어×6칸, 모든 직업 공통)를 실제 투자 여부와 매칭해서 반환. 투자된 칸은 실제
-// 아이콘/레벨/설명 포함(invested:true), 안 찍힌 칸은 이름 + (알고 있으면) 실제 아이콘을 희미하게
-// 보여줄 수 있도록 icon만 채워서 반환(invested:false) — 아이콘을 모르면 icon:null(UI에서 회색 placeholder).
+// 아이콘/레벨/설명 포함(invested:true), 안 찍힌 칸은 이름 + 스크린샷에서 잘라낸 그 칸의 미투자 상태
+// 아이콘(invested:false) — 30칸 전부 커버됨.
 function getArkPassiveEvolutionFullTree(arkpassiveData) {
   const investedNodes = getArkPassiveNodeIcons(arkpassiveData, '진화');
   const byName = {};
   investedNodes.forEach((n) => { byName[n.name] = n; });
 
-  return EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => row.map((name) => {
+  return EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => row.map((name, colIdx) => {
     const node = byName[name];
     if (node) return { name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon, description: node.description };
-    return { name, tier: tierIdx + 1, invested: false, icon: EVOLUTION_NODE_ICON_CACHE[name] || null };
+    return { name, tier: tierIdx + 1, invested: false, icon: getEvolutionPlaceholderIconPath(tierIdx + 1, colIdx) };
   }));
 }
 
