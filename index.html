@@ -1051,14 +1051,25 @@
     let evolutionSimCtx = null;
     const evolutionSimState = EVOLUTION_TREE_LAYOUT.map((row) => row.map(() => 0));
 
+    // 티어 전체 합계 제약(EVOLUTION_TIER_MAX_TOTAL) 위반 없이 이 칸이 가질 수 있는 최대 레벨 — 노드 자체의
+    // 최대 레벨과, "이 칸 빼고 같은 티어에서 이미 쓴 합계를 뺀 나머지 티어 예산" 중 더 작은 쪽.
+    function getEvolutionCellMaxLevel(tierIdx, colIdx, name) {
+      const individualMax = EVOLUTION_NODE_MAX_LEVEL[name] || 1;
+      const tierBudget = EVOLUTION_TIER_MAX_TOTAL[tierIdx];
+      const othersSum = evolutionSimState[tierIdx].reduce((sum, v, i) => (i === colIdx ? sum : sum + v), 0);
+      return Math.max(0, Math.min(individualMax, tierBudget - othersSum));
+    }
+
     function renderEvolutionCustomGrid() {
       const container = document.querySelector('.evolutionCustomGrid');
-      const rowsHtml = EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => `
+      const rowsHtml = EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => {
+        const tierUsed = evolutionSimState[tierIdx].reduce((a, b) => a + b, 0);
+        return `
         <div class="evolutionTierRow">
-          <div class="evolutionTierLabel">${tierIdx + 1}티어</div>
+          <div class="evolutionTierLabel">${tierIdx + 1}티어<br><span style="font-weight:normal;font-size:10.5px;">(${tierUsed}/${EVOLUTION_TIER_MAX_TOTAL[tierIdx]})</span></div>
           <div class="evolutionTierNodes">
             ${row.map((name, colIdx) => {
-              const maxLevel = EVOLUTION_NODE_MAX_LEVEL[name] || 1;
+              const maxLevel = getEvolutionCellMaxLevel(tierIdx, colIdx, name);
               const current = evolutionSimState[tierIdx][colIdx];
               const options = [];
               for (let lv = 0; lv <= maxLevel; lv++) {
@@ -1073,11 +1084,18 @@
             }).join('')}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
       container.innerHTML = rowsHtml;
       container.querySelectorAll('select').forEach((sel) => {
         sel.addEventListener('change', () => {
-          evolutionSimState[sel.dataset.tier][sel.dataset.col] = parseInt(sel.value, 10);
+          const tierIdx = parseInt(sel.dataset.tier, 10);
+          const colIdx = parseInt(sel.dataset.col, 10);
+          const name = EVOLUTION_TREE_LAYOUT[tierIdx][colIdx];
+          const desired = parseInt(sel.value, 10);
+          const maxAllowed = getEvolutionCellMaxLevel(tierIdx, colIdx, name);
+          evolutionSimState[tierIdx][colIdx] = Math.min(desired, maxAllowed);
+          renderEvolutionCustomGrid();
           recomputeEvolutionSimulator();
         });
       });
