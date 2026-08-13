@@ -1,6 +1,6 @@
 async function fetchCharacterData(name, headers) {
   const base = `https://developer-lostark.game.onstove.com/armories/characters/${encodeURIComponent(name)}`;
-  const [profilesRes, equipmentRes, arkgridRes, arkpassiveRes, gemsRes, avatarsRes, engravingsRes] = await Promise.all([
+  const [profilesRes, equipmentRes, arkgridRes, arkpassiveRes, gemsRes, avatarsRes, engravingsRes, combatSkillsRes] = await Promise.all([
     fetch(`${base}/profiles`, { headers }),
     fetch(`${base}/equipment`, { headers }),
     fetch(`${base}/arkgrid`, { headers }),
@@ -8,6 +8,7 @@ async function fetchCharacterData(name, headers) {
     fetch(`${base}/gems`, { headers }),
     fetch(`${base}/avatars`, { headers }),
     fetch(`${base}/engravings`, { headers }),
+    fetch(`${base}/combat-skills`, { headers }),
   ]);
 
   if (!profilesRes.ok) return null;
@@ -19,8 +20,9 @@ async function fetchCharacterData(name, headers) {
   const gems = gemsRes.ok ? await gemsRes.json() : null;
   const avatars = avatarsRes.ok ? await avatarsRes.json() : null;
   const engravings = engravingsRes.ok ? await engravingsRes.json() : null;
+  const combatSkills = combatSkillsRes.ok ? await combatSkillsRes.json() : null;
 
-  return { profiles, equipment, arkgrid, arkpassive, gems, avatars, engravings };
+  return { profiles, equipment, arkgrid, arkpassive, gems, avatars, engravings, combatSkills };
 }
 
 export default async function handler(req, res) {
