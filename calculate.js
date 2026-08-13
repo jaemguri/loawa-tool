@@ -1509,14 +1509,47 @@ function getChargeCaptainEnemyDamagePercent(engravingsData) {
   return (parseFloat(m[1]) * MOVE_SPEED_FIXED) / 100;
 }
 
+// 어빌리티 스톤 "무작위 각인 효과"(적주피% 계열, method:'enemyDamage')를 각인 이름별로 그룹핑 — 밸런스
+// 패치로 어빌리티 스톤의 적주피% 보너스가 더 이상 독립적인 곱연산 항이 아니라, 같은 이름의 실제 각인이
+// 주는 값에 합연산으로 더해지도록 변경됨(예: 원한 4lv 21% + 어빌리티스톤 원한 2lv 3.75% → 24.75%
+// 하나의 그룹으로 합산 후 곱연산). AbilityStoneLevel은 항상 실제 착용 중인 각인(ArkPassiveEffects의
+// 같은 항목)에만 붙으므로 이름이 어긋날 일은 없음. 돌격대장은 별도 공식(이동속도 전환)이라 여기서 제외.
+function getAbilityStoneEnemyDamageByName(engravingsData) {
+  const result = {};
+  if (!engravingsData || !engravingsData.ArkPassiveEffects) return result;
+  engravingsData.ArkPassiveEffects.forEach((eng) => {
+    if (eng.Name === '돌격대장' || !eng.AbilityStoneLevel) return;
+    const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[eng.Name];
+    if (!catalogEntry || catalogEntry.method !== 'enemyDamage') return;
+    const value = catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0;
+    result[eng.Name] = (result[eng.Name] || 0) + value;
+  });
+  return result;
+}
+
+// 돌격대장의 어빌리티 스톤 보너스(이미 이동속도→적주피 전환 공식이 적용된 적주피% 단위) — byName과
+// 마찬가지로 실제 각인의 chargeCaptainPercent에 합연산으로 더해진다.
+function getAbilityStoneChargeCaptainBonus(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '돌격대장');
+  if (!eng || !eng.AbilityStoneLevel) return 0;
+  const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG['돌격대장'];
+  return catalogEntry ? (catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0) : 0;
+}
+
 // 각인 전체(돌격대장 포함)의 적에게 주는 피해 곱연산 배율
-// 같은 이름 각인끼리는 이미 합산되어 있고(그룹별), 이름이 다른 각인끼리는 여기서 곱연산
+// 같은 이름 각인끼리는 이미 합산되어 있고(그룹별, 어빌리티 스톤 보너스도 같은 이름이면 여기 합산됨),
+// 이름이 다른 각인끼리는 여기서 곱연산
 function getEngravingEnemyDamageMultiplier(engravingsData) {
   const byName = getEngravingEnemyDamageByName(engravingsData);
+  const stoneByName = getAbilityStoneEnemyDamageByName(engravingsData);
+  Object.keys(stoneByName).forEach((name) => {
+    byName[name] = (byName[name] || 0) + stoneByName[name];
+  });
+
   let multiplier = 1;
   Object.values(byName).forEach((p) => { multiplier *= toMultiplier(p); });
 
-  const chargeCaptainPercent = getChargeCaptainEnemyDamagePercent(engravingsData);
+  const chargeCaptainPercent = getChargeCaptainEnemyDamagePercent(engravingsData) + getAbilityStoneChargeCaptainBonus(engravingsData);
   multiplier *= toMultiplier(chargeCaptainPercent);
 
   return { multiplier, byName, chargeCaptainPercent };
@@ -1910,7 +1943,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
-  const abilityStoneOtherBonus = getAbilityStoneOtherEngravingBonus(dealerData.engravings);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -1921,7 +1953,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(dealerBracelet.enemyDamagePercent) *
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
-    toMultiplier(abilityStoneOtherBonus.enemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -1940,7 +1971,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해: evolutionDamagePercent,
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
-      어빌리티스톤_각인보너스_적주피: abilityStoneOtherBonus.enemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,

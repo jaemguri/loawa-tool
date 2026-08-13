@@ -858,7 +858,7 @@
             ${effectRows || '<tr><td colspan="2">각인 효과 없음</td></tr>'}
             <tr><th>레벨 보너스(기본 공격력)</th><td>${pct(getAbilityStoneBaseAttackPercent(equipment))}%</td></tr>
             <tr><th>레벨 보너스(치명타 피해)</th><td>${pct(getAbilityStoneCritDamagePercent(equipment))}%</td></tr>
-            <tr><th>환산: 적주피%</th><td>${pct(otherBonus.enemyDamagePercent)}%</td></tr>
+            <tr><th>환산: 적주피%(동일 각인에 합산)</th><td>${pct(otherBonus.enemyDamagePercent)}%</td></tr>
             <tr><th>환산: 치명타 적중률%</th><td>${pct(otherBonus.critRatePercent)}%</td></tr>
             <tr><th>환산: 공격력%(아드레날린)</th><td>${pct(adrenalineBonus)}%</td></tr>
             <tr><th>환산: 치명타 피해%(예리한 둔기)</th><td>${pct(sharpWeaponBonus)}%</td></tr>
