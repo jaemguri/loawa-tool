@@ -1824,35 +1824,57 @@ function getArkPassiveNodeIcons(arkpassiveData, category) {
     });
 }
 
-// 직업별 진화 트리 전체 배치(5티어×6칸, 실제 게임 화면을 보고 사용자가 직접 제공한 이름) — Open API는
-// 실제로 찍은 노드만 내려주므로, 안 찍힌 노드까지 포함한 전체 그리드를 보여주려면 이 정적 테이블이
-// 필요하다. 아직 미제공 직업은 키가 없음(그리드 미표시, 안 찍힌 것만 나열).
-const EVOLUTION_TREE_BY_CLASS = {
-  '블래스터': [
-    ['치명', '특화', '제압', '신속', '인내', '숙련'],
-    ['끝없는 마나', '금단의 주문', '예리한 감각', '한계 돌파', '최적화 훈련', '축복의 여신'],
-    ['무한한 마력', '혼신의 강타', '일격', '파괴 전차', '타이밍 지배', '정열의 춤사위'],
-    ['회심', '달인', '분쇄', '선각자', '진군', '기원'],
-    ['뭉툭한 가시', '음속 돌파', '인파이팅', '입식 타격가', '마나 용광로', '안정된 관리자'],
-  ],
+// 진화 트리 전체 배치(5티어×6칸, 실제 게임 화면을 보고 사용자가 직접 제공한 이름) — 모든 직업이 동일한
+// 트리를 공유한다(사용자 확인 사항: "모든 직업들도 아크패시브는 똑같고 위치도 똑같아"). Open API는
+// 실제로 찍은 노드만 내려주므로, 안 찍힌 노드까지 포함한 전체 그리드를 보여주려면 이 정적 테이블이 필요.
+const EVOLUTION_TREE_LAYOUT = [
+  ['치명', '특화', '제압', '신속', '인내', '숙련'],
+  ['끝없는 마나', '금단의 주문', '예리한 감각', '한계 돌파', '최적화 훈련', '축복의 여신'],
+  ['무한한 마력', '혼신의 강타', '일격', '파괴 전차', '타이밍 지배', '정열의 춤사위'],
+  ['회심', '달인', '분쇄', '선각자', '진군', '기원'],
+  ['뭉툭한 가시', '음속 돌파', '인파이팅', '입식 타격가', '마나 용광로', '안정된 관리자'],
+];
+
+// 안 찍힌 노드도 실제 아이콘을 희미하게 보여주기 위한 이름→아이콘 URL 캐시 — 실제로 그 노드를 찍은
+// 캐릭터가 있어야만 API로 아이콘을 구할 수 있어서, 여러 실캐릭터(포구릿/히유시/햄현이/잼구릿/쩡구릿 등)를
+// 조회해 모은 값. 30개 중 21개 확보(2026-08-13 기준) — 나머지(제압/인내/숙련/끝없는 마나/파괴 전차/
+// 타이밍 지배/진군/인파이팅/안정된 관리자)는 아직 아무도 투자한 걸 못 봐서 비어있음, 채워지면 추가할 것.
+const EVOLUTION_NODE_ICON_CACHE = {
+  '치명': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_1.png',
+  '특화': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_2.png',
+  '신속': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_4.png',
+  '금단의 주문': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_12.png',
+  '무한한 마력': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_14.png',
+  '입식 타격가': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_18.png',
+  '축복의 여신': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_19.png',
+  '뭉툭한 가시': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_20.png',
+  '음속 돌파': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_21.png',
+  '최적화 훈련': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_22.png',
+  '마나 용광로': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_24.png',
+  '혼신의 강타': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_27.png',
+  '예리한 감각': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_29.png',
+  '일격': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_32.png',
+  '정열의 춤사위': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_33.png',
+  '한계 돌파': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_34.png',
+  '회심': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_40.png',
+  '달인': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_41.png',
+  '선각자': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_42.png',
+  '분쇄': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_44.png',
+  '기원': 'https://cdn-lostark.game.onstove.com/efui_iconatlas/ark_passive_evolution/ark_passive_evolution_45.png',
 };
 
-// 클래스의 전체 진화 트리(5티어×6칸)를 실제 투자 여부와 매칭해서 반환 — 투자된 칸은 실제 아이콘/레벨/
-// 설명까지 포함, 안 찍힌 칸은 이름만(아이콘 없음, invested:false, UI에서 회색 처리용). 테이블이 없는
-// 직업이면 null.
-function getArkPassiveEvolutionFullTree(arkpassiveData, className) {
-  const layout = EVOLUTION_TREE_BY_CLASS[className];
-  if (!layout) return null;
-
+// 전체 진화 트리(5티어×6칸, 모든 직업 공통)를 실제 투자 여부와 매칭해서 반환. 투자된 칸은 실제
+// 아이콘/레벨/설명 포함(invested:true), 안 찍힌 칸은 이름 + (알고 있으면) 실제 아이콘을 희미하게
+// 보여줄 수 있도록 icon만 채워서 반환(invested:false) — 아이콘을 모르면 icon:null(UI에서 회색 placeholder).
+function getArkPassiveEvolutionFullTree(arkpassiveData) {
   const investedNodes = getArkPassiveNodeIcons(arkpassiveData, '진화');
   const byName = {};
   investedNodes.forEach((n) => { byName[n.name] = n; });
 
-  return layout.map((row, tierIdx) => row.map((name) => {
+  return EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => row.map((name) => {
     const node = byName[name];
-    return node
-      ? { name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon, description: node.description }
-      : { name, tier: tierIdx + 1, invested: false };
+    if (node) return { name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon, description: node.description };
+    return { name, tier: tierIdx + 1, invested: false, icon: EVOLUTION_NODE_ICON_CACHE[name] || null };
   }));
 }
 
