@@ -1068,6 +1068,51 @@ function getArkPassiveCritRatePercent(arkpassiveData) {
   return extractPercent(evo, '치명타 적중률') + extractPercent(real, '치명타 적중률') + masterBonus;
 }
 
+// 전투 스킬 Tooltip에서 "현재 레벨"의 부가효과 설명 텍스트만 추출 — 트라이포드/룬과는 별개로 스킬 자체에
+// 항상 붙어있는 효과(예: "번개의 속삭임" - "스킬 시전 시 12초 동안 치명타 적중률이 10.0% 증가한다.").
+// Tooltip 객체를 키 순서대로(숫자 접미사라 삽입순=원문 순서) 훑다가 "BlinkLineStart" 타입을 만나면 그
+// 이전까지만 현재 레벨 설명이고, 그 이후는 "다음 스킬 레벨" 미리보기라 반드시 거기서 멈춰야 한다(안 그러면
+// 아직 안 찍은 다음 레벨 수치까지 섞여 들어감). 그 구간의 마지막 SingleTextBox가 데미지+부가효과 문장이다.
+function getCombatSkillInnateEffectText(skillTooltipStr) {
+  let text = '';
+  try {
+    const obj = JSON.parse(skillTooltipStr);
+    for (const key of Object.keys(obj)) {
+      const el = obj[key];
+      if (!el) continue;
+      if (el.type === 'BlinkLineStart') break;
+      if (el.type === 'SingleTextBox' && typeof el.value === 'string') {
+        text = stripHtml(el.value);
+      }
+    }
+  } catch (e) {}
+  return text;
+}
+
+// 실제로 투자한(Level > 1 — 안 배운 스킬은 Level이 1로 고정된 채 트라이포드도 전부 미선택 상태로 내려옴)
+// 전투 스킬 전체의 부가효과 텍스트를 이어붙임 — 아크패시브 진화/깨달음 텍스트 합치기와 같은 패턴.
+function getCombatSkillsInnateEffectsText(combatSkillsData) {
+  if (!Array.isArray(combatSkillsData)) return '';
+  return combatSkillsData
+    .filter((sk) => (sk.Level || 0) > 1)
+    .map((sk) => getCombatSkillInnateEffectText(sk.Tooltip))
+    .join(' ');
+}
+
+// 스킬 부가효과 중 "N초 동안/간 치명타 적중률이 X% 증가한다" 패턴 합산 — 지속시간과 무관하게 우선 상시
+// 발동한다고 가정(사용자 지정 컨벤션, 예외 상황은 추후 개별 입력 예정 — 기존 아크패시브 "조건부는 상시
+// 발동 가정" 컨벤션과 동일선상).
+function getCombatSkillPersistentCritRatePercent(combatSkillsData) {
+  return extractPercent(getCombatSkillsInnateEffectsText(combatSkillsData), '치명타 적중률');
+}
+
+// 스킬 부가효과 중 이동속도 증가% 합산 — 아크패시브 진화 5티어 "음속 돌파" 노드의 초과 이동속도 전환
+// 공식에 쓰기 위해 값만 우선 확보해 둔 것(그 전환 공식 자체는 5티어 조건부 로직이라 아직 미구현,
+// 다음 단계에서 연결 예정 — 지금은 어디에도 반영되지 않는 순수 조회용 함수).
+function getCombatSkillPersistentMoveSpeedPercent(combatSkillsData) {
+  return extractPercent(getCombatSkillsInnateEffectsText(combatSkillsData), '이동속도');
+}
+
 // 아크패시브(진화)의 치명타 피해 % 합산
 function getArkPassiveCritDamagePercent(arkpassiveData) {
   return extractPercent(getArkPassiveEffectsText(arkpassiveData, '진화'), '치명타 피해');
@@ -1282,6 +1327,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     백사멸: autoSameolType === 'back' ? 10 : 0,
     시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
     어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
+    스킬_부가효과: getCombatSkillPersistentCritRatePercent(dealerData.combatSkills),
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
 
