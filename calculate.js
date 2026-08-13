@@ -367,7 +367,9 @@ function parseBraceletOptions(braceletText) {
   m = text.match(/악마 및 대악마 계열 피해량이\s*([\d.]+)\s*%/);
   if (m) result.demonDamagePercent = parseFloat(m[1]);
 
-  m = text.match(/재사용 대기시간이\s*([\d.]+)\s*%\s*증가/);
+  // 실제 팔찌 텍스트는 "재사용 대기 시간이"(공백 있음)인데 기존 정규식이 "대기시간"(공백 없음)만 찾아서
+  // 실제 캐릭터 데이터에서는 항상 매칭 실패하던 버그 — \s*로 공백 유무 둘 다 허용하도록 수정.
+  m = text.match(/재사용\s*대기\s*시간이\s*([\d.]+)\s*%\s*증가/);
   if (m) result.cooldownPenaltyPercent = parseFloat(m[1]);
 
   m = text.match(/백어택 스킬이 적에게 주는 피해가\s*([\d.]+)\s*%/);
