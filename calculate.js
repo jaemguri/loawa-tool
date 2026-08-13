@@ -1824,6 +1824,38 @@ function getArkPassiveNodeIcons(arkpassiveData, category) {
     });
 }
 
+// 직업별 진화 트리 전체 배치(5티어×6칸, 실제 게임 화면을 보고 사용자가 직접 제공한 이름) — Open API는
+// 실제로 찍은 노드만 내려주므로, 안 찍힌 노드까지 포함한 전체 그리드를 보여주려면 이 정적 테이블이
+// 필요하다. 아직 미제공 직업은 키가 없음(그리드 미표시, 안 찍힌 것만 나열).
+const EVOLUTION_TREE_BY_CLASS = {
+  '블래스터': [
+    ['치명', '특화', '제압', '신속', '인내', '숙련'],
+    ['끝없는 마나', '금단의 주문', '예리한 감각', '한계 돌파', '최적화 훈련', '축복의 여신'],
+    ['무한한 마력', '혼신의 강타', '일격', '파괴 전차', '타이밍 지배', '정열의 춤사위'],
+    ['회심', '달인', '분쇄', '선각자', '진군', '기원'],
+    ['뭉툭한 가시', '음속 돌파', '인파이팅', '입식 타격가', '마나 용광로', '안정된 관리자'],
+  ],
+};
+
+// 클래스의 전체 진화 트리(5티어×6칸)를 실제 투자 여부와 매칭해서 반환 — 투자된 칸은 실제 아이콘/레벨/
+// 설명까지 포함, 안 찍힌 칸은 이름만(아이콘 없음, invested:false, UI에서 회색 처리용). 테이블이 없는
+// 직업이면 null.
+function getArkPassiveEvolutionFullTree(arkpassiveData, className) {
+  const layout = EVOLUTION_TREE_BY_CLASS[className];
+  if (!layout) return null;
+
+  const investedNodes = getArkPassiveNodeIcons(arkpassiveData, '진화');
+  const byName = {};
+  investedNodes.forEach((n) => { byName[n.name] = n; });
+
+  return layout.map((row, tierIdx) => row.map((name) => {
+    const node = byName[name];
+    return node
+      ? { name, tier: tierIdx + 1, invested: true, level: node.level, icon: node.icon, description: node.description }
+      : { name, tier: tierIdx + 1, invested: false };
+  }));
+}
+
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
 function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};

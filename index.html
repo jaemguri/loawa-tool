@@ -38,6 +38,14 @@
     .evolutionNode { width: 84px; text-align: center; }
     .evolutionNode img { width: 48px; height: 48px; border: 1px solid #ccc; border-radius: 4px; }
     .evolutionNodeLabel { font-size: 11px; margin-top: 2px; line-height: 1.3; }
+    .evolutionTierRow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .evolutionTierLabel { width: 40px; flex: 0 0 auto; font-weight: bold; text-align: center; }
+    .evolutionTierNodes { display: flex; gap: 8px; }
+    .evolutionCell { width: 76px; text-align: center; }
+    .evolutionCell img { width: 44px; height: 44px; border: 1px solid #ccc; border-radius: 50%; }
+    .evolutionCellPlaceholder { width: 44px; height: 44px; border-radius: 50%; background: #444; opacity: 0.4; margin: 0 auto; }
+    .evolutionCell.notInvested { opacity: 0.45; }
+    .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
   </style>
 </head>
 <body>
@@ -1004,9 +1012,40 @@
       setupAbilityStoneSimulator(ctx);
     }
 
-    // 아크패시브 진화 탭: 현재 실제로 찍은 진화 노드를 아이콘으로 나열 (읽기 전용, 우선 이것만)
+    // 아크패시브 진화 탭: 직업별 전체 트리(5티어×6칸)를 아는 경우 안 찍힌 칸까지 회색으로 함께 표시,
+    // 모르는 직업이면 기존처럼 찍은 노드만 아이콘으로 나열 (읽기 전용)
     function renderDealerEvolutionTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="evolution"]');
+      const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive, ctx.dealerStats.className);
+
+      if (fullTree) {
+        const rowsHtml = fullTree.map((row, i) => `
+          <div class="evolutionTierRow">
+            <div class="evolutionTierLabel">${i + 1}티어</div>
+            <div class="evolutionTierNodes">
+              ${row.map((cell) => cell.invested ? `
+                <div class="evolutionCell" title="${cell.description}">
+                  <img src="${cell.icon}" alt="${cell.name}">
+                  <div class="evolutionCellLabel">${cell.name}${cell.level ? ' Lv.' + cell.level : ''}</div>
+                </div>
+              ` : `
+                <div class="evolutionCell notInvested" title="${cell.name} (미투자)">
+                  <div class="evolutionCellPlaceholder"></div>
+                  <div class="evolutionCellLabel">${cell.name}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('');
+        panel.innerHTML = `
+          <div class="fieldGroup">
+            <h4>아크패시브 진화 - 전체 트리 (${ctx.dealerStats.className})</h4>
+            ${rowsHtml}
+          </div>
+        `;
+        return;
+      }
+
       const nodes = getArkPassiveNodeIcons(ctx.dealerData.arkpassive, '진화');
       const nodeHtml = nodes.map((n) => `
         <div class="evolutionNode" title="${n.description}">
