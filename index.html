@@ -1316,6 +1316,11 @@
     function renderDealerAnalysisTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="analysis"]');
       const skillNames = (ctx.dealerData.combatSkills || []).map((s) => s.Name);
+      // 초각성기/초각성 스킬/아이덴티티는 combat-skills API에 없어서 skillNames만으론 이름 매칭이 안 됨 —
+      // 직업별 정적 테이블(calculate.js)에서 후보를 가져와 매칭 풀에 추가(이미 API에 있는 이름과 겹치면 제외).
+      const hyperIdentityNames = getClassHyperAwakeningIdentitySkillNames(ctx.dealerStats.className)
+        .filter((name) => !skillNames.includes(name));
+      const fuzzyMatchPool = skillNames.concat(hyperIdentityNames);
 
       panel.innerHTML = `
         <div class="fieldGroup">
@@ -1341,12 +1346,15 @@
         // 정상이라 굳이 빨간 테두리로 경고할 필요 없음). 예전엔 rawName이 빈 문자열이면(완전히 못 읽은 경우)
         // "" && ... 가 falsy라서 경고 표시 자체가 안 되는 버그가 있었음.
         const isFromOcr = bbox !== undefined && bbox !== null;
-        const matched = rawName ? fuzzyMatchSkillName(rawName, skillNames) : null;
+        const matched = rawName ? fuzzyMatchSkillName(rawName, fuzzyMatchPool) : null;
         const row = document.createElement('div');
         row.className = 'combatAnalysisRow' + (isFromOcr && !matched ? ' unmatched' : '');
         row._bbox = bbox || null;
         const options = ['<option value="">-- 선택 안 함(조건없음) --</option>']
           .concat(skillNames.map((name) => `<option value="${name}" ${name === matched ? 'selected' : ''}>${name}</option>`))
+          .concat(hyperIdentityNames.length
+            ? [`<optgroup label="초각성/아이덴티티 (트라이포드 보너스 미반영)">${hyperIdentityNames.map((name) => `<option value="${name}" ${name === matched ? 'selected' : ''}>${name}</option>`).join('')}</optgroup>`]
+            : [])
           .join('');
         row.innerHTML = `
           <span class="rawText">${rawName ? 'OCR: ' + rawName : '(직접 입력)'}</span>
