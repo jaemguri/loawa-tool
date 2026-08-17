@@ -1341,7 +1341,11 @@
           const score = compareGrayscalePixelArrays(rowVector, c.vector);
           if (score > bestScore) { bestScore = score; best = c.name; }
         });
-        if (best && bestScore > 0.1) {
+        // 0.1은 너무 느슨해서(calculate.js의 compareGrayscalePixelArrays 실측 기준: 올바른 쌍 0.87 vs
+        // 틀린 쌍 -0.001) 약한 상관관계인데도 확신 있는 것처럼 잘못된 스킬로 자동 채워버리는 사례가 있었음
+        // (예: "샤프 슈터" 행이 "그림자 화살"로 잘못 추정). 정답/오답 점수 차이가 크므로 중간값 정도로 올려서,
+        // 확신 없는 경우엔 차라리 미매칭(빨간 테두리)으로 남겨 사용자가 직접 고르게 한다.
+        if (best && bestScore > 0.5) {
           row.querySelector('.combatAnalysisSkillSelect').value = best;
           const rawTextEl = row.querySelector('.rawText');
           if (!rawTextEl.textContent.includes('(아이콘 추정')) {
