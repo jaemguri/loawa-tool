@@ -1264,7 +1264,7 @@ const HYPER_AWAKENING_IDENTITY_SKILL_NAMES = {
   브레이커: ['일월신권', '천견지종', '천왕지무', '성운멸쇄권', '권왕태세', '수라 상태', '호신투기'],
   데빌헌터: ['데들리 케이지', '블라우어 블리츠', '래피드 파이어', '둠스 데이', '죽음의 표적'],
   블래스터: ['A.C.O.M: 폭격 지원', 'A.C.O.M: 출격', '포격: 스틸 레인', '미사일 런처', '포격 모드 전환', '오버히트'],
-  호크아이: ['기간틱 보우: 펜리르', 'A.A.G.A: 데드 아이', '스파이럴 애로우', '락온', '폭풍의 날개', '실버호크 강습', '최후의 습격', '실비호크 MK2'],
+  호크아이: ['기간틱 보우: 펜리르', 'A.A.G.A: 데드 아이', '스파이럴 애로우', '락온', '폭풍의 날개', '실버호크 강습', '최후의 습격', '실버호크 MK2'],
   스카우터: ['배틀쉽 오퍼레이션', '프로젝트 타이탄', '네오 파이어', '포인트 익스클루션', '하이퍼 싱크'],
   건슬링어: ['데드 엔드', '아토믹 익스플로전', '프리즌 불릿', '세븐 샷건', '불스 아이', '로즈 블로썸'],
   아르카나: ['더 타워', '데스', '더 썬', '더 데빌'],
@@ -1376,13 +1376,23 @@ function longestCommonSubstringLength(a, b) {
   return max;
 }
 
+// 한글 음절만 남기고 나머지(공백/영문/숫자/기호)는 제거 — OCR이 'kor' 단일 언어 모델이라 "MK2",
+// "A.A.G.A:" 같은 라틴/숫자 구간은 원천적으로 정확히 읽지 못하는 게 실측으로 확인됨(예: "실버호크 MK2"가
+// "실버호크112"/"봉 실버호크12"처럼 한글 부분은 항상 정확히 읽히는데 라틴+숫자 구간만 매번 다르게 깨짐).
+// 이 구간까지 일치를 요구하면 해당 스킬은 구조적으로 절대 0.7 임계값을 못 넘기므로, 애초에 신뢰할 수 없는
+// 비한글 문자는 채점에서 제외하고 한글 부분의 일치도만으로 판단한다.
+function hangulOnly(str) {
+  return (str || '').replace(/[^가-힣]/g, '');
+}
+
 function fuzzyMatchSkillName(candidateText, skillNames) {
   if (!candidateText || !Array.isArray(skillNames) || skillNames.length === 0) return null;
-  const cand = candidateText.replace(/\s/g, '');
+  const cand = hangulOnly(candidateText);
   let best = null;
   let bestScore = 0;
   skillNames.forEach((name) => {
-    const nm = name.replace(/\s/g, '');
+    const nm = hangulOnly(name);
+    if (!nm) return;
     const score = longestCommonSubstringLength(cand, nm) / nm.length;
     if (score > bestScore) { bestScore = score; best = name; }
   });
