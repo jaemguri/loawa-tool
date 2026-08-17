@@ -1308,6 +1308,45 @@
       });
     }
 
+    // 이름 매칭에 실패한(빨간 테두리) 행을, 그 행 영역만 따로 잘라내서 단일 줄(PSM SINGLE_LINE)로 다시
+    // 인식을 시도한다. 전체 이미지를 한 번에 읽는 자동 레이아웃 분석은 가끔 특정 행 하나만 옆 줄과 섞이거나
+    // 이름 부분을 통째로 놓치는 경우가 있는데(실측 확인: 같은 스크린샷이라도 전체를 한 번에 읽을 때는
+    // 특정 행이 깨졌다가, 그 행만 격리해서 다시 읽으면 정상 인식되는 사례 있음 — Tesseract의 문맥 의존적
+    // 레이아웃 분석 오류로 추정), 행을 격리해서 재시도하면 이런 오류를 피할 수 있다. 아이콘 상관관계
+    // 폴백보다 먼저 시도한다 — 텍스트 재인식 성공이 아이콘 유사도 추정보다 신뢰도가 높기 때문.
+    async function enhanceUnmatchedRowsWithTargetedOcr(panel, fuzzyMatchPool) {
+      if (!pendingCombatAnalysisCanvas) return;
+      const rowsWithBbox = [...panel.querySelectorAll('.combatAnalysisRow')].filter((row) => row.classList.contains('unmatched') && row._bbox);
+      if (rowsWithBbox.length === 0) return;
+
+      const worker = await Tesseract.createWorker('kor');
+      await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE });
+      try {
+        for (const row of rowsWithBbox) {
+          const bbox = row._bbox;
+          const pad = 3;
+          const y0 = Math.max(0, bbox.y0 - pad);
+          const y1 = Math.min(pendingCombatAnalysisCanvas.height, bbox.y1 + pad);
+          const h = y1 - y0;
+          if (h <= 0) continue;
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = pendingCombatAnalysisCanvas.width;
+          cropCanvas.height = h;
+          cropCanvas.getContext('2d').drawImage(pendingCombatAnalysisCanvas, 0, y0, cropCanvas.width, h, 0, 0, cropCanvas.width, h);
+          const { data } = await worker.recognize(cropCanvas, {}, { blocks: true });
+          const text = flattenTesseractLines(data.blocks).map((l) => l.text).join(' ').trim();
+          const matched = text ? fuzzyMatchSkillName(text, fuzzyMatchPool) : null;
+          if (matched) {
+            row.classList.remove('unmatched');
+            row.querySelector('.combatAnalysisSkillSelect').value = matched;
+            row.querySelector('.rawText').textContent = `OCR: ${text} (재시도 인식: ${matched})`;
+          }
+        }
+      } finally {
+        await worker.terminate();
+      }
+    }
+
     // 이름 OCR이 완전히 깨져서(fuzzyMatchSkillName 실패) 매칭 안 된 행들에 대해, 그 행의 아이콘 영역을
     // 실제 캐릭터 스킬 아이콘들과 비교해서 가장 비슷한 스킬을 드롭다운 기본값으로 대신 채워준다. 어디까지나
     // "추정값 미리 채우기"라 여전히 빨간 테두리(확인 필요) 상태는 유지 — 사용자가 최종 확인해야 함.
@@ -1414,8 +1453,11 @@
 
       pendingCombatAnalysisRows.forEach((r) => addRow(r.rawName, r.sharePercent, r.bbox));
       panel.querySelector('.combatAnalysisAddRow').addEventListener('click', () => addRow('', ''));
-      // 아이콘 교차 검증은 이미지 로딩이 필요해 비동기 — 완료되면 드롭다운이 채워진 새 상태로 자동 재계산.
-      enhanceUnmatchedRowsWithIconMatch(panel, ctx.dealerData).then(() => recalc());
+      // 행별 재인식 → (그래도 안 되면) 아이콘 교차 검증 순서로 시도. 둘 다 비동기 — 완료되면 드롭다운이
+      // 채워진 새 상태로 자동 재계산.
+      enhanceUnmatchedRowsWithTargetedOcr(panel, fuzzyMatchPool)
+        .then(() => enhanceUnmatchedRowsWithIconMatch(panel, ctx.dealerData))
+        .then(() => recalc());
 
       function recalc() {
         const skillShares = [];
