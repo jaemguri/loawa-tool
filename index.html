@@ -1441,8 +1441,10 @@
 
     // 전투분석 사진 등록 탭: OCR로 뽑은 스킬명/지분%를 실제 캐릭터 스킬 목록과 매칭한 편집 가능한 표로
     // 보여주고, "재계산"을 누르면 calculateCombatAnalysisWeightedCrit로 지분 가중 평균피해배율을 계산해서
-    // 기본(스킬 영향 없음) 배율과 비교한다. 다른 실험용 시뮬레이터(진화 커스텀 등)와 동일하게, 최종
-    // 산출식/최종 데미지에는 아직 자동 반영하지 않고 이 탭 안에서 독립적으로 확인하는 용도.
+    // 기본(스킬 영향 없음) 배율과 비교한다. 치명타 피해/적중률은 뭉툭한 가시 전환·합연산 특성 때문에
+    // 스킬(트라이포드)마다 실제 기여도가 달라서(적주피%는 곱연산이라 스킬별로 안 갈라도 됨, 그래서 이건
+    // 치명타 배율만 대상), 지분 가중 평균값을 ctx.critResult.avgDamageMultiplier에 직접 반영해 "현재 정보"
+    // 탭의 최종 산출식/풀버프 최종 산출식(recomputeDealerLiveNumbers)에도 실제로 반영되도록 한다.
     function renderDealerAnalysisTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="analysis"]');
       const skillNames = (ctx.dealerData.combatSkills || []).map((s) => s.Name);
@@ -1460,6 +1462,7 @@
               ? '이름이 자동으로 안 맞혀진 행은 빨간 테두리로 표시됩니다 — 스킬 아이콘으로 자동 추정해 채워보지만("아이콘 추정" 표시), 정확하지 않을 수 있으니 꼭 눈으로 확인/수정해주세요.'
               : '조회 화면에서 전투분석 사진을 등록하지 않았습니다. 아래에서 직접 스킬/지분을 입력할 수도 있습니다.'}
             지분 2% 미만이거나 "선택 안 함"인 스킬/트라이포드는 조건 없이(상시 계산 기준) 처리됩니다.
+            "재계산"을 누르면 여기서 나온 지분 가중 평균피해배율이 "현재 정보" 탭의 최종 산출식에도 그대로 반영됩니다.
           </p>
           <div class="combatAnalysisRows"></div>
           <button type="button" class="combatAnalysisAddRow">+ 행 추가</button>
@@ -1535,6 +1538,13 @@
             <tr><th>변화율</th><td>${(((result.weightedAvgDamageMultiplier / result.baseAvgDamageMultiplier) - 1) * 100).toFixed(2)}%</td></tr>
           </table>
         `;
+
+        // 지분 가중 평균피해배율을 최종 산출식에 실제로 반영(더 이상 실험용 표시 전용이 아님) — 지분
+        // 데이터가 없으면 calculateCombatAnalysisWeightedCrit가 자동으로 기본 배율과 동일한 값을 반환하므로
+        // 별도 분기 없이 항상 덮어써도 안전하다. "현재 정보" 탭의 최종 산출식/풀버프 최종 산출식 실시간
+        // 표시(recomputeDealerLiveNumbers, 아드/암수 체크박스와 동일 갱신 경로)에 그대로 반영됨.
+        ctx.critResult.avgDamageMultiplier = result.weightedAvgDamageMultiplier;
+        recomputeDealerLiveNumbers(ctx);
       }
 
       panel.querySelector('.combatAnalysisRecalc').addEventListener('click', recalc);
