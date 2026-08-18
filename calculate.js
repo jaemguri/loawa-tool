@@ -1440,11 +1440,24 @@ function getRingCritDamagePercent(equipmentList) {
   return total;
 }
 
-// engravings(ArkPassiveEffects)에서 "예리한 둔기" 기본 효과의 치명타 피해 % 추출
+// engravings(ArkPassiveEffects)에서 "예리한 둔기" 기본 효과의 치명타 피해 % 추출.
+// 적주피 계열 각인과 동일한 함정: 실제 어빌리티 스톤 보너스가 걸려있으면 API의 Description 자체가
+// 이미 "각인 레벨값 + 스톤 보너스"가 합산된 현재 총합으로 온다(실측: 포구릿, 예리한 둔기 Lv3 스톤 →
+// Description "57.20%" = 순수 각인값 44.00% + 스톤 13.2%). 아래에서 스톤 보너스(getSharpWeaponStoneBonus)를
+// 또 더하면 이중 합산되므로, AbilityStoneLevel이 있으면 미리 빼서 순수 각인값만 남긴다.
+// buildEngravingsWithAbilityStoneSelections(가상 조합 시뮬레이터)가 원래 실제 스톤 레벨 기준으로 이미
+// 한 번 빼둔 경우(_pureCritDamagePercent 존재)는 그 값을 그대로 쓴다(이유는 getEngravingEnemyDamageByName
+// 쪽 주석과 동일).
 function getSharpWeaponCritDamagePercent(engravingsData) {
   if (!engravingsData || !engravingsData.ArkPassiveEffects) return 0;
   const eng = engravingsData.ArkPassiveEffects.find((e) => e.Name === '예리한 둔기');
-  return eng ? extractPercent(stripHtml(eng.Description), '치명타 피해량') : 0;
+  if (!eng) return 0;
+  if (eng._pureCritDamagePercent !== undefined) return eng._pureCritDamagePercent;
+  let percent = extractPercent(stripHtml(eng.Description), '치명타 피해량');
+  if (eng.AbilityStoneLevel) {
+    percent -= SHARP_WEAPON_STONE_BONUS[eng.AbilityStoneLevel] || 0;
+  }
+  return percent;
 }
 
 // 예리한 둔기 어빌리티 스톤 장착 효과 고정표
@@ -3480,8 +3493,9 @@ const ABILITY_STONE_FULL_CATALOG = {
 // 등 다른 함수가 엉뚱한 각인 자체 효과를 잘못 집계하지 않도록). 아드레날린은 여기 포함하지 않음(다른
 // 데이터 경로 — calculateAbilityStoneTotal에서 별도 처리).
 // AbilityStoneLevel을 리셋하기 전에, 원래(실제) 레벨 기준으로 Description에 이미 합산돼 있던 스톤 보너스를
-// 미리 빼서 _pureEnemyDamagePercent에 저장해둔다(getEngravingEnemyDamageByName 쪽 주석 참고) — 리셋 후엔
-// 원래 실제 레벨 정보가 사라져서 나중엔 이 값을 정확히 계산할 수 없기 때문에 여기서 미리 해둬야 한다.
+// 미리 빼서 _pureEnemyDamagePercent/_pureCritDamagePercent(예리한 둔기 전용)에 저장해둔다(각각
+// getEngravingEnemyDamageByName / getSharpWeaponCritDamagePercent 쪽 주석 참고) — 리셋 후엔 원래 실제
+// 레벨 정보가 사라져서 나중엔 이 값을 정확히 계산할 수 없기 때문에 여기서 미리 해둬야 한다.
 function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
   const effects = ((engravingsData && engravingsData.ArkPassiveEffects) || []).map((e) => {
     const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[e.Name];
@@ -3489,7 +3503,18 @@ function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
     if (catalogEntry && catalogEntry.method === 'enemyDamage' && e.AbilityStoneLevel) {
       pureEnemyDamagePercent -= catalogEntry.levels[e.AbilityStoneLevel - 1] || 0;
     }
-    return { ...e, AbilityStoneLevel: null, _pureEnemyDamagePercent: pureEnemyDamagePercent };
+    let pureCritDamagePercent;
+    if (e.Name === '예리한 둔기') {
+      pureCritDamagePercent = extractPercent(stripHtml(e.Description), '치명타 피해량');
+      if (e.AbilityStoneLevel) {
+        pureCritDamagePercent -= SHARP_WEAPON_STONE_BONUS[e.AbilityStoneLevel] || 0;
+      }
+    }
+    return {
+      ...e, AbilityStoneLevel: null,
+      _pureEnemyDamagePercent: pureEnemyDamagePercent,
+      ...(pureCritDamagePercent !== undefined ? { _pureCritDamagePercent: pureCritDamagePercent } : {}),
+    };
   });
   (selections || []).forEach(({ name, level }) => {
     if (!name || !level || name === '아드레날린') return;
@@ -3498,9 +3523,10 @@ function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
       existing.AbilityStoneLevel = level;
     } else {
       // 실제로 착용하지 않은 각인을 가상으로 테스트하는 경우 — 순수 각인 레벨은 0이므로
-      // _pureEnemyDamagePercent를 명시적으로 0으로 남겨야 한다(안 남기면 getEngravingEnemyDamageByName이
-      // 빈 Description('')을 스톤 레벨만큼 잘못 빼서 음수가 되어 버림).
-      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '', _pureEnemyDamagePercent: 0 });
+      // _pureEnemyDamagePercent/_pureCritDamagePercent를 명시적으로 0으로 남겨야 한다(안 남기면
+      // getEngravingEnemyDamageByName/getSharpWeaponCritDamagePercent가 빈 Description('')을 스톤
+      // 레벨만큼 잘못 빼서 음수가 되어 버림).
+      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '', _pureEnemyDamagePercent: 0, _pureCritDamagePercent: 0 });
     }
   });
   return { ...engravingsData, ArkPassiveEffects: effects };
