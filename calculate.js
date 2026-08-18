@@ -1862,15 +1862,29 @@ function getEngravingEnemyDamageByName(engravingsData) {
   return result;
 }
 
-// 돌격대장의 "이동속도 증가량의 X%" → 실제 적주피 % (이동속도 40% 고정 가정)
+// 돌격대장의 "이동속도 증가량의 X%" → 실제 적주피 % (이동속도 40% 고정 가정).
+// 다른 스톤형 각인(저주받은 인형/예리한 둔기)과 동일한 함정이 여기도 있었음을 실측으로 확인: 실제
+// 스톤 보너스가 걸려있으면 Description 자체가 이미 그 값까지 합산된 현재 총합으로 온다(실측: 잼구릿,
+// 돌격대장 Lv3 스톤 → "이동속도 증가량의 61.20%" - 13.2(스톤 raw %) = 48.00%, 깔끔한 값이라 순수
+// 각인값으로 추정). 스톤 보너스는 getAbilityStoneChargeCaptainBonus가 별도로(이미 ×0.4 전환된 적주피%
+// 단위로) 더하므로, 여기서 미리 뺄 땐 그 전환을 거꾸로 풀어서 "이동속도%" 단위로 빼야 한다.
 function getChargeCaptainEnemyDamagePercent(engravingsData) {
   const eng = getArkPassiveEffectByName(engravingsData, '돌격대장');
   if (!eng) return 0;
+  const MOVE_SPEED_FIXED = 40;
+  if (eng._pureChargeCaptainMoveSpeedPercent !== undefined) {
+    return (eng._pureChargeCaptainMoveSpeedPercent * MOVE_SPEED_FIXED) / 100;
+  }
   const text = stripHtml(eng.Description || '');
   const m = text.match(/이동속도\s*증가량의\s*([\d.]+)\s*%/);
   if (!m) return 0;
-  const MOVE_SPEED_FIXED = 40;
-  return (parseFloat(m[1]) * MOVE_SPEED_FIXED) / 100;
+  let moveSpeedPercent = parseFloat(m[1]);
+  if (eng.AbilityStoneLevel) {
+    const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG['돌격대장'];
+    const convertedStoneValue = catalogEntry ? (catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0) : 0;
+    moveSpeedPercent -= convertedStoneValue / (MOVE_SPEED_FIXED / 100);
+  }
+  return (moveSpeedPercent * MOVE_SPEED_FIXED) / 100;
 }
 
 // 어빌리티 스톤 "무작위 각인 효과"(적주피% 계열, method:'enemyDamage')를 각인 이름별로 그룹핑 — 밸런스
@@ -3493,9 +3507,10 @@ const ABILITY_STONE_FULL_CATALOG = {
 // 등 다른 함수가 엉뚱한 각인 자체 효과를 잘못 집계하지 않도록). 아드레날린은 여기 포함하지 않음(다른
 // 데이터 경로 — calculateAbilityStoneTotal에서 별도 처리).
 // AbilityStoneLevel을 리셋하기 전에, 원래(실제) 레벨 기준으로 Description에 이미 합산돼 있던 스톤 보너스를
-// 미리 빼서 _pureEnemyDamagePercent/_pureCritDamagePercent(예리한 둔기 전용)에 저장해둔다(각각
-// getEngravingEnemyDamageByName / getSharpWeaponCritDamagePercent 쪽 주석 참고) — 리셋 후엔 원래 실제
-// 레벨 정보가 사라져서 나중엔 이 값을 정확히 계산할 수 없기 때문에 여기서 미리 해둬야 한다.
+// 미리 빼서 _pureEnemyDamagePercent/_pureCritDamagePercent(예리한 둔기 전용)/_pureChargeCaptainMoveSpeedPercent
+// (돌격대장 전용)에 저장해둔다(각각 getEngravingEnemyDamageByName / getSharpWeaponCritDamagePercent /
+// getChargeCaptainEnemyDamagePercent 쪽 주석 참고) — 리셋 후엔 원래 실제 레벨 정보가 사라져서 나중엔 이
+// 값을 정확히 계산할 수 없기 때문에 여기서 미리 해둬야 한다.
 function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
   const effects = ((engravingsData && engravingsData.ArkPassiveEffects) || []).map((e) => {
     const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[e.Name];
@@ -3510,10 +3525,20 @@ function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
         pureCritDamagePercent -= SHARP_WEAPON_STONE_BONUS[e.AbilityStoneLevel] || 0;
       }
     }
+    let pureChargeCaptainMoveSpeedPercent;
+    if (e.Name === '돌격대장') {
+      const m = stripHtml(e.Description || '').match(/이동속도\s*증가량의\s*([\d.]+)\s*%/);
+      pureChargeCaptainMoveSpeedPercent = m ? parseFloat(m[1]) : 0;
+      if (e.AbilityStoneLevel) {
+        const convertedStoneValue = catalogEntry ? (catalogEntry.levels[e.AbilityStoneLevel - 1] || 0) : 0;
+        pureChargeCaptainMoveSpeedPercent -= convertedStoneValue / 0.4;
+      }
+    }
     return {
       ...e, AbilityStoneLevel: null,
       _pureEnemyDamagePercent: pureEnemyDamagePercent,
       ...(pureCritDamagePercent !== undefined ? { _pureCritDamagePercent: pureCritDamagePercent } : {}),
+      ...(pureChargeCaptainMoveSpeedPercent !== undefined ? { _pureChargeCaptainMoveSpeedPercent: pureChargeCaptainMoveSpeedPercent } : {}),
     };
   });
   (selections || []).forEach(({ name, level }) => {
@@ -3523,10 +3548,12 @@ function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
       existing.AbilityStoneLevel = level;
     } else {
       // 실제로 착용하지 않은 각인을 가상으로 테스트하는 경우 — 순수 각인 레벨은 0이므로
-      // _pureEnemyDamagePercent/_pureCritDamagePercent를 명시적으로 0으로 남겨야 한다(안 남기면
-      // getEngravingEnemyDamageByName/getSharpWeaponCritDamagePercent가 빈 Description('')을 스톤
-      // 레벨만큼 잘못 빼서 음수가 되어 버림).
-      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '', _pureEnemyDamagePercent: 0, _pureCritDamagePercent: 0 });
+      // _pureEnemyDamagePercent/_pureCritDamagePercent/_pureChargeCaptainMoveSpeedPercent를 명시적으로
+      // 0으로 남겨야 한다(안 남기면 각 함수가 빈 Description('')을 스톤 레벨만큼 잘못 빼서 음수가 되어 버림).
+      effects.push({
+        Name: name, AbilityStoneLevel: level, Level: 0, Description: '',
+        _pureEnemyDamagePercent: 0, _pureCritDamagePercent: 0, _pureChargeCaptainMoveSpeedPercent: 0,
+      });
     }
   });
   return { ...engravingsData, ArkPassiveEffects: effects };
