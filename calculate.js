@@ -1817,14 +1817,31 @@ function extractEngravingEnemyDamagePercent(description) {
 }
 
 // 딜러의 모든 각인(ArkPassiveEffects)을 이름별로 그룹핑해서 적에게 주는 피해 % 합산 (같은 이름끼리 합연산)
-// 돌격대장은 별도 공식(이동속도 기반)으로 처리하므로 여기선 제외
+// 돌격대장은 별도 공식(이동속도 기반)으로 처리하므로 여기선 제외.
+// 실측으로 확인된 함정: 실제로 어빌리티 스톤 보너스가 붙어있는 각인은 API의 Description 자체가 이미
+// "각인 레벨값 + 스톤 보너스"가 합산된 현재 총합 텍스트로 온다(예: 저주받은 인형 4lv 17% + 스톤 2lv
+// 3.75% = Description에 "20.75%"로 표시). 여기서 그대로 추출한 뒤 아래에서 스톤 보너스를 또 더하면
+// 이중 합산된다 — 그래서 AbilityStoneLevel이 있으면 그 스톤 값을 미리 빼서 "순수 각인 레벨"만 남긴다.
+// buildEngravingsWithAbilityStoneSelections(가상 조합 시뮬레이터)가 이미 원본 실제 스톤 레벨 기준으로
+// 한 번 빼둔 경우(_pureEnemyDamagePercent 존재)는 그 값을 그대로 쓰고 여기서 또 빼지 않는다 — 시뮬레이터가
+// AbilityStoneLevel을 테스트용 값으로 바꿔치기해서, 이 시점의 AbilityStoneLevel로 다시 빼면 Description에
+// 원래 baked-in된 실제 레벨 값과 어긋나 버리기 때문.
 function getEngravingEnemyDamageByName(engravingsData) {
   const result = {};
   if (!engravingsData || !engravingsData.ArkPassiveEffects) return result;
 
   engravingsData.ArkPassiveEffects.forEach((eng) => {
     if (eng.Name === '돌격대장') return;
-    const percent = extractEngravingEnemyDamagePercent(eng.Description);
+    let percent;
+    if (eng._pureEnemyDamagePercent !== undefined) {
+      percent = eng._pureEnemyDamagePercent;
+    } else {
+      percent = extractEngravingEnemyDamagePercent(eng.Description);
+      const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[eng.Name];
+      if (catalogEntry && catalogEntry.method === 'enemyDamage' && eng.AbilityStoneLevel) {
+        percent -= catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0;
+      }
+    }
     if (percent > 0) {
       result[eng.Name] = (result[eng.Name] || 0) + percent;
     }
@@ -3462,15 +3479,28 @@ const ABILITY_STONE_FULL_CATALOG = {
 // 항목을 쓰고, 없으면(가상 조합용) 새 항목을 추가한다(Description은 비워둠 — getEngravingEnemyDamageByName
 // 등 다른 함수가 엉뚱한 각인 자체 효과를 잘못 집계하지 않도록). 아드레날린은 여기 포함하지 않음(다른
 // 데이터 경로 — calculateAbilityStoneTotal에서 별도 처리).
+// AbilityStoneLevel을 리셋하기 전에, 원래(실제) 레벨 기준으로 Description에 이미 합산돼 있던 스톤 보너스를
+// 미리 빼서 _pureEnemyDamagePercent에 저장해둔다(getEngravingEnemyDamageByName 쪽 주석 참고) — 리셋 후엔
+// 원래 실제 레벨 정보가 사라져서 나중엔 이 값을 정확히 계산할 수 없기 때문에 여기서 미리 해둬야 한다.
 function buildEngravingsWithAbilityStoneSelections(engravingsData, selections) {
-  const effects = ((engravingsData && engravingsData.ArkPassiveEffects) || []).map((e) => ({ ...e, AbilityStoneLevel: null }));
+  const effects = ((engravingsData && engravingsData.ArkPassiveEffects) || []).map((e) => {
+    const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[e.Name];
+    let pureEnemyDamagePercent = extractEngravingEnemyDamagePercent(e.Description);
+    if (catalogEntry && catalogEntry.method === 'enemyDamage' && e.AbilityStoneLevel) {
+      pureEnemyDamagePercent -= catalogEntry.levels[e.AbilityStoneLevel - 1] || 0;
+    }
+    return { ...e, AbilityStoneLevel: null, _pureEnemyDamagePercent: pureEnemyDamagePercent };
+  });
   (selections || []).forEach(({ name, level }) => {
     if (!name || !level || name === '아드레날린') return;
     const existing = effects.find((e) => e.Name === name);
     if (existing) {
       existing.AbilityStoneLevel = level;
     } else {
-      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '' });
+      // 실제로 착용하지 않은 각인을 가상으로 테스트하는 경우 — 순수 각인 레벨은 0이므로
+      // _pureEnemyDamagePercent를 명시적으로 0으로 남겨야 한다(안 남기면 getEngravingEnemyDamageByName이
+      // 빈 Description('')을 스톤 레벨만큼 잘못 빼서 음수가 되어 버림).
+      effects.push({ Name: name, AbilityStoneLevel: level, Level: 0, Description: '', _pureEnemyDamagePercent: 0 });
     }
   });
   return { ...engravingsData, ArkPassiveEffects: effects };
