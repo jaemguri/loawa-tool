@@ -1600,6 +1600,13 @@ function adrenalineCritRateBonus(level) {
   return Math.min(14 + level * 1.5, 20);
 }
 
+// 치명타 피해의 게임 자체 기본값(장비/각인/아크패시브 등 어떤 보너스도 없어도 항상 적용되는 값) — 인게임
+// 스탯창에서 모든 치명타 피해 관련 보너스를 뺀 순수 기본 수치가 200%(=100% 증가)라는 걸 사용자가 직접
+// 스크린샷으로 확인해줌. 이전에는 각 소스에서 텍스트로 뽑은 "X% 증가" 값들만 합산하고 이 기본값을 어디서도
+// 더하지 않아서, 치명타 배율이 실제보다 계속 낮게 계산되고 있었음(예: 잼구릿 기준 치피 88.80%로 계산되던
+// 게 실제로는 188.80%여야 함 — 배율 약 1.85→2.85 수준으로 크게 달라짐).
+const CRIT_DAMAGE_BASE_PERCENT = 100;
+
 // 딜러+서포터 데이터를 받아 치명타 적중률/피해/평균 피해 배율까지 전부 계산 (항목별 breakdown 포함)
 function calculateCritMultiplier(dealerData, supportData, options) {
   const equipment = dealerData.equipment;
@@ -1644,6 +1651,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
   const sharpWeaponStoneDmg = getSharpWeaponStoneBonus(dealerData.engravings);
 
   const critDamageBreakdown = {
+    기본값: CRIT_DAMAGE_BASE_PERCENT,
     아크패시브: arkPassiveCritDmg,
     예리한둔기_각인_최종값: sharpWeaponDmg,
     반지: ringCritDmg,
