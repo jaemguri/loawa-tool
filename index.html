@@ -1264,17 +1264,18 @@
       return sels.map((s) => `${s.name} Lv.${s.level}`).join(', ');
     }
 
-    // "진화 트리 최적화 추천(1~4티어)" — 9/7 어빌리티 스톤 최적화와 같은 성격의 읽기 전용 결과(드롭다운 없이
+    // "진화 트리 최적화 추천(1~5티어)" — 9/7 어빌리티 스톤 최적화와 같은 성격의 읽기 전용 결과(드롭다운 없이
     // 바로 계산). 사용자가 정리한 티어별 판단 규칙(calculateEvolutionTreeOptimization 참고)을 그대로 따름.
-    // 5티어(뭉툭한가시/음속돌파/마나용광로/입식타격가)는 실제 공식에 필요한 데이터가 아직 없어 대상이
-    // 아니고, 항상 실제 투자값을 그대로 유지한 채 배경으로만 반영된다.
+    // 5티어는 뭉툭한 가시/입식 타격가(항상 비교)와 마나 용광로(찍혀있을 때만 비교)만 대상 — 음속 돌파는
+    // 실제 공식에 이동속도·공격속도 데이터가 아직 없어 제외. 5티어 실투자에 Lv.1이 섞여있으면(현재
+    // 지원하는 실측 텍스트가 Lv.2뿐이라) 5티어는 건드리지 않고 실제값을 그대로 유지한다(tier.unsupported).
     function buildEvolutionTreeOptimizationHtml(ctx) {
       const result = calculateEvolutionTreeOptimization(ctx.dealerData, ctx.supportData, ctx);
       const tierRow = (label, tier) => `
         <tr>
           <th>${label}</th>
           <td>${formatEvolutionSelections(tier.current)}</td>
-          <td>${tier.changed ? '→ ' + formatEvolutionSelections(tier.recommended) : '(변경 없음)'}</td>
+          <td>${tier.unsupported ? '(Lv.1 포함 — 미지원)' : (tier.changed ? '→ ' + formatEvolutionSelections(tier.recommended) : '(변경 없음)')}</td>
         </tr>
       `;
       return `
@@ -1284,9 +1285,10 @@
           ${tierRow('2티어', result.tier2)}
           ${tierRow('3티어', result.tier3)}
           ${tierRow('4티어', result.tier4)}
+          ${tierRow('5티어', result.tier5)}
           <tr><th>총 변화율</th><td colspan="2">${pct(result.totalChangePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:#888;">5티어(뭉툭한가시/음속돌파/마나용광로/입식타격가)는 아직 계산 대상이 아니라 실제 투자값을 그대로 유지한 채 반영됩니다.</p>
+        <p style="font-size:11px;color:#888;">5티어는 뭉툭한 가시/입식 타격가(항상 비교)·마나 용광로(찍혀있을 때만 비교)만 대상입니다. 음속 돌파는 이동속도·공격속도 데이터가 아직 없어 제외됩니다.</p>
       `;
     }
 

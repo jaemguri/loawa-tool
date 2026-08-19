@@ -2538,6 +2538,62 @@ function totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx,
   return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
 }
 
+// 5티어 뭉툭한가시/마나 용광로/입식 타격가의 Lv.2(예산 2를 전부 쓰는 유일한 실전 선택) 실측 효과
+// 텍스트 — 각각 권구릿/햄현이/잼구릿 캐릭터로 실측 확인. getBluntThornConversionBonusPercent/
+// getManaFurnaceEvolutionDamagePercent/getStandingStrikerEvolutionDamagePercent가 이 텍스트를 그대로
+// 정규식으로 파싱하도록 이미 구현돼 있어서(Element_002 텍스트 매칭) 새 계산식 없이 그대로 재사용 가능.
+// 음속 돌파는 실제 공식에 이동속도/공격속도 시너지·직업별 표가 필요해 아직 제외(다음 단계). Lv.1
+// 텍스트는 미확보 — 예산이 2라 Lv.2 단독 투자가 어차피 가장 흔한 실전 선택이라 실용상 문제 없다.
+const EVOLUTION_TIER5_LEVEL2_TEXT = {
+  '뭉툭한 가시': '진화형 피해가 15.0% 증가합니다. 치명타가 발생할 확률이 최대 80.0% 로 제한됩니다. 공격 시, 초과한 모든 치명타가 발생할 확률의 150.0% 가 진화형 피해로 전환됩니다. 이 노드에 의한 진화형 피해는 최대 75.0% 까지 적용됩니다.',
+  '마나 용광로': '낙인력이 20.0% 증가합니다. 마나를 소모하는 스킬 사용 시, 최대 마나의 2.0% 가 추가로 소모됩니다. 해당 스킬로 피해를 줄 경우, 스킬의 증감 전 기본 마나 소모량에 비례하여 진화형 피해가 증가합니다. (기본 마나 소모량 10 당, 진화형 피해 0.5% 증가, 최대 24.0% )',
+  '입식 타격가': "진화형 피해가 12.0% , 낙인력이 8.0% 증가합니다. 전투 시작 후, '입식 타격 II' 효과를 최대로 얻습니다. 피격 이상 시 중첩을 3회 잃습니다. 이후 2초가 지날 때마다 효과를 1중첩 회복합니다. 입식 타격 II : 진화형 피해 +1.5% / 낙인력 +2.0% , 최대 6중첩",
+};
+
+function buildSyntheticTier5Effect(name) {
+  const text = EVOLUTION_TIER5_LEVEL2_TEXT[name];
+  if (!text) return null;
+  return {
+    Name: '진화',
+    Description: `진화 5티어 ${name} Lv.2`,
+    ToolTip: JSON.stringify({ Element_000: { value: name }, Element_002: { value: text } }),
+  };
+}
+
+// buildDealerDataWithEvolutionTier1to4Selections와 달리 5티어까지 전부 선택대로 갈아끼우는 버전 — 1~4티어
+// 최적화가 끝난 뒤, 그 확정값을 유지한 채 5티어 후보만 바꿔가며 비교하는 마지막 단계에서 쓴다.
+function buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, tier5Sels, realCritLevel) {
+  const validT14 = (tier1to4Sels || []).filter((s) => s.level > 0);
+  const critSelection = validT14.find((s) => s.name === '치명');
+  const textSelections = validT14.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
+  const tier5Synthetic = (tier5Sels || []).map((s) => buildSyntheticTier5Effect(s.name)).filter(Boolean);
+
+  const nonEvolutionEffects = ((dealerData.arkpassive && dealerData.arkpassive.Effects) || []).filter((e) => e.Name !== '진화');
+  const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
+  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects, ...tier5Synthetic] };
+
+  let modifiedDealerData = { ...dealerData, arkpassive: modifiedArkpassive };
+  if (critSelection) {
+    const delta = (critSelection.level - (realCritLevel || 0)) * 50;
+    modifiedDealerData = buildDealerDataWithCritStatDelta(modifiedDealerData, delta);
+  }
+  return modifiedDealerData;
+}
+
+function totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, tier1to4Sels, tier5Sels, realCritLevel) {
+  const modifiedDealerData = buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, tier5Sels, realCritLevel);
+  const newStats = calculateCharacterStats(modifiedDealerData);
+  const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames });
+  const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
+  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+  const newFinalDamage = calculateFinalDamage(
+    newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
+    ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+  return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+}
+
 // 진화 트리 1~4티어 최적화 — 사용자가 정리한 티어별 판단 규칙을 그대로 코드화:
 //  1티어: 현재 투자가 "30+10" 스플릿이면 그대로 둠. 아니면 '치명'이 포함돼 있을 때만 치명 포인트를
 //    현재값 ±4 범위에서 탐색(상대 노드는 40-치명값으로 자동 보정). 치명이 아예 없으면 손대지 않음.
@@ -2546,7 +2602,10 @@ function totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx,
 //  3티어: '무한한 마력' 또는 '일격'이 찍혀있으면 그대로 둠. 아니면 '혼신의 강타' vs '파괴 전차' 중 예산
 //    (2) 안에서 조합 비교.
 //  4티어: 조건 없이 항상 회심/달인/분쇄 중 2택(3가지 조합 전수 비교) — 선각자/진군/기원은 후보 제외.
-// 순차 최적화(1→2→3→4 순서로 확정하며 이전 결과를 다음 평가에 반영) — 사용자가 티어별로 독립적인
+//  5티어: '뭉툭한 가시'/'입식 타격가'는 항상 비교, '마나 용광로'는 현재 찍혀있을 때만 비교 후보에
+//    포함(음속 돌파는 아직 데이터 부족으로 제외) — Lv.2(풀 투자) 후보끼리만 비교, 현재 실투자가 Lv.1을
+//    포함하면(지원 안 하는 케이스) 5티어는 건드리지 않고 실제값을 그대로 유지한다.
+// 순차 최적화(1→2→3→4→5 순서로 확정하며 이전 결과를 다음 평가에 반영) — 사용자가 티어별로 독립적인
 // 규칙을 제시했으므로 티어 간 상호작용은 고려하지 않는다.
 function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
   const current = getEvolutionTierCurrentSelections(dealerData.arkpassive);
@@ -2646,11 +2705,37 @@ function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
     tierResults[4] = { recommended: best.sels, current: current[4], changed: !sameSelections(best.sels, current[4]) };
   }
 
+  const finalTier1to4 = [...tiers[1], ...tiers[2], ...tiers[3], ...tiers[4]];
+
+  // --- 5티어 (뭉툭한 가시/입식 타격가는 항상, 마나 용광로는 찍혀있을 때만 비교 — 음속 돌파는 데이터
+  // 부족으로 이번엔 대상 아님) ---
+  const canEvaluateTier5 = current[5].every((s) => s.level === 2);
+  let optimizedTotal;
+  if (canEvaluateTier5) {
+    const tier5CandidateNames = ['뭉툭한 가시', '입식 타격가'];
+    if (current[5].some((s) => s.name === '마나 용광로')) tier5CandidateNames.push('마나 용광로');
+
+    function evalWithTier5(tier5Sels) {
+      return totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, finalTier1to4, tier5Sels, realCritLevel);
+    }
+    let bestTier5 = { sels: current[5], total: evalWithTier5(current[5]) };
+    tier5CandidateNames.forEach((name) => {
+      const sels = [{ name, level: 2 }];
+      const total = evalWithTier5(sels);
+      if (total > bestTier5.total) bestTier5 = { sels, total };
+    });
+    tierResults[5] = { recommended: bestTier5.sels, current: current[5], changed: !sameSelections(bestTier5.sels, current[5]) };
+    optimizedTotal = bestTier5.total;
+  } else {
+    // Lv.1이 섞여있는 케이스는 아직 지원하는 실측 텍스트가 없어 5티어는 손대지 않고 실제값을 그대로 유지
+    tierResults[5] = { recommended: current[5], current: current[5], changed: false, unsupported: true };
+    optimizedTotal = evalTotal([...finalTier1to4]);
+  }
+
   const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
-  const optimizedTotal = evalTotal([...tiers[1], ...tiers[2], ...tiers[3], ...tiers[4]]);
   const totalChangePercent = ((optimizedTotal / realTotal) - 1) * 100;
 
-  return { tier1: tierResults[1], tier2: tierResults[2], tier3: tierResults[3], tier4: tierResults[4], totalChangePercent };
+  return { tier1: tierResults[1], tier2: tierResults[2], tier3: tierResults[3], tier4: tierResults[4], tier5: tierResults[5], totalChangePercent };
 }
 
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
