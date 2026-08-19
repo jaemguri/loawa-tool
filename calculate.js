@@ -2453,6 +2453,206 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
   return { rows, totalChangePercent, realChangePercent, vsRealPercent };
 }
 
+// === 진화 트리 1~4티어 최적화 시뮬레이터 (9/7 어빌리티 스톤 최적화와 같은 성격 — 사용자가 정리한 티어별
+// 판단 규칙을 그대로 코드화한 규칙 기반 추천, 완전탐색 아님) ===
+// 5티어(뭉툭한 가시/음속 돌파/마나 용광로/입식 타격가)는 실제 공식에 필요한 데이터(정확한 레벨별 툴팁
+// 텍스트, 이동속도·공격속도 시너지/직업별 표)가 아직 없어 이번 범위에서 제외 — 다음 단계.
+
+// 실제 진화 트리의 현재 투자를 티어별(1~5)로 그룹핑 — getArkPassiveNodeIcons가 이미 진화 Effects를
+// {name, tier, level, ...}로 파싱해주므로 그대로 재사용.
+function getEvolutionTierCurrentSelections(arkpassiveData) {
+  const nodes = getArkPassiveNodeIcons(arkpassiveData, '진화');
+  const byTier = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  nodes.forEach((n) => {
+    if (n.tier && byTier[n.tier]) byTier[n.tier].push({ name: n.name, level: n.level });
+  });
+  return byTier;
+}
+
+// 후보 노드 이름 목록 + 티어 예산 안에서 만들 수 있는 모든 레벨 조합을 나열(각 노드 자체의
+// EVOLUTION_NODE_MAX_LEVEL도 동시에 존중). 후보가 2~3개, 레벨이 1~3 수준이라 완전탐색으로 충분하다.
+function enumerateTierCandidates(candidateNames, tierBudget) {
+  const results = [];
+  function recurse(idx, remaining, current) {
+    if (idx === candidateNames.length) {
+      if (current.some((lv) => lv > 0)) results.push([...current]);
+      return;
+    }
+    const maxForNode = Math.min(EVOLUTION_NODE_MAX_LEVEL[candidateNames[idx]] || 0, remaining);
+    for (let lv = 0; lv <= maxForNode; lv++) {
+      current.push(lv);
+      recurse(idx + 1, remaining - lv, current);
+      current.pop();
+    }
+  }
+  recurse(0, tierBudget, []);
+  return results.map((levels) => candidateNames.map((name, i) => ({ name, level: levels[i] })).filter((s) => s.level > 0));
+}
+
+// buildDealerDataWithEvolutionSelections(기존 커스텀 시뮬레이터용)는 진화 Effects 전체를 통째로 갈아
+// 끼워서, 이번 최적화가 다루지 않는 5티어(뭉툭한가시/음속돌파/마나용광로/입식타격가)의 실제 투자까지
+// 평가 도중 사라져 버린다 — 그러면 "1~4티어만 바꿨을 때의 순수 변화"가 아니라 "5티어 실제 보너스까지
+// 잃는 변화"가 섞여서 비교가 왜곡된다. 그래서 1~4티어에 해당하는 실제 Effects만 제거하고 5티어(또는
+// 티어를 못 찾는 항목)는 그대로 보존하는 전용 버전을 따로 둔다.
+// realCritLevel: 치명 선택이 있을 때, 프로필 스탯에 더할 값은 "선택 레벨×50"이 아니라 "선택 레벨과 실제
+// 현재 레벨의 차이×50"이어야 한다(안 그러면 실제 치명 스탯 위에 또 더해져서 이중 반영됨 — 기존
+// buildDealerDataWithEvolutionSelections는 "0에서 시작하는" 커스텀 시뮬레이터라 이 문제가 없었지만, 이
+// 최적화는 실제 현재값에서 ±4만 미세 조정하는 거라 델타 계산이 꼭 필요하다).
+function buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCritLevel) {
+  const validSelections = (sels || []).filter((s) => s.level > 0);
+  const critSelection = validSelections.find((s) => s.name === '치명');
+  const textSelections = validSelections.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
+
+  const realEffects = (dealerData.arkpassive && dealerData.arkpassive.Effects) || [];
+  const evolutionNodeInfo = getArkPassiveNodeIcons(dealerData.arkpassive, '진화'); // realEffects 중 '진화' 항목과 순서가 1:1로 대응
+  let evoIdx = 0;
+  const preservedEffects = realEffects.filter((e) => {
+    if (e.Name !== '진화') return true;
+    const info = evolutionNodeInfo[evoIdx];
+    evoIdx += 1;
+    return !info || info.tier === null || info.tier > 4;
+  });
+
+  const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
+  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...preservedEffects, ...syntheticEffects] };
+
+  let modifiedDealerData = { ...dealerData, arkpassive: modifiedArkpassive };
+  if (critSelection) {
+    const delta = (critSelection.level - (realCritLevel || 0)) * 50;
+    modifiedDealerData = buildDealerDataWithCritStatDelta(modifiedDealerData, delta);
+  }
+  return modifiedDealerData;
+}
+
+function totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel) {
+  const modifiedDealerData = buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCritLevel);
+  const newStats = calculateCharacterStats(modifiedDealerData);
+  const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames });
+  const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
+  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+  const newFinalDamage = calculateFinalDamage(
+    newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
+    ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+  return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+}
+
+// 진화 트리 1~4티어 최적화 — 사용자가 정리한 티어별 판단 규칙을 그대로 코드화:
+//  1티어: 현재 투자가 "30+10" 스플릿이면 그대로 둠. 아니면 '치명'이 포함돼 있을 때만 치명 포인트를
+//    현재값 ±4 범위에서 탐색(상대 노드는 40-치명값으로 자동 보정). 치명이 아예 없으면 손대지 않음.
+//  2티어: '끝없는 마나' 또는 '최적화 훈련'이 찍혀있으면 그대로 둠. 아니면 '한계 돌파'(금단의 주문은 같은
+//    수치로 취급해 한계 돌파로 대체 표기) vs '예리한 감각' 중 예산(3) 안에서 조합 비교.
+//  3티어: '무한한 마력' 또는 '일격'이 찍혀있으면 그대로 둠. 아니면 '혼신의 강타' vs '파괴 전차' 중 예산
+//    (2) 안에서 조합 비교.
+//  4티어: 조건 없이 항상 회심/달인/분쇄 중 2택(3가지 조합 전수 비교) — 선각자/진군/기원은 후보 제외.
+// 순차 최적화(1→2→3→4 순서로 확정하며 이전 결과를 다음 평가에 반영) — 사용자가 티어별로 독립적인
+// 규칙을 제시했으므로 티어 간 상호작용은 고려하지 않는다.
+function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
+  const current = getEvolutionTierCurrentSelections(dealerData.arkpassive);
+  const critEntry = current[1].find((s) => s.name === '치명');
+  const realCritLevel = critEntry ? critEntry.level : 0;
+
+  // 2티어 현재 투자에서 '금단의 주문'은 사용자 지정대로 '한계 돌파'와 같은 수치로 취급(레벨은 유지, 이름만 대체)
+  const tier2Current = current[2].map((s) => (s.name === '금단의 주문' ? { name: '한계 돌파', level: s.level } : s));
+
+  const tiers = { 1: current[1], 2: tier2Current, 3: current[3], 4: current[4] };
+
+  function evalTotal(sels) {
+    return totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel);
+  }
+  function fullSelectionsExcept(excludeTier) {
+    const result = [];
+    [1, 2, 3, 4].forEach((t) => { if (t !== excludeTier) result.push(...tiers[t]); });
+    return result;
+  }
+  function sameSelections(a, b) {
+    const norm = (arr) => [...arr].map((s) => `${s.name}:${s.level}`).sort().join(',');
+    return norm(a) === norm(b);
+  }
+
+  const tierResults = {};
+
+  // --- 1티어 ---
+  {
+    const isThirtyTen = tiers[1].length === 2
+      && [...tiers[1].map((s) => s.level)].sort((a, b) => a - b).join(',') === '10,30';
+    if (isThirtyTen || !critEntry) {
+      tierResults[1] = { recommended: tiers[1], current: current[1], changed: false };
+    } else {
+      const otherEntry = tiers[1].find((s) => s.name !== '치명');
+      const otherName = otherEntry ? otherEntry.name : null;
+      let best = { sels: tiers[1], total: evalTotal([...tiers[1], ...fullSelectionsExcept(1)]) };
+      for (let delta = -4; delta <= 4; delta++) {
+        const newCritLevel = realCritLevel + delta;
+        if (newCritLevel < 0 || newCritLevel > EVOLUTION_NODE_MAX_LEVEL['치명']) continue;
+        const remaining = EVOLUTION_TIER_MAX_TOTAL[0] - newCritLevel;
+        if (remaining < 0) continue;
+        const candidateSels = otherName
+          ? [{ name: '치명', level: newCritLevel }, { name: otherName, level: remaining }]
+          : [{ name: '치명', level: newCritLevel }];
+        const total = evalTotal([...candidateSels, ...fullSelectionsExcept(1)]);
+        if (total > best.total) best = { sels: candidateSels, total };
+      }
+      tiers[1] = best.sels;
+      tierResults[1] = { recommended: best.sels, current: current[1], changed: !sameSelections(best.sels, current[1]) };
+    }
+  }
+
+  // --- 2티어 ---
+  {
+    const skip = tiers[2].some((s) => s.name === '끝없는 마나' || s.name === '최적화 훈련');
+    if (skip) {
+      tierResults[2] = { recommended: tiers[2], current: current[2], changed: false };
+    } else {
+      const candidates = enumerateTierCandidates(['한계 돌파', '예리한 감각'], EVOLUTION_TIER_MAX_TOTAL[1]);
+      let best = { sels: tiers[2], total: evalTotal([...tiers[2], ...fullSelectionsExcept(2)]) };
+      candidates.forEach((sels) => {
+        const total = evalTotal([...sels, ...fullSelectionsExcept(2)]);
+        if (total > best.total) best = { sels, total };
+      });
+      tiers[2] = best.sels;
+      tierResults[2] = { recommended: best.sels, current: current[2], changed: !sameSelections(best.sels, tier2Current) };
+    }
+  }
+
+  // --- 3티어 ---
+  {
+    const skip = tiers[3].some((s) => s.name === '무한한 마력' || s.name === '일격');
+    if (skip) {
+      tierResults[3] = { recommended: tiers[3], current: current[3], changed: false };
+    } else {
+      const candidates = enumerateTierCandidates(['혼신의 강타', '파괴 전차'], EVOLUTION_TIER_MAX_TOTAL[2]);
+      let best = { sels: tiers[3], total: evalTotal([...tiers[3], ...fullSelectionsExcept(3)]) };
+      candidates.forEach((sels) => {
+        const total = evalTotal([...sels, ...fullSelectionsExcept(3)]);
+        if (total > best.total) best = { sels, total };
+      });
+      tiers[3] = best.sels;
+      tierResults[3] = { recommended: best.sels, current: current[3], changed: !sameSelections(best.sels, current[3]) };
+    }
+  }
+
+  // --- 4티어 (항상 회심/달인/분쇄 중 2택) ---
+  {
+    const pairs = [['회심', '달인'], ['회심', '분쇄'], ['달인', '분쇄']];
+    let best = null;
+    pairs.forEach(([a, b]) => {
+      const sels = [{ name: a, level: 1 }, { name: b, level: 1 }];
+      const total = evalTotal([...sels, ...fullSelectionsExcept(4)]);
+      if (!best || total > best.total) best = { sels, total };
+    });
+    tiers[4] = best.sels;
+    tierResults[4] = { recommended: best.sels, current: current[4], changed: !sameSelections(best.sels, current[4]) };
+  }
+
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const optimizedTotal = evalTotal([...tiers[1], ...tiers[2], ...tiers[3], ...tiers[4]]);
+  const totalChangePercent = ((optimizedTotal / realTotal) - 1) * 100;
+
+  return { tier1: tierResults[1], tier2: tierResults[2], tier3: tierResults[3], tier4: tierResults[4], totalChangePercent };
+}
+
 // 디버깅용: 아크패시브(진화) 각 노드별 "진화형 피해" 값을 개별로 반환
 function getArkPassiveEvolutionDamageBreakdown(arkpassiveData) {
   const result = {};

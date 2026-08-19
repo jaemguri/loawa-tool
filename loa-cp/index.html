@@ -1258,6 +1258,38 @@
       recomputeEvolutionSimulator();
     }
 
+    // 진화 노드 선택 배열([{name,level}])을 "이름 Lv.N, 이름 Lv.N" 형태 문자열로
+    function formatEvolutionSelections(sels) {
+      if (!sels || sels.length === 0) return '(미투자)';
+      return sels.map((s) => `${s.name} Lv.${s.level}`).join(', ');
+    }
+
+    // "진화 트리 최적화 추천(1~4티어)" — 9/7 어빌리티 스톤 최적화와 같은 성격의 읽기 전용 결과(드롭다운 없이
+    // 바로 계산). 사용자가 정리한 티어별 판단 규칙(calculateEvolutionTreeOptimization 참고)을 그대로 따름.
+    // 5티어(뭉툭한가시/음속돌파/마나용광로/입식타격가)는 실제 공식에 필요한 데이터가 아직 없어 대상이
+    // 아니고, 항상 실제 투자값을 그대로 유지한 채 배경으로만 반영된다.
+    function buildEvolutionTreeOptimizationHtml(ctx) {
+      const result = calculateEvolutionTreeOptimization(ctx.dealerData, ctx.supportData, ctx);
+      const tierRow = (label, tier) => `
+        <tr>
+          <th>${label}</th>
+          <td>${formatEvolutionSelections(tier.current)}</td>
+          <td>${tier.changed ? '→ ' + formatEvolutionSelections(tier.recommended) : '(변경 없음)'}</td>
+        </tr>
+      `;
+      return `
+        <table class="statTable">
+          <tr><th>티어</th><th>현재</th><th>추천</th></tr>
+          ${tierRow('1티어', result.tier1)}
+          ${tierRow('2티어', result.tier2)}
+          ${tierRow('3티어', result.tier3)}
+          ${tierRow('4티어', result.tier4)}
+          <tr><th>총 변화율</th><td colspan="2">${pct(result.totalChangePercent)}%</td></tr>
+        </table>
+        <p style="font-size:11px;color:#888;">5티어(뭉툭한가시/음속돌파/마나용광로/입식타격가)는 아직 계산 대상이 아니라 실제 투자값을 그대로 유지한 채 반영됩니다.</p>
+      `;
+    }
+
     function renderDealerEvolutionTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="evolution"]');
       const fullTree = getArkPassiveEvolutionFullTree(ctx.dealerData.arkpassive);
@@ -1267,6 +1299,8 @@
           <div class="fieldGroup">
             <h4>아크패시브 진화 - 전체 트리</h4>
             ${buildEvolutionTreeHtml(fullTree)}
+            <h4>진화 트리 최적화 추천 (1~4티어)</h4>
+            ${buildEvolutionTreeOptimizationHtml(ctx)}
           </div>
           <div>
             <h4>커스텀 진화 시뮬레이터</h4>
