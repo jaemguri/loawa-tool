@@ -2524,18 +2524,53 @@ function buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCr
   return modifiedDealerData;
 }
 
-function totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel) {
+// 스킬 지분 가중 "치명타 배율 × 적에게 주는 피해 배율" 결합값 — calculateCombatAnalysisWeightedCrit은
+// 치명타 배율만 스킬별로 가중하는데, 뭉툭한 가시의 진화형 피해 전환은 그 스킬 순간의 치명타 적중률
+// (트라이포드 보너스 포함)에 따라 달라지므로 적에게 주는 피해 배율도 스킬별로 다시 계산해서 같이
+// 가중평균해야 한다(안 그러면 "치명타 트라이포드가 있는 스킬일수록 뭉툭한 가시가 유리해진다"는 상호작용을
+// 놓친다 — 한가한신수 캐릭터로 실측 검증: 기본 비교로는 뭉툭한가시가 근소하게 불리했지만, 지분 가중
+// 시 +6.87%로 역전됨). skillShares가 비어있으면 기본(가중치 없음) 결합값을 그대로 반환한다.
+function calculateSkillWeightedCritEnemyMultiplier(dealerData, supportData, ctx, skillShares) {
+  const baseCrit = calculateCritMultiplier(dealerData, supportData, { partyClassNames: ctx.partyClassNames });
+  const baseEnemy = calculateEnemyDamageMultiplier(dealerData, baseCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+  const baseCombined = baseCrit.avgDamageMultiplier * baseEnemy.multiplier;
+  if (!skillShares || skillShares.length === 0) return baseCombined;
+
+  let majorShareTotal = 0;
+  let weighted = 0;
+  skillShares.forEach((row) => {
+    const share = row.sharePercent || 0;
+    if (share < COMBAT_ANALYSIS_MAJOR_SHARE_THRESHOLD) return;
+    const skill = findCombatSkillByName(dealerData.combatSkills, row.name);
+    const hasTripods = skill && (skill.Tripods || []).some((t) => t.IsSelected);
+    let combined = baseCombined;
+    if (skill && hasTripods) {
+      const bonus = getCombatSkillSpecificCritBonus(skill);
+      const skillCrit = calculateCritMultiplier(dealerData, supportData, {
+        partyClassNames: ctx.partyClassNames, extraCritRatePercent: bonus.critRatePercent, extraCritDamagePercent: bonus.critDamagePercent,
+      });
+      const skillEnemy = calculateEnemyDamageMultiplier(dealerData, skillCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
+      combined = skillCrit.avgDamageMultiplier * skillEnemy.multiplier;
+    }
+    majorShareTotal += share;
+    weighted += (share / 100) * combined;
+  });
+  const remainder = Math.max(0, 100 - majorShareTotal);
+  weighted += (remainder / 100) * baseCombined;
+  return weighted;
+}
+
+function totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel, skillShares) {
   const modifiedDealerData = buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCritLevel);
   const newStats = calculateCharacterStats(modifiedDealerData);
-  const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames });
+  const critEnemyCombined = calculateSkillWeightedCritEnemyMultiplier(modifiedDealerData, supportData, ctx, skillShares);
   const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
-  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
   const newFinalDamage = calculateFinalDamage(
     newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
     newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
     ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
   );
-  return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+  return newFinalDamage * critEnemyCombined * newExtra.multiplier;
 }
 
 // 5티어 뭉툭한가시/마나 용광로/입식 타격가의 Lv.2(예산 2를 전부 쓰는 유일한 실전 선택) 실측 효과
@@ -2580,18 +2615,17 @@ function buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, ti
   return modifiedDealerData;
 }
 
-function totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, tier1to4Sels, tier5Sels, realCritLevel) {
+function totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, tier1to4Sels, tier5Sels, realCritLevel, skillShares) {
   const modifiedDealerData = buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, tier5Sels, realCritLevel);
   const newStats = calculateCharacterStats(modifiedDealerData);
-  const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames });
+  const critEnemyCombined = calculateSkillWeightedCritEnemyMultiplier(modifiedDealerData, supportData, ctx, skillShares);
   const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
-  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames });
   const newFinalDamage = calculateFinalDamage(
     newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
     newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
     ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
   );
-  return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+  return newFinalDamage * critEnemyCombined * newExtra.multiplier;
 }
 
 // 진화 트리 1~4티어 최적화 — 사용자가 정리한 티어별 판단 규칙을 그대로 코드화:
@@ -2607,7 +2641,13 @@ function totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, tie
 //    포함하면(지원 안 하는 케이스) 5티어는 건드리지 않고 실제값을 그대로 유지한다.
 // 순차 최적화(1→2→3→4→5 순서로 확정하며 이전 결과를 다음 평가에 반영) — 사용자가 티어별로 독립적인
 // 규칙을 제시했으므로 티어 간 상호작용은 고려하지 않는다.
-function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
+// skillShares(선택): 전투분석 사진에서 뽑은 [{name, sharePercent}] — 넘기면 모든 후보 비교에
+// calculateSkillWeightedCritEnemyMultiplier로 스킬 지분 가중 치명타×적주피 결합값을 쓴다(특히 뭉툭한
+// 가시처럼 크리티컬 적중률에 따라 효율이 갈리는 5티어 후보 비교에서 실제 스킬 트라이포드 보너스를
+// 반영하기 위함 — 한가한신수 캐릭터로 실측 검증: 이 가중치 없이는 입식 타격가가 근소 우위였지만, 실제
+// 스킬 사용 지분으로 가중하면 뭉툭한 가시가 +6.87% 우위로 뒤집힘). 안 넘기면 기존과 동일하게 기본
+// (가중치 없음) 배율을 쓴다.
+function calculateEvolutionTreeOptimization(dealerData, supportData, ctx, skillShares) {
   const current = getEvolutionTierCurrentSelections(dealerData.arkpassive);
   const critEntry = current[1].find((s) => s.name === '치명');
   const realCritLevel = critEntry ? critEntry.level : 0;
@@ -2618,7 +2658,7 @@ function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
   const tiers = { 1: current[1], 2: tier2Current, 3: current[3], 4: current[4] };
 
   function evalTotal(sels) {
-    return totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel);
+    return totalDamageForEvolutionTier1to4Selections(dealerData, supportData, ctx, sels, realCritLevel, skillShares);
   }
   function fullSelectionsExcept(excludeTier) {
     const result = [];
@@ -2716,7 +2756,7 @@ function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
     if (current[5].some((s) => s.name === '마나 용광로')) tier5CandidateNames.push('마나 용광로');
 
     function evalWithTier5(tier5Sels) {
-      return totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, finalTier1to4, tier5Sels, realCritLevel);
+      return totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, finalTier1to4, tier5Sels, realCritLevel, skillShares);
     }
     let bestTier5 = { sels: current[5], total: evalWithTier5(current[5]) };
     tier5CandidateNames.forEach((name) => {
@@ -2732,7 +2772,12 @@ function calculateEvolutionTreeOptimization(dealerData, supportData, ctx) {
     optimizedTotal = evalTotal([...finalTier1to4]);
   }
 
-  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  // 비교 기준(realTotal)도 최적화 결과와 동일한 방식(스킬 지분 가중 포함)으로 다시 계산해야 공정하게
+  // 비교된다 — ctx.critResult.avgDamageMultiplier는 전투분석 탭에서 이미 가중치가 반영돼 있을 수도
+  // 있고 아닐 수도 있어 일관성이 없다(적주피 배율은 아예 가중 안 됨). 현재 실제 선택 그대로(1~4티어는
+  // 원본, 금단의 주문 리매핑 없이) 재구성해서 skillShares를 동일하게 적용한다.
+  const currentFull1to4 = [1, 2, 3, 4].flatMap((t) => current[t]);
+  const realTotal = totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, currentFull1to4, current[5], realCritLevel, skillShares);
   const totalChangePercent = ((optimizedTotal / realTotal) - 1) * 100;
 
   return { tier1: tierResults[1], tier2: tierResults[2], tier3: tierResults[3], tier4: tierResults[4], tier5: tierResults[5], totalChangePercent };
