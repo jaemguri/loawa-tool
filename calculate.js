@@ -1041,10 +1041,15 @@ function getArkPassivePersistentAttackPercent(arkpassiveData) {
   return extractPercentMaxSequenceExcluding(evo, '공격력', '무기 공격력') + extractPercentMaxSequenceExcluding(real, '공격력', '무기 공격력');
 }
 
-// 아크패시브(진화+깨달음)의 "적에게 주는 피해" % 합산. 조건부/시간제한 노드도 일단 포함.
+// 아크패시브(진화+깨달음)의 "적에게 주는 피해" % 합산. 조건부/시간제한 노드도 일단 포함하지만, "치명타
+// (로) 적중 시 적에게 주는 피해가 X% 증가" 문구는 제외해야 한다 — 이건 getArkPassiveCritOnHitPercent가
+// 치명타 적중 시에만 곱연산으로 이미 정확히 반영하고 있어서, 여기서 또 세면 상시 적용되는 것처럼 이중
+// 반영된다(실측 발견: 잼구릿 진화 트리 최적화에서 '회심' 채용 시 상시버프_적주피가 22%→34%로 부풀려져서
+// 회심의 실제 가치가 과대평가되고 있었음 — 4티어 회심/달인 비교에 직접 영향).
 function getArkPassivePersistentEnemyDamagePercent(arkpassiveData) {
-  const evo = getArkPassivePersistentEffectsText(arkpassiveData, '진화');
-  const real = getArkPassivePersistentEffectsText(arkpassiveData, '깨달음');
+  const stripCritOnHit = (text) => text.replace(/치명타(?:로|론)?\s*(?:적중\s*)?시\s*적에게\s*주는\s*피해가\s*[\d.]+\s*%\s*증가(?:하며|하고)?/g, '');
+  const evo = stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '진화'));
+  const real = stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '깨달음'));
   return extractEnemyDamageAllPercent(evo) + extractEnemyDamageAllPercent(real);
 }
 
