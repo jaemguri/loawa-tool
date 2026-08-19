@@ -1269,8 +1269,11 @@
     // 5티어는 뭉툭한 가시/입식 타격가(항상 비교)와 마나 용광로(찍혀있을 때만 비교)만 대상 — 음속 돌파는
     // 실제 공식에 이동속도·공격속도 데이터가 아직 없어 제외. 5티어 실투자에 Lv.1이 섞여있으면(현재
     // 지원하는 실측 텍스트가 Lv.2뿐이라) 5티어는 건드리지 않고 실제값을 그대로 유지한다(tier.unsupported).
-    function buildEvolutionTreeOptimizationHtml(ctx) {
-      const result = calculateEvolutionTreeOptimization(ctx.dealerData, ctx.supportData, ctx);
+    // skillShares(선택): 전투분석 지분 — 넘기면 뭉툭한 가시처럼 크리티컬 적중률에 좌우되는 후보 비교에
+    // 스킬 트라이포드의 치명타 적중률 보너스가 실제로 반영된다(한가한신수 캐릭터 실측: 지분 가중치 없이는
+    // 입식 타격가가 근소 우위였는데, 지분 가중하면 뭉툭한 가시가 +6.87% 우위로 뒤집힘).
+    function buildEvolutionTreeOptimizationHtml(ctx, skillShares) {
+      const result = calculateEvolutionTreeOptimization(ctx.dealerData, ctx.supportData, ctx, skillShares);
       const tierRow = (label, tier) => `
         <tr>
           <th>${label}</th>
@@ -1288,8 +1291,16 @@
           ${tierRow('5티어', result.tier5)}
           <tr><th>총 변화율</th><td colspan="2">${pct(result.totalChangePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:#888;">5티어는 뭉툭한 가시/입식 타격가(항상 비교)·마나 용광로(찍혀있을 때만 비교)만 대상입니다. 음속 돌파는 이동속도·공격속도 데이터가 아직 없어 제외됩니다.</p>
+        <p style="font-size:11px;color:#888;">5티어는 뭉툭한 가시/입식 타격가(항상 비교)·마나 용광로(찍혀있을 때만 비교)만 대상입니다. 음속 돌파는 이동속도·공격속도 데이터가 아직 없어 제외됩니다.${skillShares && skillShares.length ? ' 전투분석 지분이 반영된 결과입니다.' : ' 전투분석 사진을 등록하면 스킬 지분이 반영됩니다(뭉툭한 가시 판단에 특히 중요).'}</p>
       `;
+    }
+
+    // 전투분석 탭에서 재계산할 때마다 이 진화 최적화 결과도 같이 갱신하기 위한 진입점(현재 정보 탭의
+    // recomputeDealerLiveNumbers와 동일한 "실시간 갱신" 패턴).
+    function renderEvolutionOptimizationSection(ctx, skillShares) {
+      const el = document.getElementById('evolutionOptimizationSection');
+      if (!el) return;
+      el.innerHTML = buildEvolutionTreeOptimizationHtml(ctx, skillShares);
     }
 
     function renderDealerEvolutionTab(ctx) {
@@ -1301,8 +1312,8 @@
           <div class="fieldGroup">
             <h4>아크패시브 진화 - 전체 트리</h4>
             ${buildEvolutionTreeHtml(fullTree)}
-            <h4>진화 트리 최적화 추천 (1~4티어)</h4>
-            ${buildEvolutionTreeOptimizationHtml(ctx)}
+            <h4>진화 트리 최적화 추천 (1~5티어)</h4>
+            <div id="evolutionOptimizationSection">${buildEvolutionTreeOptimizationHtml(ctx, [])}</div>
           </div>
           <div>
             <h4>커스텀 진화 시뮬레이터</h4>
@@ -1581,6 +1592,10 @@
         // 표시(recomputeDealerLiveNumbers, 아드/암수 체크박스와 동일 갱신 경로)에 그대로 반영됨.
         ctx.critResult.avgDamageMultiplier = result.weightedAvgDamageMultiplier;
         recomputeDealerLiveNumbers(ctx);
+
+        // 진화 트리 최적화(특히 뭉툭한 가시 판단)도 같은 스킬 지분으로 다시 계산 — 뭉툭한 가시는 스킬
+        // 트라이포드의 치명타 적중률 보너스에 따라 유불리가 갈리기 때문에 지분 가중이 중요하다.
+        renderEvolutionOptimizationSection(ctx, skillShares);
       }
 
       panel.querySelector('.combatAnalysisRecalc').addEventListener('click', recalc);
