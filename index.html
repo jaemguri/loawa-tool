@@ -53,8 +53,11 @@
     .combatAnalysisRow select { flex: 1 1 200px; }
     .combatAnalysisRow input[type="number"] { width: 70px; }
     .combatAnalysisRow.unmatched select { border-color: #d9534f; }
-    .combatAnalysisDropZone { border: 2px dashed #bbb; border-radius: 6px; padding: 10px; margin-top: 4px; font-size: 12px; color: #888; text-align: center; }
+    .combatAnalysisDropZone { border: 2px dashed #bbb; border-radius: 6px; padding: 10px; margin-top: 4px; font-size: 12px; color: #888; text-align: center; width: 200px; height: 260px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; position: relative; }
     .combatAnalysisDropZone.dragover { border-color: #5b9bd5; color: #5b9bd5; background: #f0f7ff; }
+    .combatAnalysisDropZone img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .combatAnalysisRemoveBtn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; line-height: 1; border: none; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; cursor: pointer; }
+    .combatAnalysisRemoveBtn:hover { background: rgba(200,0,0,0.85); }
   </style>
 </head>
 <body>
@@ -78,7 +81,11 @@
     <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
 
     <p>전투분석 사진 등록(선택): <input type="file" id="combatAnalysisPhoto" accept="image/*"></p>
-    <div id="combatAnalysisDropZone" class="combatAnalysisDropZone">여기로 이미지를 드래그하거나 Ctrl+V로 붙여넣기</div>
+    <div id="combatAnalysisDropZone" class="combatAnalysisDropZone">
+      <span id="combatAnalysisDropZoneText">여기로 이미지를 드래그하거나<br>Ctrl+V로 붙여넣기</span>
+      <img id="combatAnalysisPreviewImg" alt="등록된 전투분석 사진" style="display:none;">
+      <button type="button" id="combatAnalysisRemoveBtn" class="combatAnalysisRemoveBtn" title="사진 삭제" style="display:none;">×</button>
+    </div>
     <div id="combatAnalysisOcrStatus" style="font-size:12px;color:#888;"></div>
 
     <button id="searchBtn">조회하기</button>
@@ -136,6 +143,9 @@
     const synergyClass3Select = document.getElementById('synergyClass3');
     const combatAnalysisPhotoInput = document.getElementById('combatAnalysisPhoto');
     const combatAnalysisDropZone = document.getElementById('combatAnalysisDropZone');
+    const combatAnalysisDropZoneText = document.getElementById('combatAnalysisDropZoneText');
+    const combatAnalysisPreviewImg = document.getElementById('combatAnalysisPreviewImg');
+    const combatAnalysisRemoveBtn = document.getElementById('combatAnalysisRemoveBtn');
     const combatAnalysisOcrStatus = document.getElementById('combatAnalysisOcrStatus');
 
     // 전투분석 사진 등록에서 OCR로 뽑은 [{rawName, sharePercent, bbox}] — 캐릭터 조회 전에 미리 처리해두고,
@@ -147,6 +157,30 @@
     // 것보다 훨씬 안정적으로 아이콘 영역을 잘라냄).
     let pendingCombatAnalysisCanvas = null;
     let pendingCombatAnalysisIconX = 0;
+    // 미리보기 <img>에 물려있는 objectURL — 새 사진 등록/삭제 시 이전 URL을 해제해 메모리 누수 방지
+    let combatAnalysisPreviewObjectUrl = null;
+
+    // 사진 등록칸을 빈 상태(플레이스홀더 텍스트)로 되돌림 — 삭제 버튼 및 새 파일 등록 직전에 공용으로 사용
+    function resetCombatAnalysisPhoto() {
+      pendingCombatAnalysisRows = [];
+      pendingCombatAnalysisCanvas = null;
+      pendingCombatAnalysisIconX = 0;
+      combatAnalysisPhotoInput.value = '';
+      if (combatAnalysisPreviewObjectUrl) {
+        URL.revokeObjectURL(combatAnalysisPreviewObjectUrl);
+        combatAnalysisPreviewObjectUrl = null;
+      }
+      combatAnalysisPreviewImg.src = '';
+      combatAnalysisPreviewImg.style.display = 'none';
+      combatAnalysisDropZoneText.style.display = '';
+      combatAnalysisRemoveBtn.style.display = 'none';
+      combatAnalysisOcrStatus.textContent = '';
+    }
+
+    combatAnalysisRemoveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resetCombatAnalysisPhoto();
+    });
 
     // 업로드된 이미지를 캔버스에 3배 확대 + 흑백 + 대비 강화해서 그림 — 원본 그대로 OCR 돌리면 게임 UI
     // 작은 글씨/색상 배경 때문에 인식률이 크게 떨어져서(이름 텍스트가 거의 다 깨짐), 전처리가 필수임을
@@ -174,8 +208,7 @@
 
     async function processCombatAnalysisFile(file) {
       if (!file) return;
-      pendingCombatAnalysisRows = [];
-      pendingCombatAnalysisCanvas = null;
+      resetCombatAnalysisPhoto();
       combatAnalysisOcrStatus.textContent = 'OCR 처리 중...';
       let worker = null;
       try {
@@ -185,6 +218,11 @@
           image.onerror = reject;
           image.src = URL.createObjectURL(file);
         });
+        combatAnalysisPreviewObjectUrl = img.src;
+        combatAnalysisPreviewImg.src = img.src;
+        combatAnalysisPreviewImg.style.display = '';
+        combatAnalysisDropZoneText.style.display = 'none';
+        combatAnalysisRemoveBtn.style.display = '';
         const canvas = preprocessCombatAnalysisImage(img);
         // 'kor+eng' 혼합 언어는 애매한 글자를 영어로 잘못 판단하는 경향이 있어서(예: "래피드샷" ->
         // "> J" 완전 오인식) 실제 스크린샷으로 비교 검증한 결과 'kor' 단독이 훨씬 정확함(같은 사진에서
