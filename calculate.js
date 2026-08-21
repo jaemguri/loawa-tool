@@ -2101,7 +2101,8 @@ function calculateChaosCoreEnemyDamagePercentAtPoint(coreOptionText, point) {
 // inputs = {
 //   orderPoints: { 해, 달, 별 } — 질서 코어 3종 포인트(0~20), 17P 미만은 0% 취급(단순화된 규칙)
 //   chaosPoints: { 해, 달, 별 } — 혼돈 코어 3종 포인트(0~20), 실제 장착 코어의 18/19/20P 옵션을 그대로 반영
-//   gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent — 젬 공격력/추가피해/보스피해 직접 입력값
+//   gemAttackLevel, gemExtraDamageLevel, gemBossDamageLevel — 젬 공격력/추가피해/보스피해 합산 레벨
+//   (레벨당 % 환산은 getAllArkgridGems*Percent와 동일한 상수 0.0367/0.080834/0.08334 사용)
 // }
 // 실제(API) 값 대비 총딜 변화율을 계산 — 아크그리드 코어/젬 관련 항목만 입력값으로 교체하고
 // 그 외 모든 항목(치명타, 다른 추가피해/적주피 소스 등)은 ctx의 실제 계산 결과를 그대로 사용한다.
@@ -2123,9 +2124,10 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   };
   const chaosMultiplier = toMultiplier(chaosPercents.해) * toMultiplier(chaosPercents.달) * toMultiplier(chaosPercents.별);
 
-  const gemAttackPercent = inputs.gemAttackPercent || 0;
-  const gemExtraDamagePercent = inputs.gemExtraDamagePercent || 0;
-  const gemBossDamagePercent = inputs.gemBossDamagePercent || 0;
+  // 젬 레벨 합 × 레벨당 % (실제 캐릭터 계산과 동일한 환산 상수 재사용: getAllArkgridGems*Percent 참고)
+  const gemAttackPercent = (inputs.gemAttackLevel || 0) * 0.0367;
+  const gemExtraDamagePercent = (inputs.gemExtraDamageLevel || 0) * 0.080834;
+  const gemBossDamagePercent = (inputs.gemBossDamageLevel || 0) * 0.08334;
 
   const dealerStats = ctx.dealerStats;
   const finalDamage = calculateFinalDamage(
