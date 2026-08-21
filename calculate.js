@@ -2056,11 +2056,52 @@ function orderCorePointToEnemyDamagePercent(point) {
   return p >= 17 ? (p - 16) * 0.15 : 0;
 }
 
+// 아크그리드 코어(질서/혼돈) 6개 슬롯의 실제 투자 포인트를 해/달/별 그룹별로 반환
+// — 시뮬레이터 기본값(현재 상태)을 채우는 용도
+function getArkgridCorePointsByGroup(arkgridData) {
+  const result = { 질서: { 해: 0, 달: 0, 별: 0 }, 혼돈: { 해: 0, 달: 0, 별: 0 } };
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const typeText = getCoreTypeText(slot.Tooltip);
+      const kind = typeText.includes('질서') ? '질서' : typeText.includes('혼돈') ? '혼돈' : null;
+      if (!kind) return;
+      const group = typeText.includes('해') ? '해' : typeText.includes('달') ? '달' : typeText.includes('별') ? '별' : null;
+      if (!group) return;
+      result[kind][group] = slot.Point || 0;
+    });
+  }
+  return result;
+}
+
+// 혼돈 코어 3종(해/달/별)의 실제 장착된 코어 옵션 원문 텍스트를 그룹별로 반환
+// — 시뮬레이터에서 임의의 포인트를 넣어도 [XXP] 구간 텍스트는 실제 장착 코어의 것을 그대로 사용하기 위함
+function getChaosCoreOptionTextByGroup(arkgridData) {
+  const result = { 해: '', 달: '', 별: '' };
+  if (arkgridData && arkgridData.Slots) {
+    arkgridData.Slots.forEach((slot) => {
+      const typeText = getCoreTypeText(slot.Tooltip);
+      if (!typeText.includes('혼돈')) return;
+      const group = typeText.includes('해') ? '해' : typeText.includes('달') ? '달' : typeText.includes('별') ? '별' : null;
+      if (!group) return;
+      result[group] = getCoreOptionText(slot.Tooltip);
+    });
+  }
+  return result;
+}
+
+// 혼돈 코어 옵션 원문 텍스트 + 임의의 포인트로 "적에게 주는 피해"% 계산
+// (18P/19P/20P 등 실제 코어에 박혀있는 [XXP] 구간 옵션을 그대로 사용 — 질서 코어처럼 단순화된 규칙이 아님)
+function calculateChaosCoreEnemyDamagePercentAtPoint(coreOptionText, point) {
+  if (!coreOptionText) return 0;
+  const segments = getActivatedCoreSegments(coreOptionText, point || 0);
+  return segments.reduce((sum, seg) => sum + extractChaosCoreEnemyDamagePercent(seg), 0);
+}
+
 // 아크그리드 포인트 · 젬 시뮬레이터 (최적화 없음 — 사용자가 직접 입력한 값으로 재계산만 수행)
 // inputs = {
-//   orderPoints: { 해, 달, 별 } — 질서 코어 3종 포인트(0~20), 17P 미만은 0% 취급
-//   chaosPercents: { 해, 달, 별 } — 혼돈 코어 3종 적주피%, 입력값을 그대로 반영(포인트 환산 없음)
-//   gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent — 젬 공격력/추가피해/보스피해 직접 입력值
+//   orderPoints: { 해, 달, 별 } — 질서 코어 3종 포인트(0~20), 17P 미만은 0% 취급(단순화된 규칙)
+//   chaosPoints: { 해, 달, 별 } — 혼돈 코어 3종 포인트(0~20), 실제 장착 코어의 18/19/20P 옵션을 그대로 반영
+//   gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent — 젬 공격력/추가피해/보스피해 직접 입력값
 // }
 // 실제(API) 값 대비 총딜 변화율을 계산 — 아크그리드 코어/젬 관련 항목만 입력값으로 교체하고
 // 그 외 모든 항목(치명타, 다른 추가피해/적주피 소스 등)은 ctx의 실제 계산 결과를 그대로 사용한다.
@@ -2073,10 +2114,12 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   };
   const orderMultiplier = toMultiplier(orderPercents.해) * toMultiplier(orderPercents.달) * toMultiplier(orderPercents.별);
 
+  const chaosPoints = inputs.chaosPoints || {};
+  const chaosOptionTextByGroup = getChaosCoreOptionTextByGroup(ctx.dealerData.arkgrid);
   const chaosPercents = {
-    해: (inputs.chaosPercents && inputs.chaosPercents.해) || 0,
-    달: (inputs.chaosPercents && inputs.chaosPercents.달) || 0,
-    별: (inputs.chaosPercents && inputs.chaosPercents.별) || 0,
+    해: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.해, chaosPoints.해),
+    달: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.달, chaosPoints.달),
+    별: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.별, chaosPoints.별),
   };
   const chaosMultiplier = toMultiplier(chaosPercents.해) * toMultiplier(chaosPercents.달) * toMultiplier(chaosPercents.별);
 
