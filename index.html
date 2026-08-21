@@ -1669,8 +1669,9 @@
           <p style="font-size:11px;color:#888;">
             최적화가 아닌 직접 입력 계산기이며, 적주피 하나만이 아니라 스펙 전체(공격력·추가피해·적주피 등)에
             걸친 총딜 변화를 봅니다. 질서 코어는 코어마다 오르는 스탯이 달라 17P부터 1P당 적주피 0.15%로
-            통일해서 환산하고(16P 미만은 0%), 혼돈 코어는 통일하지 않고 코어가 실제로 주는 스탯(공격력형/적주피형 등)을
-            그대로 반영합니다(실제 장착된 코어의 18/19/20P 등 구간 옵션 그대로 사용). 젬 공격력/추가피해/보스피해는
+            통일해서 환산하고(16P 미만은 0%), 혼돈 코어는 통일하지 않고 코어가 실제로 주는 스탯(공격력/적주피/
+            추가피해/치명타 적중률/치명타 피해 등)을 그대로 반영합니다(실제 장착된 코어의 18/19/20P 등 구간
+            옵션 그대로 사용, 코어마다 부여하는 스탯이 다를 수 있음). 젬 공격력/추가피해/보스피해는
             레벨을 입력하면 실제 젬과 동일한 환산식(레벨당 0.0367%/0.080834%/0.08334%)으로 계산됩니다.
             모든 입력칸은 현재 실제 상태로 기본 채워져 있고, "실제(현재) 대비 변화율"이 전체 스펙 기준 상승/하락량입니다.
           </p>
@@ -1725,13 +1726,31 @@
           gemBossDamageLevel: val('gemSimBoss'),
         };
         const result = calculateArkGridPointGemSimulation(ctx, inputs);
+        // 혼돈 코어는 코어마다 실제로 주는 스탯이 다르므로(적주피/공격력/추가피해/치명타 등), 0이 아닌
+        // 항목만 나열해서 "이 코어들이 실제로 뭘 주고 있는지"를 그대로 보여준다.
+        const chaosContribParts = [];
+        if (result.chaosPercents.해 || result.chaosPercents.달 || result.chaosPercents.별) {
+          chaosContribParts.push(`적주피 배율 ${result.chaosMultiplier.toFixed(4)} (해 ${pct(result.chaosPercents.해)}% · 달 ${pct(result.chaosPercents.달)}% · 별 ${pct(result.chaosPercents.별)}%)`);
+        }
+        if (result.chaosAttackFlat || result.chaosAttackPercent) {
+          chaosContribParts.push(`공격력 +${Math.round(result.chaosAttackFlat).toLocaleString()} · +${pct(result.chaosAttackPercent)}%`);
+        }
+        if (result.chaosExtraDamagePercent) {
+          chaosContribParts.push(`추가피해 +${pct(result.chaosExtraDamagePercent)}%`);
+        }
+        if (result.chaosCritRatePercent) {
+          chaosContribParts.push(`치명타 적중률 +${pct(result.chaosCritRatePercent)}%`);
+        }
+        if (result.chaosCritDamagePercent) {
+          chaosContribParts.push(`치명타 피해 +${pct(result.chaosCritDamagePercent)}%`);
+        }
         panel.querySelector('.gemSimResult').innerHTML = `
           <table class="statTable">
             <tr><th>질서 코어 적주피 배율</th><td>${result.orderMultiplier.toFixed(4)} (해 ${pct(result.orderPercents.해)}% · 달 ${pct(result.orderPercents.달)}% · 별 ${pct(result.orderPercents.별)}%)</td></tr>
-            <tr><th>혼돈 코어 적주피 배율</th><td>${result.chaosMultiplier.toFixed(4)} (해 ${pct(result.chaosPercents.해)}% · 달 ${pct(result.chaosPercents.달)}% · 별 ${pct(result.chaosPercents.별)}%)</td></tr>
-            <tr><th>혼돈 코어 공격력 기여</th><td>+${Math.round(result.chaosAttackFlat).toLocaleString()} · +${pct(result.chaosAttackPercent)}%</td></tr>
+            <tr><th>혼돈 코어 기여(코어별 실제 스탯)</th><td>${chaosContribParts.length ? chaosContribParts.join('<br>') : '없음'}</td></tr>
             <tr><th>젬 환산 %</th><td>공격력 ${pct(result.gemAttackPercent)}% · 추가피해 ${pct(result.gemExtraDamagePercent)}% · 보스피해 ${pct(result.gemBossDamagePercent)}%</td></tr>
             <tr><th>공격력(최종)</th><td>${Math.round(result.finalDamage).toLocaleString()}</td></tr>
+            <tr><th>치명타 배율</th><td>${result.critAvgDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>실제(현재) 대비 변화율</th><td>${pct(result.totalChangePercent)}%</td></tr>

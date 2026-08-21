@@ -2091,27 +2091,57 @@ function getChaosCoreOptionTextByGroup(arkgridData) {
 
 // 혼돈 코어 옵션 원문 텍스트 + 임의의 포인트로, 그 코어가 실제로 부여하는 스탯을 그대로 계산.
 // 질서 코어처럼 "적주피 하나로 통일"하지 않고, 코어마다 다른 테마를 각각 감지해서 반영한다
-// (18P/19P/20P 등 실제 코어에 박혀있는 [XXP] 구간 옵션을 그대로 사용) —
-// 관측된 테마: 공격력형(대표적으로 "별" 코어, getChaosStarCoreAttack과 동일한 방식으로 추출)과
-// 적에게 주는 피해형("보스 이상 적에게 주는 피해"도 포함, 해/달 코어에서 흔함). 아직 관측되지 않은
-// 다른 테마(치명타 등)는 0으로 처리됨 — 새로운 테마가 확인되면 이 함수에 추가할 것.
+// (18P/19P/20P 등 실제 코어에 박혀있는 [XXP] 구간 옵션을 그대로 사용) — 여러 테마를 동시에 시도해서
+// 코어 자신이 실제로 갖고 있는 것만 0이 아닌 값으로 잡히는 방식(한 코어의 세그먼트는 보통 테마가
+// 하나로 일관됨). 관측/지원 테마: 공격력형(대표적으로 "별" 코어, getChaosStarCoreAttack과 동일 방식),
+// 적에게 주는 피해형("보스 이상 적에게 주는 피해"도 포함, 해/달 코어에서 흔함), 추가 피해형,
+// 치명타 적중률형, 치명타 피해형(라벨은 getArkgridCritOptions와 동일). 그 외 아직 관측되지 않은
+// 테마는 0으로 처리됨 — 새로운 테마가 확인되면 이 함수에 추가할 것.
 function getChaosCoreStatAtPoint(coreOptionText, point) {
-  if (!coreOptionText) return { attackFlat: 0, attackPercent: 0, enemyDamagePercent: 0 };
+  if (!coreOptionText) {
+    return { attackFlat: 0, attackPercent: 0, enemyDamagePercent: 0, extraDamagePercent: 0, critRatePercent: 0, critDamagePercent: 0 };
+  }
   const segments = getActivatedCoreSegments(coreOptionText, point || 0);
   const attackStats = sumCoreSegmentsExcluding(segments, '공격력', '무기 공격력');
   const enemyDamagePercent = segments.reduce((sum, seg) => sum + extractChaosCoreEnemyDamagePercent(seg), 0);
-  return { attackFlat: attackStats.flat, attackPercent: attackStats.percent, enemyDamagePercent };
+  const extraDamagePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '추가 피해'), 0);
+  const critRatePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '치명타 적중률'), 0);
+  const critDamagePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '치명타 피해'), 0);
+  return {
+    attackFlat: attackStats.flat, attackPercent: attackStats.percent,
+    enemyDamagePercent, extraDamagePercent, critRatePercent, critDamagePercent,
+  };
+}
+
+// calculateCritMultiplier가 계산한 실제 breakdown을 기준으로, 치명타 적중률/피해에 각각 delta를
+// 더해서 평균피해배율을 다시 계산 — 치명타 배율은 rate/damage가 비선형으로 얽혀있어(rate가 낮아지면
+// onHit 보너스의 실효 가치도 같이 낮아지는 등, 이번 세션에서 확인된 구조) 단순 비율 치환이 불가능하고
+// calculateCritMultiplier의 수식 구조를 그대로 재사용해야 정확하다. onHit/치명타피해패널티/시너지는
+// delta로 안 건드리는 항목이라 ctx.critResult 값을 그대로 재사용.
+function recalcCritAvgDamageMultiplierWithDelta(critResult, critRatePercentDelta, critDamagePercentDelta) {
+  const newCritRatePercent = critResult.critRatePercent + (critRatePercentDelta || 0);
+  const newCritDamagePercent = critResult.critDamagePercent + (critDamagePercentDelta || 0);
+  const bluntThornCap = critResult.뭉툭한가시_치명타발동상한;
+  const effectiveCritRatePercent = (bluntThornCap !== null && bluntThornCap !== undefined)
+    ? Math.min(newCritRatePercent, bluntThornCap)
+    : newCritRatePercent;
+  const rate = Math.min(effectiveCritRatePercent, 100) / 100;
+  let onHitMultiplier = 1;
+  Object.values(critResult.onHitBreakdown).forEach((p) => { onHitMultiplier *= toMultiplier(p); });
+  const critDamageMultiplier = (1 - rate) + rate * toMultiplier(newCritDamagePercent) * onHitMultiplier;
+  return critDamageMultiplier * critResult.sharpWeaponPenalty * toMultiplier(critResult.시너지_치명타시피해량);
 }
 
 // 아크그리드 포인트 · 젬 시뮬레이터 (최적화 없음 — 사용자가 직접 입력한 값으로 재계산만 수행)
 // inputs = {
 //   orderPoints: { 해, 달, 별 } — 질서 코어 3종 포인트(0~20), 17P 미만은 0% 취급(단순화된 규칙)
-//   chaosPoints: { 해, 달, 별 } — 혼돈 코어 3종 포인트(0~20), 실제 장착 코어의 18/19/20P 옵션을 그대로 반영
+//   chaosPoints: { 해, 달, 별 } — 혼돈 코어 3종 포인트(0~20), 실제 장착 코어의 18/19/20P 옵션을 그대로 반영,
+//   코어별로 실제 부여하는 스탯(공격력/적주피/추가피해/치명타 적중률/치명타 피해 등)을 그대로 적용
 //   gemAttackLevel, gemExtraDamageLevel, gemBossDamageLevel — 젬 공격력/추가피해/보스피해 합산 레벨
 //   (레벨당 % 환산은 getAllArkgridGems*Percent와 동일한 상수 0.0367/0.080834/0.08334 사용)
 // }
 // 실제(API) 값 대비 총딜 변화율을 계산 — 아크그리드 코어/젬 관련 항목만 입력값으로 교체하고
-// 그 외 모든 항목(치명타, 다른 추가피해/적주피 소스 등)은 ctx의 실제 계산 결과를 그대로 사용한다.
+// 그 외 모든 항목(다른 추가피해/적주피/치명타 소스 등)은 ctx의 실제 계산 결과를 그대로 사용한다.
 function calculateArkGridPointGemSimulation(ctx, inputs) {
   const orderPoints = inputs.orderPoints || {};
   const orderPercents = {
@@ -2138,6 +2168,22 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   // 실제 스탯(공격력)에 직접 반영해야 "전체 스펙" 변화가 정확해진다.
   const chaosAttackFlat = chaosStatsByGroup.해.attackFlat + chaosStatsByGroup.달.attackFlat + chaosStatsByGroup.별.attackFlat;
   const chaosAttackPercent = chaosStatsByGroup.해.attackPercent + chaosStatsByGroup.달.attackPercent + chaosStatsByGroup.별.attackPercent;
+  const chaosExtraDamagePercent = chaosStatsByGroup.해.extraDamagePercent + chaosStatsByGroup.달.extraDamagePercent + chaosStatsByGroup.별.extraDamagePercent;
+  const chaosCritRatePercent = chaosStatsByGroup.해.critRatePercent + chaosStatsByGroup.달.critRatePercent + chaosStatsByGroup.별.critRatePercent;
+  const chaosCritDamagePercent = chaosStatsByGroup.해.critDamagePercent + chaosStatsByGroup.달.critDamagePercent + chaosStatsByGroup.별.critDamagePercent;
+
+  // 추가 피해/치명타는 실제 앱의 다른 계산식이 "혼돈 코어" 자체를 소스로 잡지 않으므로(공격력/적주피와
+  // 달리 대체할 real 값이 없음), 실제 투자 포인트 기준으로 같은 함수를 한 번 더 돌려서 "이미 반영되어
+  // 있다고 봐야 할 기준값"을 구하고, 시뮬레이터 입력값과의 차이(delta)만 ctx의 실제 결과에 더한다.
+  const realChaosPoints = getArkgridCorePointsByGroup(ctx.dealerData.arkgrid).혼돈;
+  const realChaosStatsByGroup = {
+    해: getChaosCoreStatAtPoint(chaosOptionTextByGroup.해, realChaosPoints.해),
+    달: getChaosCoreStatAtPoint(chaosOptionTextByGroup.달, realChaosPoints.달),
+    별: getChaosCoreStatAtPoint(chaosOptionTextByGroup.별, realChaosPoints.별),
+  };
+  const realChaosExtraDamagePercent = realChaosStatsByGroup.해.extraDamagePercent + realChaosStatsByGroup.달.extraDamagePercent + realChaosStatsByGroup.별.extraDamagePercent;
+  const realChaosCritRatePercent = realChaosStatsByGroup.해.critRatePercent + realChaosStatsByGroup.달.critRatePercent + realChaosStatsByGroup.별.critRatePercent;
+  const realChaosCritDamagePercent = realChaosStatsByGroup.해.critDamagePercent + realChaosStatsByGroup.달.critDamagePercent + realChaosStatsByGroup.별.critDamagePercent;
 
   // 젬 레벨 합 × 레벨당 % (실제 캐릭터 계산과 동일한 환산 상수 재사용: getAllArkgridGems*Percent 참고)
   const gemAttackPercent = (inputs.gemAttackLevel || 0) * 0.0367;
@@ -2154,8 +2200,12 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   const realExtraBreakdown = ctx.extraDamageResult.extraDamageBreakdown;
   const extraSumPercent = Object.entries(realExtraBreakdown).reduce(
     (sum, [key, value]) => sum + (key === '아크그리드젬' ? gemExtraDamagePercent : (value || 0)), 0
-  );
+  ) + (chaosExtraDamagePercent - realChaosExtraDamagePercent);
   const extraDamageMultiplier = 1 + extraSumPercent / 100;
+
+  const critAvgDamageMultiplier = recalcCritAvgDamageMultiplierWithDelta(
+    ctx.critResult, chaosCritRatePercent - realChaosCritRatePercent, chaosCritDamagePercent - realChaosCritDamagePercent
+  );
 
   const realBreakdown = ctx.enemyDamageResult.breakdown;
   const realBossGemPercent = realBreakdown.아크그리드젬_보스피해 || 0;
@@ -2169,14 +2219,15 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
     / realOrderMultiplier * orderMultiplier
     / realChaosMultiplier * chaosMultiplier;
 
-  const totalDamage = finalDamage * ctx.critResult.avgDamageMultiplier * extraDamageMultiplier * enemyDamageMultiplier;
+  const totalDamage = finalDamage * critAvgDamageMultiplier * extraDamageMultiplier * enemyDamageMultiplier;
   const realTotalDamage = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
   const totalChangePercent = ((totalDamage / realTotalDamage) - 1) * 100;
 
   return {
     orderPercents, orderMultiplier, chaosPercents, chaosMultiplier, chaosAttackFlat, chaosAttackPercent,
+    chaosExtraDamagePercent, chaosCritRatePercent, chaosCritDamagePercent,
     gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent,
-    finalDamage, extraDamageMultiplier, enemyDamageMultiplier, totalDamage, totalChangePercent,
+    finalDamage, critAvgDamageMultiplier, extraDamageMultiplier, enemyDamageMultiplier, totalDamage, totalChangePercent,
   };
 }
 
