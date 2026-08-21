@@ -2049,6 +2049,77 @@ function getOrderCoreEnemyDamageMultiplier(arkgridData) {
   return { multiplier, byGroup };
 }
 
+// 질서 코어 포인트 1개 값을 적주피%로 환산 — 17P 미만은 0% 취급, 17P부터 1P당 0.15%
+// (실제 게임의 18/19/20P 단계식 지급과는 다른 단순화된 시뮬레이터 전용 규칙 — 사용자 확정)
+function orderCorePointToEnemyDamagePercent(point) {
+  const p = point || 0;
+  return p >= 17 ? (p - 16) * 0.15 : 0;
+}
+
+// 아크그리드 포인트 · 젬 시뮬레이터 (최적화 없음 — 사용자가 직접 입력한 값으로 재계산만 수행)
+// inputs = {
+//   orderPoints: { 해, 달, 별 } — 질서 코어 3종 포인트(0~20), 17P 미만은 0% 취급
+//   chaosPercents: { 해, 달, 별 } — 혼돈 코어 3종 적주피%, 입력값을 그대로 반영(포인트 환산 없음)
+//   gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent — 젬 공격력/추가피해/보스피해 직접 입력值
+// }
+// 실제(API) 값 대비 총딜 변화율을 계산 — 아크그리드 코어/젬 관련 항목만 입력값으로 교체하고
+// 그 외 모든 항목(치명타, 다른 추가피해/적주피 소스 등)은 ctx의 실제 계산 결과를 그대로 사용한다.
+function calculateArkGridPointGemSimulation(ctx, inputs) {
+  const orderPoints = inputs.orderPoints || {};
+  const orderPercents = {
+    해: orderCorePointToEnemyDamagePercent(orderPoints.해),
+    달: orderCorePointToEnemyDamagePercent(orderPoints.달),
+    별: orderCorePointToEnemyDamagePercent(orderPoints.별),
+  };
+  const orderMultiplier = toMultiplier(orderPercents.해) * toMultiplier(orderPercents.달) * toMultiplier(orderPercents.별);
+
+  const chaosPercents = {
+    해: (inputs.chaosPercents && inputs.chaosPercents.해) || 0,
+    달: (inputs.chaosPercents && inputs.chaosPercents.달) || 0,
+    별: (inputs.chaosPercents && inputs.chaosPercents.별) || 0,
+  };
+  const chaosMultiplier = toMultiplier(chaosPercents.해) * toMultiplier(chaosPercents.달) * toMultiplier(chaosPercents.별);
+
+  const gemAttackPercent = inputs.gemAttackPercent || 0;
+  const gemExtraDamagePercent = inputs.gemExtraDamagePercent || 0;
+  const gemBossDamagePercent = inputs.gemBossDamagePercent || 0;
+
+  const dealerStats = ctx.dealerStats;
+  const finalDamage = calculateFinalDamage(
+    dealerStats.basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, gemAttackPercent,
+    ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+
+  const realExtraBreakdown = ctx.extraDamageResult.extraDamageBreakdown;
+  const extraSumPercent = Object.entries(realExtraBreakdown).reduce(
+    (sum, [key, value]) => sum + (key === '아크그리드젬' ? gemExtraDamagePercent : (value || 0)), 0
+  );
+  const extraDamageMultiplier = 1 + extraSumPercent / 100;
+
+  const realBreakdown = ctx.enemyDamageResult.breakdown;
+  const realBossGemPercent = realBreakdown.아크그리드젬_보스피해 || 0;
+  const realOrderMultiplier = toMultiplier(realBreakdown.아크그리드코어_질서.해 || 0)
+    * toMultiplier(realBreakdown.아크그리드코어_질서.달 || 0)
+    * toMultiplier(realBreakdown.아크그리드코어_질서.별 || 0);
+  const realChaosMultiplier = Object.values(realBreakdown.아크그리드코어_혼돈 || {}).reduce((m, p) => m * toMultiplier(p), 1);
+
+  const enemyDamageMultiplier = ctx.enemyDamageResult.multiplier
+    / toMultiplier(realBossGemPercent) * toMultiplier(gemBossDamagePercent)
+    / realOrderMultiplier * orderMultiplier
+    / realChaosMultiplier * chaosMultiplier;
+
+  const totalDamage = finalDamage * ctx.critResult.avgDamageMultiplier * extraDamageMultiplier * enemyDamageMultiplier;
+  const realTotalDamage = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const totalChangePercent = ((totalDamage / realTotalDamage) - 1) * 100;
+
+  return {
+    orderPercents, orderMultiplier, chaosPercents, chaosMultiplier,
+    gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent,
+    finalDamage, extraDamageMultiplier, enemyDamageMultiplier, totalDamage, totalChangePercent,
+  };
+}
+
 // 목걸이의 "적에게 주는 피해" % 합산
 function getNecklaceEnemyDamagePercent(equipmentList) {
   let total = 0;
