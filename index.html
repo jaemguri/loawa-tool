@@ -107,6 +107,7 @@
       <button class="innerTabBtn" data-tab="stone">어빌리티스톤</button>
       <button class="innerTabBtn" data-tab="evolution">아크패시브 진화</button>
       <button class="innerTabBtn" data-tab="analysis">전투분석</button>
+      <button class="innerTabBtn" data-tab="arkgrid">아크그리드</button>
       <button class="innerTabBtn" data-tab="gem">보석</button>
       <button class="innerTabBtn" data-tab="synergy">시너지</button>
     </div>
@@ -116,7 +117,8 @@
     <div class="tabPanel" data-panel="stone" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="evolution" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="analysis" hidden></div>
-    <div class="tabPanel" data-panel="gem" hidden></div>
+    <div class="tabPanel" data-panel="arkgrid" hidden></div>
+    <div class="tabPanel" data-panel="gem" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
   </div>
 
@@ -1645,40 +1647,65 @@
       if (pendingCombatAnalysisRows.length > 0) recalc();
     }
 
-    // 아크그리드 포인트 · 젬 시뮬레이터 — 최적화 없이 사용자가 입력한 값으로 즉시 재계산만 하는 계산기.
-    // 질서 코어는 17P부터 1P당 적주피 0.15%로 환산(16P 이하는 0%), 혼돈 코어는 입력값을 적주피%로 그대로
-    // 반영, 젬 3항목(공격력/추가피해/보스피해)은 직접 입력한 %를 그대로 사용한다(calculateArkGridPointGemSimulation).
-    function renderDealerGemTab(ctx) {
-      const panel = views.dealer.querySelector('.tabPanel[data-panel="gem"]');
+    // 아크그리드 탭 — 왼쪽은 실제(API) 현재 상태, 오른쪽은 시뮬레이터(최적화 없이 입력값으로 즉시 재계산).
+    // 질서 코어는 17P부터 1P당 적주피 0.15%로 환산되는 단순화 규칙(16P 미만은 0%), 혼돈 코어는 실제 장착된
+    // 코어의 [XXP] 구간(18/19/20P 등) 옵션을 그대로 사용, 젬 3항목(공격력/추가피해/보스피해)은 직접 입력한
+    // %로 대체해서 계산한다(calculateArkGridPointGemSimulation). 보석(gem) 자체 시뮬레이터는 별도 탭 예정.
+    function renderDealerArkGridTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="arkgrid"]');
+      const corePoints = getArkgridCorePointsByGroup(ctx.dealerData.arkgrid);
+      const coreSummary = getArkgridCoreSummary(ctx.dealerData.arkgrid);
+      const realGemAttack = ctx.dealerStats.arkgridGemsAttackPercent || 0;
+      const realGemExtra = ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬 || 0;
+      const realGemBoss = ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해 || 0;
+      const coreRows = coreSummary.map((c) => `<tr><td>${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
+
       panel.innerHTML = `
         <div class="fieldGroup">
-          <h4>아크그리드 포인트 · 젬 시뮬레이터</h4>
+          <h4>아크그리드 시뮬레이터</h4>
           <p style="font-size:11px;color:#888;">
             최적화가 아닌 직접 입력 계산기입니다. 질서 코어는 17P부터 1P당 적에게 주는 피해 0.15%로 환산되고(16P 미만은 0%),
-            혼돈 코어는 입력한 수치가 적에게 주는 피해 %로 그대로 반영됩니다. 젬 공격력/추가피해/보스피해는 입력한 값이
-            실제 장착된 젬 값을 대체해서 계산됩니다.
+            혼돈 코어는 실제 장착된 코어의 18/19/20P 등 구간 옵션을 그대로 사용합니다. 젬 공격력/추가피해/보스피해는
+            입력한 값이 실제 장착된 젬 값을 대체해서 계산됩니다. 모든 입력칸은 현재 실제 상태로 기본 채워져 있습니다.
           </p>
-          <div class="gemSimGrid">
-            <div class="gemSimGroup">
-              <h5>질서 코어 (포인트)</h5>
-              <label>해 <input type="number" class="gemSimInput" id="gemSimOrder해" min="0" max="20" step="1" value="0"></label>
-              <label>달 <input type="number" class="gemSimInput" id="gemSimOrder달" min="0" max="20" step="1" value="0"></label>
-              <label>별 <input type="number" class="gemSimInput" id="gemSimOrder별" min="0" max="20" step="1" value="0"></label>
+          <div class="braceletColumns">
+            <div>
+              <h5>현재 상태</h5>
+              <table class="statTable">
+                <tr><th>코어</th><th>포인트</th><th>등급</th></tr>
+                ${coreRows}
+              </table>
+              <table class="statTable">
+                <tr><th>젬 공격력</th><td>${pct(realGemAttack)}%</td></tr>
+                <tr><th>젬 추가피해</th><td>${pct(realGemExtra)}%</td></tr>
+                <tr><th>젬 보스피해</th><td>${pct(realGemBoss)}%</td></tr>
+              </table>
             </div>
-            <div class="gemSimGroup">
-              <h5>혼돈 코어 (적주피 %)</h5>
-              <label>해 <input type="number" class="gemSimInput" id="gemSimChaos해" step="0.01" value="0"></label>
-              <label>달 <input type="number" class="gemSimInput" id="gemSimChaos달" step="0.01" value="0"></label>
-              <label>별 <input type="number" class="gemSimInput" id="gemSimChaos별" step="0.01" value="0"></label>
-            </div>
-            <div class="gemSimGroup">
-              <h5>젬 (직접 입력 %)</h5>
-              <label>공격력 <input type="number" class="gemSimInput" id="gemSimAttack" step="0.01" value="0"></label>
-              <label>추가피해 <input type="number" class="gemSimInput" id="gemSimExtra" step="0.01" value="0"></label>
-              <label>보스피해 <input type="number" class="gemSimInput" id="gemSimBoss" step="0.01" value="0"></label>
+            <div>
+              <h5>시뮬레이터</h5>
+              <div class="gemSimGrid">
+                <div class="gemSimGroup">
+                  <h5>질서 코어 (포인트)</h5>
+                  <label>해 <input type="number" class="gemSimInput" id="gemSimOrder해" min="0" max="20" step="1" value="${corePoints.질서.해}"></label>
+                  <label>달 <input type="number" class="gemSimInput" id="gemSimOrder달" min="0" max="20" step="1" value="${corePoints.질서.달}"></label>
+                  <label>별 <input type="number" class="gemSimInput" id="gemSimOrder별" min="0" max="20" step="1" value="${corePoints.질서.별}"></label>
+                </div>
+                <div class="gemSimGroup">
+                  <h5>혼돈 코어 (포인트)</h5>
+                  <label>해 <input type="number" class="gemSimInput" id="gemSimChaos해" min="0" max="20" step="1" value="${corePoints.혼돈.해}"></label>
+                  <label>달 <input type="number" class="gemSimInput" id="gemSimChaos달" min="0" max="20" step="1" value="${corePoints.혼돈.달}"></label>
+                  <label>별 <input type="number" class="gemSimInput" id="gemSimChaos별" min="0" max="20" step="1" value="${corePoints.혼돈.별}"></label>
+                </div>
+                <div class="gemSimGroup">
+                  <h5>젬 (직접 입력 %)</h5>
+                  <label>공격력 <input type="number" class="gemSimInput" id="gemSimAttack" step="0.01" value="${realGemAttack}"></label>
+                  <label>추가피해 <input type="number" class="gemSimInput" id="gemSimExtra" step="0.01" value="${realGemExtra}"></label>
+                  <label>보스피해 <input type="number" class="gemSimInput" id="gemSimBoss" step="0.01" value="${realGemBoss}"></label>
+                </div>
+              </div>
+              <div class="gemSimResult"></div>
             </div>
           </div>
-          <div class="gemSimResult"></div>
         </div>
       `;
 
@@ -1686,7 +1713,7 @@
         const val = (id) => parseFloat(document.getElementById(id).value) || 0;
         const inputs = {
           orderPoints: { 해: val('gemSimOrder해'), 달: val('gemSimOrder달'), 별: val('gemSimOrder별') },
-          chaosPercents: { 해: val('gemSimChaos해'), 달: val('gemSimChaos달'), 별: val('gemSimChaos별') },
+          chaosPoints: { 해: val('gemSimChaos해'), 달: val('gemSimChaos달'), 별: val('gemSimChaos별') },
           gemAttackPercent: val('gemSimAttack'),
           gemExtraDamagePercent: val('gemSimExtra'),
           gemBossDamagePercent: val('gemSimBoss'),
@@ -1718,7 +1745,7 @@
       renderDealerAbilityStoneTab(ctx);
       renderDealerEvolutionTab(ctx);
       renderDealerAnalysisTab(ctx);
-      renderDealerGemTab(ctx);
+      renderDealerArkGridTab(ctx);
     }
 
     function renderSupportView(ctx) {
