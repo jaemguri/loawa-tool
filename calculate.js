@@ -2089,12 +2089,18 @@ function getChaosCoreOptionTextByGroup(arkgridData) {
   return result;
 }
 
-// 혼돈 코어 옵션 원문 텍스트 + 임의의 포인트로 "적에게 주는 피해"% 계산
-// (18P/19P/20P 등 실제 코어에 박혀있는 [XXP] 구간 옵션을 그대로 사용 — 질서 코어처럼 단순화된 규칙이 아님)
-function calculateChaosCoreEnemyDamagePercentAtPoint(coreOptionText, point) {
-  if (!coreOptionText) return 0;
+// 혼돈 코어 옵션 원문 텍스트 + 임의의 포인트로, 그 코어가 실제로 부여하는 스탯을 그대로 계산.
+// 질서 코어처럼 "적주피 하나로 통일"하지 않고, 코어마다 다른 테마를 각각 감지해서 반영한다
+// (18P/19P/20P 등 실제 코어에 박혀있는 [XXP] 구간 옵션을 그대로 사용) —
+// 관측된 테마: 공격력형(대표적으로 "별" 코어, getChaosStarCoreAttack과 동일한 방식으로 추출)과
+// 적에게 주는 피해형("보스 이상 적에게 주는 피해"도 포함, 해/달 코어에서 흔함). 아직 관측되지 않은
+// 다른 테마(치명타 등)는 0으로 처리됨 — 새로운 테마가 확인되면 이 함수에 추가할 것.
+function getChaosCoreStatAtPoint(coreOptionText, point) {
+  if (!coreOptionText) return { attackFlat: 0, attackPercent: 0, enemyDamagePercent: 0 };
   const segments = getActivatedCoreSegments(coreOptionText, point || 0);
-  return segments.reduce((sum, seg) => sum + extractChaosCoreEnemyDamagePercent(seg), 0);
+  const attackStats = sumCoreSegmentsExcluding(segments, '공격력', '무기 공격력');
+  const enemyDamagePercent = segments.reduce((sum, seg) => sum + extractChaosCoreEnemyDamagePercent(seg), 0);
+  return { attackFlat: attackStats.flat, attackPercent: attackStats.percent, enemyDamagePercent };
 }
 
 // 아크그리드 포인트 · 젬 시뮬레이터 (최적화 없음 — 사용자가 직접 입력한 값으로 재계산만 수행)
@@ -2117,12 +2123,21 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
 
   const chaosPoints = inputs.chaosPoints || {};
   const chaosOptionTextByGroup = getChaosCoreOptionTextByGroup(ctx.dealerData.arkgrid);
+  const chaosStatsByGroup = {
+    해: getChaosCoreStatAtPoint(chaosOptionTextByGroup.해, chaosPoints.해),
+    달: getChaosCoreStatAtPoint(chaosOptionTextByGroup.달, chaosPoints.달),
+    별: getChaosCoreStatAtPoint(chaosOptionTextByGroup.별, chaosPoints.별),
+  };
   const chaosPercents = {
-    해: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.해, chaosPoints.해),
-    달: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.달, chaosPoints.달),
-    별: calculateChaosCoreEnemyDamagePercentAtPoint(chaosOptionTextByGroup.별, chaosPoints.별),
+    해: chaosStatsByGroup.해.enemyDamagePercent,
+    달: chaosStatsByGroup.달.enemyDamagePercent,
+    별: chaosStatsByGroup.별.enemyDamagePercent,
   };
   const chaosMultiplier = toMultiplier(chaosPercents.해) * toMultiplier(chaosPercents.달) * toMultiplier(chaosPercents.별);
+  // 공격력형 혼돈 코어(대표적으로 "별" 코어)의 고정값/% — 질서 코어와 달리 적주피로 뭉뚱그리지 않고
+  // 실제 스탯(공격력)에 직접 반영해야 "전체 스펙" 변화가 정확해진다.
+  const chaosAttackFlat = chaosStatsByGroup.해.attackFlat + chaosStatsByGroup.달.attackFlat + chaosStatsByGroup.별.attackFlat;
+  const chaosAttackPercent = chaosStatsByGroup.해.attackPercent + chaosStatsByGroup.달.attackPercent + chaosStatsByGroup.별.attackPercent;
 
   // 젬 레벨 합 × 레벨당 % (실제 캐릭터 계산과 동일한 환산 상수 재사용: getAllArkgridGems*Percent 참고)
   const gemAttackPercent = (inputs.gemAttackLevel || 0) * 0.0367;
@@ -2131,8 +2146,8 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
 
   const dealerStats = ctx.dealerStats;
   const finalDamage = calculateFinalDamage(
-    dealerStats.basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
-    dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, gemAttackPercent,
+    dealerStats.basePower, dealerStats.accessoryAttackFlat, chaosAttackFlat, ctx.supportBuffPower,
+    chaosAttackPercent, dealerStats.earringAttackPercent, gemAttackPercent,
     ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
   );
 
@@ -2159,7 +2174,7 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   const totalChangePercent = ((totalDamage / realTotalDamage) - 1) * 100;
 
   return {
-    orderPercents, orderMultiplier, chaosPercents, chaosMultiplier,
+    orderPercents, orderMultiplier, chaosPercents, chaosMultiplier, chaosAttackFlat, chaosAttackPercent,
     gemAttackPercent, gemExtraDamagePercent, gemBossDamagePercent,
     finalDamage, extraDamageMultiplier, enemyDamageMultiplier, totalDamage, totalChangePercent,
   };
