@@ -1650,7 +1650,7 @@
     // 아크그리드 탭 — 왼쪽은 실제(API) 현재 상태, 오른쪽은 시뮬레이터(최적화 없이 입력값으로 즉시 재계산).
     // 질서 코어는 17P부터 1P당 적주피 0.15%로 환산되는 단순화 규칙(16P 미만은 0%), 혼돈 코어는 실제 장착된
     // 코어의 [XXP] 구간(18/19/20P 등) 옵션을 그대로 사용, 젬 3항목(공격력/추가피해/보스피해)은 직접 입력한
-    // %로 대체해서 계산한다(calculateArkGridPointGemSimulation). 보석(gem) 자체 시뮬레이터는 별도 탭 예정.
+    // 레벨을 대체해서 계산한다(calculateArkGridPointGemSimulation). 보석(gem) 자체 시뮬레이터는 별도 탭 예정.
     function renderDealerArkGridTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="arkgrid"]');
       const corePoints = getArkgridCorePointsByGroup(ctx.dealerData.arkgrid);
@@ -1658,6 +1658,9 @@
       const realGemAttack = ctx.dealerStats.arkgridGemsAttackPercent || 0;
       const realGemExtra = ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬 || 0;
       const realGemBoss = ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해 || 0;
+      const realGemAttackLevel = getAllArkgridGemsAttackLevel(ctx.dealerData.arkgrid);
+      const realGemExtraLevel = getAllArkgridGemsExtraDamageLevel(ctx.dealerData.arkgrid);
+      const realGemBossLevel = getAllArkgridGemsBossDamageLevel(ctx.dealerData.arkgrid);
       const coreRows = coreSummary.map((c) => `<tr><td>${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
 
       panel.innerHTML = `
@@ -1666,7 +1669,8 @@
           <p style="font-size:11px;color:#888;">
             최적화가 아닌 직접 입력 계산기입니다. 질서 코어는 17P부터 1P당 적에게 주는 피해 0.15%로 환산되고(16P 미만은 0%),
             혼돈 코어는 실제 장착된 코어의 18/19/20P 등 구간 옵션을 그대로 사용합니다. 젬 공격력/추가피해/보스피해는
-            입력한 값이 실제 장착된 젬 값을 대체해서 계산됩니다. 모든 입력칸은 현재 실제 상태로 기본 채워져 있습니다.
+            레벨을 입력하면 실제 젬과 동일한 환산식(레벨당 0.0367%/0.080834%/0.08334%)으로 계산됩니다.
+            모든 입력칸은 현재 실제 상태로 기본 채워져 있습니다.
           </p>
           <div class="braceletColumns">
             <div>
@@ -1676,9 +1680,9 @@
                 ${coreRows}
               </table>
               <table class="statTable">
-                <tr><th>젬 공격력</th><td>${pct(realGemAttack)}%</td></tr>
-                <tr><th>젬 추가피해</th><td>${pct(realGemExtra)}%</td></tr>
-                <tr><th>젬 보스피해</th><td>${pct(realGemBoss)}%</td></tr>
+                <tr><th>젬 공격력</th><td>Lv.${realGemAttackLevel} (${pct(realGemAttack)}%)</td></tr>
+                <tr><th>젬 추가피해</th><td>Lv.${realGemExtraLevel} (${pct(realGemExtra)}%)</td></tr>
+                <tr><th>젬 보스피해</th><td>Lv.${realGemBossLevel} (${pct(realGemBoss)}%)</td></tr>
               </table>
             </div>
             <div>
@@ -1697,10 +1701,10 @@
                   <label>별 <input type="number" class="gemSimInput" id="gemSimChaos별" min="0" max="20" step="1" value="${corePoints.혼돈.별}"></label>
                 </div>
                 <div class="gemSimGroup">
-                  <h5>젬 (직접 입력 %)</h5>
-                  <label>공격력 <input type="number" class="gemSimInput" id="gemSimAttack" step="0.01" value="${realGemAttack}"></label>
-                  <label>추가피해 <input type="number" class="gemSimInput" id="gemSimExtra" step="0.01" value="${realGemExtra}"></label>
-                  <label>보스피해 <input type="number" class="gemSimInput" id="gemSimBoss" step="0.01" value="${realGemBoss}"></label>
+                  <h5>젬 (레벨 입력)</h5>
+                  <label>공격력 <input type="number" class="gemSimInput" id="gemSimAttack" min="0" step="1" value="${realGemAttackLevel}"></label>
+                  <label>추가피해 <input type="number" class="gemSimInput" id="gemSimExtra" min="0" step="1" value="${realGemExtraLevel}"></label>
+                  <label>보스피해 <input type="number" class="gemSimInput" id="gemSimBoss" min="0" step="1" value="${realGemBossLevel}"></label>
                 </div>
               </div>
               <div class="gemSimResult"></div>
@@ -1714,15 +1718,16 @@
         const inputs = {
           orderPoints: { 해: val('gemSimOrder해'), 달: val('gemSimOrder달'), 별: val('gemSimOrder별') },
           chaosPoints: { 해: val('gemSimChaos해'), 달: val('gemSimChaos달'), 별: val('gemSimChaos별') },
-          gemAttackPercent: val('gemSimAttack'),
-          gemExtraDamagePercent: val('gemSimExtra'),
-          gemBossDamagePercent: val('gemSimBoss'),
+          gemAttackLevel: val('gemSimAttack'),
+          gemExtraDamageLevel: val('gemSimExtra'),
+          gemBossDamageLevel: val('gemSimBoss'),
         };
         const result = calculateArkGridPointGemSimulation(ctx, inputs);
         panel.querySelector('.gemSimResult').innerHTML = `
           <table class="statTable">
             <tr><th>질서 코어 적주피 배율</th><td>${result.orderMultiplier.toFixed(4)} (해 ${pct(result.orderPercents.해)}% · 달 ${pct(result.orderPercents.달)}% · 별 ${pct(result.orderPercents.별)}%)</td></tr>
             <tr><th>혼돈 코어 적주피 배율</th><td>${result.chaosMultiplier.toFixed(4)} (해 ${pct(result.chaosPercents.해)}% · 달 ${pct(result.chaosPercents.달)}% · 별 ${pct(result.chaosPercents.별)}%)</td></tr>
+            <tr><th>젬 환산 %</th><td>공격력 ${pct(result.gemAttackPercent)}% · 추가피해 ${pct(result.gemExtraDamagePercent)}% · 보스피해 ${pct(result.gemBossDamagePercent)}%</td></tr>
             <tr><th>공격력(최종)</th><td>${Math.round(result.finalDamage).toLocaleString()}</td></tr>
             <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
