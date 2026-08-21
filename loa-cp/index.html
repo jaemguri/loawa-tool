@@ -1667,10 +1667,12 @@
         <div class="fieldGroup">
           <h4>아크그리드 시뮬레이터</h4>
           <p style="font-size:11px;color:#888;">
-            최적화가 아닌 직접 입력 계산기입니다. 질서 코어는 17P부터 1P당 적에게 주는 피해 0.15%로 환산되고(16P 미만은 0%),
-            혼돈 코어는 실제 장착된 코어의 18/19/20P 등 구간 옵션을 그대로 사용합니다. 젬 공격력/추가피해/보스피해는
+            최적화가 아닌 직접 입력 계산기이며, 적주피 하나만이 아니라 스펙 전체(공격력·추가피해·적주피 등)에
+            걸친 총딜 변화를 봅니다. 질서 코어는 코어마다 오르는 스탯이 달라 17P부터 1P당 적주피 0.15%로
+            통일해서 환산하고(16P 미만은 0%), 혼돈 코어는 통일하지 않고 코어가 실제로 주는 스탯(공격력형/적주피형 등)을
+            그대로 반영합니다(실제 장착된 코어의 18/19/20P 등 구간 옵션 그대로 사용). 젬 공격력/추가피해/보스피해는
             레벨을 입력하면 실제 젬과 동일한 환산식(레벨당 0.0367%/0.080834%/0.08334%)으로 계산됩니다.
-            모든 입력칸은 현재 실제 상태로 기본 채워져 있습니다.
+            모든 입력칸은 현재 실제 상태로 기본 채워져 있고, "실제(현재) 대비 변화율"이 전체 스펙 기준 상승/하락량입니다.
           </p>
           <div class="braceletColumns">
             <div>
@@ -1695,7 +1697,7 @@
                   <label>별 <input type="number" class="gemSimInput" id="gemSimOrder별" min="0" max="20" step="1" value="${corePoints.질서.별}"></label>
                 </div>
                 <div class="gemSimGroup">
-                  <h5>혼돈 코어 (포인트)</h5>
+                  <h5>혼돈 코어 (포인트, 코어별 실제 스탯)</h5>
                   <label>해 <input type="number" class="gemSimInput" id="gemSimChaos해" min="0" max="20" step="1" value="${corePoints.혼돈.해}"></label>
                   <label>달 <input type="number" class="gemSimInput" id="gemSimChaos달" min="0" max="20" step="1" value="${corePoints.혼돈.달}"></label>
                   <label>별 <input type="number" class="gemSimInput" id="gemSimChaos별" min="0" max="20" step="1" value="${corePoints.혼돈.별}"></label>
@@ -1727,6 +1729,7 @@
           <table class="statTable">
             <tr><th>질서 코어 적주피 배율</th><td>${result.orderMultiplier.toFixed(4)} (해 ${pct(result.orderPercents.해)}% · 달 ${pct(result.orderPercents.달)}% · 별 ${pct(result.orderPercents.별)}%)</td></tr>
             <tr><th>혼돈 코어 적주피 배율</th><td>${result.chaosMultiplier.toFixed(4)} (해 ${pct(result.chaosPercents.해)}% · 달 ${pct(result.chaosPercents.달)}% · 별 ${pct(result.chaosPercents.별)}%)</td></tr>
+            <tr><th>혼돈 코어 공격력 기여</th><td>+${Math.round(result.chaosAttackFlat).toLocaleString()} · +${pct(result.chaosAttackPercent)}%</td></tr>
             <tr><th>젬 환산 %</th><td>공격력 ${pct(result.gemAttackPercent)}% · 추가피해 ${pct(result.gemExtraDamagePercent)}% · 보스피해 ${pct(result.gemBossDamagePercent)}%</td></tr>
             <tr><th>공격력(최종)</th><td>${Math.round(result.finalDamage).toLocaleString()}</td></tr>
             <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
