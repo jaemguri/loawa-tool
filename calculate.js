@@ -2095,11 +2095,12 @@ function getChaosCoreOptionTextByGroup(arkgridData) {
 // 코어 자신이 실제로 갖고 있는 것만 0이 아닌 값으로 잡히는 방식(한 코어의 세그먼트는 보통 테마가
 // 하나로 일관됨). 관측/지원 테마: 공격력형(대표적으로 "별" 코어, getChaosStarCoreAttack과 동일 방식),
 // 적에게 주는 피해형("보스 이상 적에게 주는 피해"도 포함, 해/달 코어에서 흔함), 추가 피해형,
-// 치명타 적중률형, 치명타 피해형(라벨은 getArkgridCritOptions와 동일). 그 외 아직 관측되지 않은
-// 테마는 0으로 처리됨 — 새로운 테마가 확인되면 이 함수에 추가할 것.
+// 치명타 적중률형, 치명타 피해형, "치명타 시 적에게 주는 피해"(곱연산 onHit) 조건부형(라벨/추출은
+// getArkgridCritOptions와 동일). 그 외 아직 관측되지 않은 테마는 0으로 처리됨 — 새로운 테마가
+// 확인되면 이 함수에 추가할 것.
 function getChaosCoreStatAtPoint(coreOptionText, point) {
   if (!coreOptionText) {
-    return { attackFlat: 0, attackPercent: 0, enemyDamagePercent: 0, extraDamagePercent: 0, critRatePercent: 0, critDamagePercent: 0 };
+    return { attackFlat: 0, attackPercent: 0, enemyDamagePercent: 0, extraDamagePercent: 0, critRatePercent: 0, critDamagePercent: 0, critOnHitPercent: 0 };
   }
   const segments = getActivatedCoreSegments(coreOptionText, point || 0);
   const attackStats = sumCoreSegmentsExcluding(segments, '공격력', '무기 공격력');
@@ -2107,18 +2108,21 @@ function getChaosCoreStatAtPoint(coreOptionText, point) {
   const extraDamagePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '추가 피해'), 0);
   const critRatePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '치명타 적중률'), 0);
   const critDamagePercent = segments.reduce((sum, seg) => sum + extractPercent(seg, '치명타 피해'), 0);
+  const critOnHitPercent = segments.reduce((sum, seg) => sum + extractCritOnHitDamagePercent(seg), 0);
   return {
     attackFlat: attackStats.flat, attackPercent: attackStats.percent,
-    enemyDamagePercent, extraDamagePercent, critRatePercent, critDamagePercent,
+    enemyDamagePercent, extraDamagePercent, critRatePercent, critDamagePercent, critOnHitPercent,
   };
 }
 
-// calculateCritMultiplier가 계산한 실제 breakdown을 기준으로, 치명타 적중률/피해에 각각 delta를
-// 더해서 평균피해배율을 다시 계산 — 치명타 배율은 rate/damage가 비선형으로 얽혀있어(rate가 낮아지면
-// onHit 보너스의 실효 가치도 같이 낮아지는 등, 이번 세션에서 확인된 구조) 단순 비율 치환이 불가능하고
-// calculateCritMultiplier의 수식 구조를 그대로 재사용해야 정확하다. onHit/치명타피해패널티/시너지는
-// delta로 안 건드리는 항목이라 ctx.critResult 값을 그대로 재사용.
-function recalcCritAvgDamageMultiplierWithDelta(critResult, critRatePercentDelta, critDamagePercentDelta) {
+// calculateCritMultiplier가 계산한 실제 breakdown을 기준으로, 치명타 적중률/피해/onHit(치명타 시 적에게
+// 주는 피해, 곱연산)에 각각 delta를 더해서 평균피해배율을 다시 계산 — 치명타 배율은 rate/damage가
+// 비선형으로 얽혀있어(rate가 낮아지면 onHit 보너스의 실효 가치도 같이 낮아지는 등, 이번 세션에서
+// 확인된 구조) 단순 비율 치환이 불가능하고 calculateCritMultiplier의 수식 구조를 그대로 재사용해야
+// 정확하다. onHit은 breakdown의 '아크그리드' 항목(6개 코어 전체 합산치)에만 delta를 더해서 치환하고
+// (다른 onHit 소스는 아크그리드와 무관하므로 그대로 유지), 치피패널티/시너지는 delta로 안 건드리는
+// 항목이라 ctx.critResult 값을 그대로 재사용.
+function recalcCritAvgDamageMultiplierWithDelta(critResult, critRatePercentDelta, critDamagePercentDelta, onHitPercentDelta) {
   const newCritRatePercent = critResult.critRatePercent + (critRatePercentDelta || 0);
   const newCritDamagePercent = critResult.critDamagePercent + (critDamagePercentDelta || 0);
   const bluntThornCap = critResult.뭉툭한가시_치명타발동상한;
@@ -2127,7 +2131,10 @@ function recalcCritAvgDamageMultiplierWithDelta(critResult, critRatePercentDelta
     : newCritRatePercent;
   const rate = Math.min(effectiveCritRatePercent, 100) / 100;
   let onHitMultiplier = 1;
-  Object.values(critResult.onHitBreakdown).forEach((p) => { onHitMultiplier *= toMultiplier(p); });
+  Object.entries(critResult.onHitBreakdown).forEach(([key, p]) => {
+    const adjusted = key === '아크그리드' ? p + (onHitPercentDelta || 0) : p;
+    onHitMultiplier *= toMultiplier(adjusted);
+  });
   const critDamageMultiplier = (1 - rate) + rate * toMultiplier(newCritDamagePercent) * onHitMultiplier;
   return critDamageMultiplier * critResult.sharpWeaponPenalty * toMultiplier(critResult.시너지_치명타시피해량);
 }
@@ -2184,6 +2191,8 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   const realChaosExtraDamagePercent = realChaosStatsByGroup.해.extraDamagePercent + realChaosStatsByGroup.달.extraDamagePercent + realChaosStatsByGroup.별.extraDamagePercent;
   const realChaosCritRatePercent = realChaosStatsByGroup.해.critRatePercent + realChaosStatsByGroup.달.critRatePercent + realChaosStatsByGroup.별.critRatePercent;
   const realChaosCritDamagePercent = realChaosStatsByGroup.해.critDamagePercent + realChaosStatsByGroup.달.critDamagePercent + realChaosStatsByGroup.별.critDamagePercent;
+  const chaosCritOnHitPercent = chaosStatsByGroup.해.critOnHitPercent + chaosStatsByGroup.달.critOnHitPercent + chaosStatsByGroup.별.critOnHitPercent;
+  const realChaosCritOnHitPercent = realChaosStatsByGroup.해.critOnHitPercent + realChaosStatsByGroup.달.critOnHitPercent + realChaosStatsByGroup.별.critOnHitPercent;
 
   // 젬 레벨 합 × 레벨당 % (실제 캐릭터 계산과 동일한 환산 상수 재사용: getAllArkgridGems*Percent 참고)
   const gemAttackPercent = (inputs.gemAttackLevel || 0) * 0.0367;
@@ -2204,7 +2213,8 @@ function calculateArkGridPointGemSimulation(ctx, inputs) {
   const extraDamageMultiplier = 1 + extraSumPercent / 100;
 
   const critAvgDamageMultiplier = recalcCritAvgDamageMultiplierWithDelta(
-    ctx.critResult, chaosCritRatePercent - realChaosCritRatePercent, chaosCritDamagePercent - realChaosCritDamagePercent
+    ctx.critResult, chaosCritRatePercent - realChaosCritRatePercent, chaosCritDamagePercent - realChaosCritDamagePercent,
+    chaosCritOnHitPercent - realChaosCritOnHitPercent
   );
 
   const realBreakdown = ctx.enemyDamageResult.breakdown;
@@ -3888,7 +3898,10 @@ function buildDealerDataWithFieldDeltas(dealerData, braceletOptions, primaryStat
 // 부여 옵션 한 슬롯을 고르면 그 카탈로그 항목의 effects(1~2개)가 전부 같이 세팅된다.
 // 치명 스탯은 실제 팔찌가 이미 가진 치명 스탯 기여분을 고려하지 않고(즉 실제 팔찌에 치명이 있었어도 무시하고)
 // "이 가상 치명 스탯만큼 추가로 있다"고 가정 — 실제 팔찌에 치명 스탯이 있는 경우는 드물어서 일단 이렇게 단순화.
-function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, selections) {
+// selections={basic:[{type,value}], grant:[{catalogKey,tierIndex}]}를 파싱해서 팔찌 옵션 구조체 +
+// 그 옵션이 반영된 dealerData(팔찌 Tooltip 합성)를 함께 반환 — calculateHypotheticalBraceletEfficiency와
+// 통합 시뮬레이터 엔진(calculateCombinedSimulationTotal)이 공유하는 파싱 로직(중복 방지를 위해 추출).
+function parseBraceletSelectionsToDealerData(dealerData, selections) {
   const braceletOptions = { ...EMPTY_BRACELET_OPTIONS };
   const primaryStatFlat = { 힘: 0, 민첩: 0, 지능: 0 };
   let specStat = 0;
@@ -3916,6 +3929,14 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
 
   let hypotheticalDealerData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, null);
   if (critStat) hypotheticalDealerData = buildDealerDataWithCritStatDelta(hypotheticalDealerData, critStat);
+
+  return { dealerData: hypotheticalDealerData, braceletOptions, primaryStatFlat, specStat, swiftStat, critStat, grantSlots };
+}
+
+function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, selections) {
+  const {
+    dealerData: hypotheticalDealerData, braceletOptions, primaryStatFlat, specStat, swiftStat, critStat, grantSlots,
+  } = parseBraceletSelectionsToDealerData(dealerData, selections);
 
   const hypotheticalStats = calculateCharacterStats(hypotheticalDealerData);
   const hypotheticalCrit = calculateCritMultiplier(hypotheticalDealerData, supportData, { partyClassNames: ctx.partyClassNames });
@@ -4317,5 +4338,152 @@ function calculateFullBuffFinalOutput(finalOutput, adenkiDamageBuffMultiplier, h
       아덴기배율: adenkiDamageBuffMultiplier,
       초각성배율: hyperAwakeningDamageBuffMultiplier,
     },
+  };
+}
+
+// ===== 통합 시뮬레이터 엔진 =====
+// 지금까지 6개 시뮬레이터(어빌리티스톤/팔찌/장비레벨/아크패시브 진화/아크그리드/전투분석)는 전부
+// 실제(ctx) 값 하나만을 기준선으로 놓고 독립적으로 "이거 하나 바꾸면 얼마나 달라지나"만 계산했다.
+// 이 엔진은 여러 탭의 선택을 동시에 하나의 dealerData 사본에 합성한 뒤 전체 체인을 한 번만 계산해서,
+// "지금까지 다른 탭에서 고른 것들이 다 반영된 상태에서, 이 선택은 얼마나 기여하는가"를 계산할 수 있게 한다.
+//
+// overrides = {
+//   abilityStone: [{name, level}] | null,               // 어빌리티스톤 탭과 동일한 selections
+//   bracelet: { basic: [...], grant: [...] } | null,      // 팔찌 탭과 동일한 selections
+//   armorLevels: { [apiType]: level } | null,             // 장비 탭과 동일한 levelSelections
+//   evolution: { tier1to4Sels: [{name,level}], tier5Sels: [{name,level}] } | null,  // 진화 탭 선택(2D배열은 호출부에서 변환)
+//   arkgrid: { orderPoints:{해,달,별}, chaosPoints:{해,달,별}, gemAttackLevel, gemExtraDamageLevel, gemBossDamageLevel } | null,
+// }
+// 스톤/팔찌/진화/장비는 이미 calculateHypothetical*가 쓰는 "dealerData 얕은 복사 + 전체 체인 재계산"
+// 패턴을 그대로 재사용(중복 로직 없음). 아크그리드만 신규 — 혼돈 코어는 arkgrid.Slots의 Point를 그대로
+// 바꿔서(실제 코어 텍스트를 그대로 재사용하므로 [XXP] 구간이 자동으로 맞게 활성화됨) 다른 실제 추출
+// 함수들이 알아서 정확히 반영하게 하고, 젬은 실제 젬을 전부 제거하고 원하는 레벨의 가짜 젬 하나를
+// 슬롯 하나에 붙여서 반영한다. 질서 코어는 (사용자 확정) 코어마다 스탯이 달라 적주피로 통일 근사하는
+// 기존 방식을 그대로 유지 — dealerData에 굽지 않고 계산 마지막에 별도 배율로 곱한다.
+
+// 장비 탭과 동일한 방식(아이템 이름의 "+N"을 갈아끼움) — ARMOR_LEVEL_TABLE이 이름 텍스트가 아니라
+// 레벨 자체로 조회되므로(getArmorLevel), 실제 아이템의 다른 필드는 건드릴 필요가 없다.
+function buildDealerDataWithArmorLevels(dealerData, levelSelections) {
+  if (!levelSelections) return dealerData;
+  const equipment = (dealerData.equipment || []).map((item) => {
+    if (!ARMOR_EQUIPMENT_TYPES.includes(item.Type)) return item;
+    const level = levelSelections[item.Type];
+    if (!level) return item;
+    const name = stripHtml(item.Name);
+    const newName = /\+\d+/.test(name) ? name.replace(/\+\d+/, `+${level}`) : `${name} +${level}`;
+    return { ...item, Name: newName };
+  });
+  return { ...dealerData, equipment };
+}
+
+// 팔찌 탭과 동일한 파싱 재사용 — dealerData만 필요하므로 parseBraceletSelectionsToDealerData의
+// 결과 중 dealerData만 취한다.
+function buildDealerDataWithBraceletSelections(dealerData, selections) {
+  if (!selections) return dealerData;
+  return parseBraceletSelectionsToDealerData(dealerData, selections).dealerData;
+}
+
+// 혼돈 코어 3종의 포인트를 그대로 바꿔치기(실제 코어 텍스트는 유지 — [XXP] 구간이 자동으로 재계산됨)
+// + 젬 3항목 레벨을 가짜 젬 하나로 합성. 질서 코어는 여기서 건드리지 않음(계산 마지막에 별도 처리).
+function buildDealerDataWithArkGridChaosAndGems(dealerData, arkgridOverrides) {
+  if (!arkgridOverrides || !dealerData.arkgrid || !dealerData.arkgrid.Slots) return dealerData;
+  const chaosPoints = arkgridOverrides.chaosPoints || {};
+  const hasGemOverride = arkgridOverrides.gemAttackLevel !== undefined
+    || arkgridOverrides.gemExtraDamageLevel !== undefined || arkgridOverrides.gemBossDamageLevel !== undefined;
+  let gemsAttached = false;
+
+  const makeGemTooltip = (label, level) => JSON.stringify({ Element_000: { value: `[${label}] Lv.${level}` } });
+  const syntheticGems = [];
+  if (arkgridOverrides.gemAttackLevel) syntheticGems.push({ Tooltip: makeGemTooltip('공격력', arkgridOverrides.gemAttackLevel) });
+  if (arkgridOverrides.gemExtraDamageLevel) syntheticGems.push({ Tooltip: makeGemTooltip('추가 피해', arkgridOverrides.gemExtraDamageLevel) });
+  if (arkgridOverrides.gemBossDamageLevel) syntheticGems.push({ Tooltip: makeGemTooltip('보스 피해', arkgridOverrides.gemBossDamageLevel) });
+
+  const newSlots = dealerData.arkgrid.Slots.map((slot) => {
+    const typeText = getCoreTypeText(slot.Tooltip);
+    const isChaos = typeText.includes('혼돈');
+    const group = typeText.includes('해') ? '해' : typeText.includes('달') ? '달' : typeText.includes('별') ? '별' : null;
+    const newSlot = { ...slot };
+    if (isChaos && group && chaosPoints[group] !== undefined) {
+      newSlot.Point = chaosPoints[group];
+    }
+    if (hasGemOverride) {
+      newSlot.Gems = (!gemsAttached && (gemsAttached = true)) ? syntheticGems : [];
+    }
+    return newSlot;
+  });
+  return { ...dealerData, arkgrid: { ...dealerData.arkgrid, Slots: newSlots } };
+}
+
+// 질서 코어 3종의 "적주피 통일 근사" 배율 — dealerData에 굽지 않고 최종 결과에 곱하는 별도 항.
+// overrides.arkgrid.orderPoints가 없으면(질서를 안 건드림) 실제 값 그대로 유지되도록 배율 1을 반환.
+function calculateArkGridOrderAdjustmentMultiplier(dealerData, overrides) {
+  const realOrderMultiplier = getOrderCoreEnemyDamageMultiplier(dealerData.arkgrid).multiplier;
+  if (!overrides.arkgrid || !overrides.arkgrid.orderPoints) return 1;
+  const op = overrides.arkgrid.orderPoints;
+  const simulatedOrderMultiplier = toMultiplier(orderCorePointToEnemyDamagePercent(op.해))
+    * toMultiplier(orderCorePointToEnemyDamagePercent(op.달))
+    * toMultiplier(orderCorePointToEnemyDamagePercent(op.별));
+  return simulatedOrderMultiplier / realOrderMultiplier;
+}
+
+// 어빌리티 스톤 선택 중 "아드레날린"(스톤 전용 공격력% 보너스, 각인 텍스트가 아니라 calculateFinalDamage의
+// adrenalineBonus 파라미터로 직접 들어감)만 engravings 교체로는 반영이 안 되므로 별도로 델타 계산
+// (calculateAbilityStoneTotal과 동일한 방식).
+function calculateCombinedAdrenalineBonusBase(dealerData, ctx, overrides) {
+  if (!overrides.abilityStone) return ctx.adrenalineBonusBase;
+  const adrenalineSelection = overrides.abilityStone.find((s) => s.name === '아드레날린');
+  const adrenalineDelta = adrenalineSelection ? (ADRENALINE_STONE_BONUS[adrenalineSelection.level] || 0) : 0;
+  const realAdrenalineStoneBonus = getAdrenalineStoneBonus(dealerData.equipment);
+  return ctx.adrenalineBonusBase - realAdrenalineStoneBonus + adrenalineDelta;
+}
+
+// 활성화된 오버라이드들을 전부(또는 일부) 하나의 dealerData 사본에 순서대로 합성 — 각 소스는 서로
+// 다른 필드(engravings/arkpassive/equipment/arkgrid)만 건드리므로 순서는 결과에 영향을 주지 않는다.
+function buildDealerDataWithAllOverrides(dealerData, overrides) {
+  let result = dealerData;
+  if (overrides.abilityStone) {
+    result = { ...result, engravings: buildEngravingsWithAbilityStoneSelections(result.engravings, overrides.abilityStone) };
+  }
+  if (overrides.evolution) {
+    const realCritLevel = (getEvolutionTierCurrentSelections(dealerData.arkpassive)[1].find((s) => s.name === '치명') || {}).level || 0;
+    result = buildDealerDataWithFullEvolutionSelections(result, overrides.evolution.tier1to4Sels, overrides.evolution.tier5Sels, realCritLevel);
+  }
+  result = buildDealerDataWithBraceletSelections(result, overrides.bracelet);
+  result = buildDealerDataWithArmorLevels(result, overrides.armorLevels);
+  result = buildDealerDataWithArkGridChaosAndGems(result, overrides.arkgrid);
+  return result;
+}
+
+// 통합 시뮬레이터 엔진의 진입점 — overrides에 담긴 여러 탭의 선택을 전부(또는 일부) 반영한 총딜을 계산.
+// skillShares가 있으면 전투분석 지분 가중까지 같은 계산에 포함된다(calculateSkillWeightedCritEnemyMultiplier
+// 재사용). 반환값은 절대 총딜(스칼라)이며, "실제 대비"/"다른 탭 반영 상태 대비" 비교는 호출부에서
+// ctx.finalDamage×ctx.critResult.avgDamageMultiplier×... 또는 다른 overrides 조합으로 한 번 더 호출한
+// 값과 나눠서 계산한다.
+function calculateCombinedSimulationTotal(dealerData, supportData, ctx, overrides, skillShares) {
+  const modifiedDealerData = buildDealerDataWithAllOverrides(dealerData, overrides);
+  const newStats = calculateCharacterStats(modifiedDealerData);
+  const critEnemyCombined = calculateSkillWeightedCritEnemyMultiplier(modifiedDealerData, supportData, ctx, skillShares);
+  const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
+  const adrenalineBonusBase = calculateCombinedAdrenalineBonusBase(dealerData, ctx, overrides);
+  const orderAdjustment = calculateArkGridOrderAdjustmentMultiplier(dealerData, overrides);
+
+  const newFinalDamage = calculateFinalDamage(
+    newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
+    adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+
+  return newFinalDamage * critEnemyCombined * newExtra.multiplier * orderAdjustment;
+}
+
+// 실제(현재) 대비 변화율 + "다른 탭에서 이미 선택된 것들" 대비 변화율(맥락 안에서의 한계 기여도)을
+// 함께 계산. thisTabKey를 지정하면 excludeSelfOverrides(자기 탭 값을 뺀 나머지)를 맥락 기준선으로 삼는다.
+function calculateUnifiedSimulationResult(ctx, globalSimState, skillShares) {
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const combinedTotal = calculateCombinedSimulationTotal(ctx.dealerData, ctx.supportData, ctx, globalSimState, skillShares);
+  return {
+    combinedTotal,
+    realTotal,
+    totalChangePercent: ((combinedTotal / realTotal) - 1) * 100,
   };
 }
