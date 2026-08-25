@@ -4491,7 +4491,7 @@ function calculateUnifiedSimulationResult(ctx, globalSimState, skillShares) {
 // ===== 보석(겁화/광휘 피해형) 시뮬레이터 =====
 // 스킬 보석은 특정 "스킬 하나"에만 적용되는 피해 증가라서, 그 보석이 전체 딜에 얼마나 기여하는지
 // 알려면 그 스킬이 총딜에서 차지하는 지분(전투분석)이 반드시 있어야 한다 — 지분 없이는 계산 불가.
-// "재사용 대기시간 감소"형(작열 등)은 DPS 로테이션 모델이 없어 정확한 daño 환산이 불가능하므로
+// "재사용 대기시간 감소"형(작열 등)은 DPS 로테이션 모델이 없어 정확한 딜 환산이 불가능하므로
 // 기본적으로 레벨을 고려하지 않는다(사용자 확정) — 오직 "피해 X% 증가"형만 계산 대상.
 // 실측 발견: 보석 아이템 이름(겁화/작열/광휘)과 실제 효과 종류가 1:1로 안 묶여있음(광휘의 보석이
 // "피해 증가"형일 수도, "재사용 대기시간 감소"형일 수도 있음 — 겁화/작열은 이름 자체가 효과 종류를
@@ -4506,9 +4506,22 @@ function damageGemLevelToPercent(level) {
   return 4 * ((level || 0) + 1);
 }
 
+// 보석 레벨이 오를 때마다 붙는 "기본 공격력 X% 증가"(모든 스킬 보석 공통 부가효과, Option 필드) —
+// 6~10레벨만 실측 확인됨(잼구릿/포구릿/한가한신수/권구릿/쩡구릿 교차검증: 6=0.45/7=0.60/8=0.80/
+// 9=1.00/10=1.20, 6→7 구간만 +0.15고 나머지는 +0.20이라 선형이 아님 — 그대로 표로 저장).
+// 1~5레벨은 데이터가 없어 사용자 확정으로 지원 범위에서 제외 — 그 이하 레벨은 null 반환(호출부가
+// 경고 처리).
+const BASE_ATTACK_GEM_LEVEL_TABLE = { 6: 0.45, 7: 0.60, 8: 0.80, 9: 1.00, 10: 1.20 };
+const BASE_ATTACK_GEM_MIN_SUPPORTED_LEVEL = 6;
+function baseAttackGemLevelToPercent(level) {
+  return BASE_ATTACK_GEM_LEVEL_TABLE[level] !== undefined ? BASE_ATTACK_GEM_LEVEL_TABLE[level] : null;
+}
+
 // gemsData(캐릭터 /gems API 응답)에서 "피해 X% 증가"형 스킬 보석만 뽑아 스킬별로 반환
 // (재사용 대기시간 감소형은 제외). gemsData.Effects.Skills[]가 이미 스킬명+효과 텍스트를 정리해서
 // 주므로 툴팁을 직접 파싱할 필요가 없다 — gemsData.Gems[].Slot/Level을 GemSlot으로 조인해서 레벨을 구함.
+// realBaseAttackPercent는 Option 필드("기본 공격력 X% 증가")에서 그대로 추출(실제값은 API 텍스트
+// 그대로라 6레벨 미만이어도 정확함 — 표가 필요한 건 "시뮬레이션 레벨"일 때뿐).
 function getDealerDamageGems(gemsData) {
   if (!gemsData || !gemsData.Effects || !gemsData.Effects.Skills) return [];
   const levelBySlot = {};
@@ -4518,11 +4531,13 @@ function getDealerDamageGems(gemsData) {
     const text = (s.Description || []).join(' ');
     const m = text.match(/피해\s*([\d.]+)\s*%\s*증가/);
     if (!m) return;
+    const optMatch = (s.Option || '').match(/기본\s*공격력\s*([\d.]+)\s*%\s*증가/);
     result.push({
       gemSlot: s.GemSlot,
       skillName: s.Name,
       level: levelBySlot[s.GemSlot] || 0,
       realDamagePercent: parseFloat(m[1]),
+      realBaseAttackPercent: optMatch ? parseFloat(optMatch[1]) : 0,
     });
   });
   return result;
@@ -4551,8 +4566,12 @@ function calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, level
 // 보석 시뮬레이터 진입점(최적화 없음 — 입력한 레벨 그대로 재계산만). skillShares가 비어있으면(전투분석
 // 데이터 없음) 계산 자체가 불가능하므로 rows가 빈 배열로 반환됨 — 호출부(UI)가 이 경우 "전투분석
 // 필요" 안내를 보여줘야 한다.
+// 레벨이 오를 때 스킬 전용 "피해%"뿐 아니라 모든 보석 공통의 "기본 공격력%"도 같이 오르므로
+// (Option 필드), 이 델타를 basePower→finalDamage에 반영해서 "피해% 가중평균 배율"과 함께 최종
+// 총딜 변화율 하나로 합쳐서 반환한다. 기본 공격력%는 6~10레벨만 지원(그 미만은 null 반환 → 그 갬은
+// 델타에서 제외하고 belowMinLevel 플래그로 UI가 경고를 표시하게 함).
 // levelOverrides = { [스킬명]: 레벨 } — 지정 안 한 스킬은 실제 레벨 유지.
-function calculateSkillGemSimulation(dealerData, skillShares, levelOverrides) {
+function calculateSkillGemSimulation(dealerData, dealerStats, ctx, skillShares, levelOverrides) {
   const damageGems = getDealerDamageGems(dealerData.gems);
   const gemBySkillName = {};
   damageGems.forEach((g) => { if (!gemBySkillName[g.skillName]) gemBySkillName[g.skillName] = g; });
@@ -4564,17 +4583,36 @@ function calculateSkillGemSimulation(dealerData, skillShares, levelOverrides) {
   const realWeightedMultiplier = calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, null);
   const weightedMultiplier = calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, levelOverrides);
 
+  let baseAttackPercentDelta = 0;
   const rows = Object.values(gemBySkillName).map((g) => {
     const share = (skillShares.find((s) => s.name === g.skillName) || {}).sharePercent || 0;
     const simLevel = (levelOverrides && levelOverrides[g.skillName] !== undefined) ? levelOverrides[g.skillName] : g.level;
+    const simBaseAttackPercent = baseAttackGemLevelToPercent(simLevel);
+    const belowMinLevel = simBaseAttackPercent === null;
+    if (!belowMinLevel) baseAttackPercentDelta += simBaseAttackPercent - g.realBaseAttackPercent;
     return {
-      skillName: g.skillName, realLevel: g.level, simLevel,
+      skillName: g.skillName, realLevel: g.level, simLevel, belowMinLevel,
       sharePercent: share, simDamagePercent: damageGemLevelToPercent(simLevel),
+      realBaseAttackPercent: g.realBaseAttackPercent, simBaseAttackPercent,
     };
   });
 
+  const gemAttackPercent = getGemsBaseAttackPercent(dealerData.gems) + baseAttackPercentDelta;
+  const stonePercent = getAbilityStoneBaseAttackPercent(dealerData.equipment);
+  const basePower = calculateBaseAttackPower(
+    dealerStats.purePower, gemAttackPercent, stonePercent + dealerStats.wanjibStats.baseAttackPercent
+  ) + dealerStats.wanjibStats.baseAttackFlat;
+  const finalDamage = calculateFinalDamage(
+    basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
+    dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, dealerStats.arkgridGemsAttackPercent,
+    ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
+  );
+
+  const realTotalDamage = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier * realWeightedMultiplier;
+  const totalDamage = finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier * weightedMultiplier;
+
   return {
-    rows, realWeightedMultiplier, weightedMultiplier,
-    totalChangePercent: ((weightedMultiplier / realWeightedMultiplier) - 1) * 100,
+    rows, realWeightedMultiplier, weightedMultiplier, baseAttackPercentDelta, finalDamage,
+    totalChangePercent: ((totalDamage / realTotalDamage) - 1) * 100,
   };
 }
