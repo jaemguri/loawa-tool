@@ -118,7 +118,7 @@
     <div class="tabPanel" data-panel="evolution" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="analysis" hidden></div>
     <div class="tabPanel" data-panel="arkgrid" hidden></div>
-    <div class="tabPanel" data-panel="gem" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="gem" hidden></div>
     <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
   </div>
 
@@ -1681,6 +1681,9 @@
         // 전투분석 지분 가중이 함께 반영되도록).
         globalSimSkillShares = skillShares;
         recomputeUnifiedSurgeBar();
+
+        // 보석 탭은 전투분석 지분이 있어야만 계산 가능(필수 선행 조건) — 지분이 바뀔 때마다 다시 렌더링.
+        renderDealerGemTab(ctx);
       }
 
       panel.querySelector('.combatAnalysisRecalc').addEventListener('click', recalc);
@@ -1808,6 +1811,80 @@
       recalcGemSim();
     }
 
+    // 보석(겁화/광휘 피해형) 시뮬레이터 — 스킬 하나에만 적용되는 보너스라 전투분석 스킬 지분이 없으면
+    // 전체 기여도를 계산할 수 없음(필수 선행 조건). 작열(재사용 대기시간 감소)형은 레벨을 고려하지
+    // 않음(사용자 확정) — "피해 X% 증가"형(겁화/광휘 이름 무관, calculate.js가 텍스트로 판별)만 대상.
+    // 최적화 없음 — 레벨을 직접 입력하면 그대로 재계산만 한다.
+    const gemSimLevelOverrides = {};
+    function renderDealerGemTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="gem"]');
+      const hasSkillShares = globalSimSkillShares.some((s) => s.name);
+      if (!hasSkillShares) {
+        panel.innerHTML = `
+          <div class="fieldGroup">
+            <h4>보석 시뮬레이터</h4>
+            <p style="color:#888;">전투분석 데이터가 있어야 계산할 수 있습니다 — 조회 화면에서 전투분석 사진을 등록하거나,
+            "전투분석" 탭에서 스킬/지분을 입력하고 재계산을 눌러주세요. 겁화/광휘(피해 증가형) 보석은 특정 스킬 하나에만
+            적용되는 보너스라, 그 스킬이 총딜에서 차지하는 지분 없이는 전체 기여도를 계산할 수 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const damageGems = getDealerDamageGems(ctx.dealerData.gems);
+      Object.keys(gemSimLevelOverrides).forEach((k) => { delete gemSimLevelOverrides[k]; });
+
+      const rowsHtml = damageGems.map((g) => {
+        const share = (globalSimSkillShares.find((s) => s.name === g.skillName) || {}).sharePercent || 0;
+        const options = Array.from({ length: 10 }, (_, i) => i + 1)
+          .map((lv) => `<option value="${lv}" ${lv === g.level ? 'selected' : ''}>Lv.${lv} (${pct(damageGemLevelToPercent(lv))}%)</option>`)
+          .join('');
+        return `
+          <tr>
+            <td>${g.skillName}</td>
+            <td>${pct(share)}%</td>
+            <td>Lv.${g.level} (${pct(g.realDamagePercent)}%)</td>
+            <td><select class="gemSkillLevelSelect" data-skill="${escapeAttr(g.skillName)}">${options}</select></td>
+          </tr>
+        `;
+      }).join('');
+
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>보석 시뮬레이터 (겁화/광휘 — 피해 증가형만, 최적화 없음)</h4>
+          <p style="font-size:11px;color:#888;">
+            작열(재사용 대기시간 감소형) 보석은 레벨을 고려하지 않습니다(로테이션 모델이 없어 정확한 딜 환산이
+            불가능). 전투분석 스킬 지분으로 가중평균한 배율을 사용합니다 — 지분이 없는 스킬의 보석은 계산에서
+            빠집니다(전투분석 탭에서 해당 스킬의 지분을 채워주세요).
+          </p>
+          <table class="statTable">
+            <tr><th>스킬</th><th>지분</th><th>현재 레벨(피해%)</th><th>시뮬레이션 레벨</th></tr>
+            ${rowsHtml || '<tr><td colspan="4">겁화/광휘(피해 증가형) 보석이 없습니다.</td></tr>'}
+          </table>
+          <div class="gemSkillSimResult"></div>
+        </div>
+      `;
+
+      function recalcGemSkillSim() {
+        const result = calculateSkillGemSimulation(ctx.dealerData, globalSimSkillShares, gemSimLevelOverrides);
+        panel.querySelector('.gemSkillSimResult').innerHTML = `
+          <table class="statTable">
+            <tr><th>실제 가중평균 배율</th><td>${result.realWeightedMultiplier.toFixed(4)}</td></tr>
+            <tr><th>시뮬레이션 가중평균 배율</th><td>${result.weightedMultiplier.toFixed(4)}</td></tr>
+            <tr><th>실제(현재) 대비 변화율</th><td>${pct(result.totalChangePercent)}%</td></tr>
+          </table>
+        `;
+      }
+
+      panel.querySelectorAll('.gemSkillLevelSelect').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          gemSimLevelOverrides[sel.dataset.skill] = parseInt(sel.value, 10);
+          recalcGemSkillSim();
+        });
+      });
+      recalcGemSkillSim();
+    }
+
     function renderDealerView(ctx) {
       globalSimCtx = ctx;
       globalSimState.abilityStone = null;
@@ -1824,6 +1901,7 @@
       renderDealerEvolutionTab(ctx);
       renderDealerAnalysisTab(ctx);
       renderDealerArkGridTab(ctx);
+      renderDealerGemTab(ctx);
     }
 
     function renderSupportView(ctx) {

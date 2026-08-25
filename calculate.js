@@ -4487,3 +4487,94 @@ function calculateUnifiedSimulationResult(ctx, globalSimState, skillShares) {
     totalChangePercent: ((combinedTotal / realTotal) - 1) * 100,
   };
 }
+
+// ===== 보석(겁화/광휘 피해형) 시뮬레이터 =====
+// 스킬 보석은 특정 "스킬 하나"에만 적용되는 피해 증가라서, 그 보석이 전체 딜에 얼마나 기여하는지
+// 알려면 그 스킬이 총딜에서 차지하는 지분(전투분석)이 반드시 있어야 한다 — 지분 없이는 계산 불가.
+// "재사용 대기시간 감소"형(작열 등)은 DPS 로테이션 모델이 없어 정확한 daño 환산이 불가능하므로
+// 기본적으로 레벨을 고려하지 않는다(사용자 확정) — 오직 "피해 X% 증가"형만 계산 대상.
+// 실측 발견: 보석 아이템 이름(겁화/작열/광휘)과 실제 효과 종류가 1:1로 안 묶여있음(광휘의 보석이
+// "피해 증가"형일 수도, "재사용 대기시간 감소"형일 수도 있음 — 겁화/작열은 이름 자체가 효과 종류를
+// 뜻하지만 광휘는 아님) → 이름이 아니라 Description 텍스트("피해 X% 증가" vs "재사용 대기시간 X% 감소")로
+// 종류를 판별한다.
+
+// 겁화/광휘(피해 증가형) 보석의 레벨→피해% — 실측 4개 캐릭터(잼구릿/포구릿/권구릿/쩡구릿), 서로 다른
+// 스킬/레벨 조합 다수로 교차검증한 선형 공식: 레벨당 +4%p, 레벨1=8%. 블래스터 "포격 스킬"류처럼
+// 특정 스킬명이 아닌 그룹형/지원형 보너스는 이 표와 무관한 별도 체계로 보이며(Lv10=40%로 이 공식과
+// 어긋남), combat-analysis 스킬 지분과도 이름이 안 맞아 자동으로 매칭 제외된다.
+function damageGemLevelToPercent(level) {
+  return 4 * ((level || 0) + 1);
+}
+
+// gemsData(캐릭터 /gems API 응답)에서 "피해 X% 증가"형 스킬 보석만 뽑아 스킬별로 반환
+// (재사용 대기시간 감소형은 제외). gemsData.Effects.Skills[]가 이미 스킬명+효과 텍스트를 정리해서
+// 주므로 툴팁을 직접 파싱할 필요가 없다 — gemsData.Gems[].Slot/Level을 GemSlot으로 조인해서 레벨을 구함.
+function getDealerDamageGems(gemsData) {
+  if (!gemsData || !gemsData.Effects || !gemsData.Effects.Skills) return [];
+  const levelBySlot = {};
+  (gemsData.Gems || []).forEach((g) => { levelBySlot[g.Slot] = g.Level; });
+  const result = [];
+  gemsData.Effects.Skills.forEach((s) => {
+    const text = (s.Description || []).join(' ');
+    const m = text.match(/피해\s*([\d.]+)\s*%\s*증가/);
+    if (!m) return;
+    result.push({
+      gemSlot: s.GemSlot,
+      skillName: s.Name,
+      level: levelBySlot[s.GemSlot] || 0,
+      realDamagePercent: parseFloat(m[1]),
+    });
+  });
+  return result;
+}
+
+// 스킬 지분(skillShares, 전투분석) 기준으로 겁화/광휘 보석들의 가중평균 배율을 계산.
+// levelsBySkill로 각 스킬의 (시뮬레이션) 보석 레벨을 지정 — 없으면 실제 레벨 사용.
+// 보석이 없는 스킬/매칭 안 된 지분은 배율 1(보너스 없음)로 취급.
+function calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, levelsBySkill) {
+  let majorShareTotal = 0;
+  let weighted = 0;
+  (skillShares || []).forEach((row) => {
+    const share = row.sharePercent || 0;
+    if (!row.name) return;
+    majorShareTotal += share;
+    const gem = gemBySkillName[row.name];
+    const level = gem ? ((levelsBySkill && levelsBySkill[row.name] !== undefined) ? levelsBySkill[row.name] : gem.level) : 0;
+    const percent = gem ? damageGemLevelToPercent(level) : 0;
+    weighted += (share / 100) * toMultiplier(percent);
+  });
+  const remainder = Math.max(0, 100 - majorShareTotal);
+  weighted += (remainder / 100) * 1;
+  return weighted;
+}
+
+// 보석 시뮬레이터 진입점(최적화 없음 — 입력한 레벨 그대로 재계산만). skillShares가 비어있으면(전투분석
+// 데이터 없음) 계산 자체가 불가능하므로 rows가 빈 배열로 반환됨 — 호출부(UI)가 이 경우 "전투분석
+// 필요" 안내를 보여줘야 한다.
+// levelOverrides = { [스킬명]: 레벨 } — 지정 안 한 스킬은 실제 레벨 유지.
+function calculateSkillGemSimulation(dealerData, skillShares, levelOverrides) {
+  const damageGems = getDealerDamageGems(dealerData.gems);
+  const gemBySkillName = {};
+  damageGems.forEach((g) => { if (!gemBySkillName[g.skillName]) gemBySkillName[g.skillName] = g; });
+
+  if (!damageGems.length || !skillShares || !skillShares.length) {
+    return { rows: [], realWeightedMultiplier: 1, weightedMultiplier: 1, totalChangePercent: 0 };
+  }
+
+  const realWeightedMultiplier = calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, null);
+  const weightedMultiplier = calculateWeightedGemDamageMultiplier(gemBySkillName, skillShares, levelOverrides);
+
+  const rows = Object.values(gemBySkillName).map((g) => {
+    const share = (skillShares.find((s) => s.name === g.skillName) || {}).sharePercent || 0;
+    const simLevel = (levelOverrides && levelOverrides[g.skillName] !== undefined) ? levelOverrides[g.skillName] : g.level;
+    return {
+      skillName: g.skillName, realLevel: g.level, simLevel,
+      sharePercent: share, simDamagePercent: damageGemLevelToPercent(simLevel),
+    };
+  });
+
+  return {
+    rows, realWeightedMultiplier, weightedMultiplier,
+    totalChangePercent: ((weightedMultiplier / realWeightedMultiplier) - 1) * 100,
+  };
+}
