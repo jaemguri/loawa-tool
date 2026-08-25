@@ -831,33 +831,40 @@
       addBtn.style.display = braceletSimState.grant.length >= BRACELET_SIM_MAX.grant ? 'none' : '';
     }
 
-    // "최종 정보" 탭의 최종 딜 상승량은 baseline(체크박스 OFF, 실제 기어)과 비교하는 값인데, 팔찌/장비/
-    // 어빌리티스톤 시뮬레이터에서 가상 조합을 고르면 그 값 대신 시뮬레이터들의 totalChangePercent를
-    // 보여준다(defenseMultiplier/brandMultiplier/cardMultiplier/버프 배율들은 딜러 자신의 장비 교체로는
-    // 안 바뀌는 상수라 before/after 비율 계산에서 그대로 약분되므로, 각 시뮬레이터가 독립적으로 구한
-    // totalChangePercent가 풀버프 최종 산출식 기준 변화율과 수학적으로 동일하다). 세 시뮬레이터가
-    // 동시에 활성화될 수 있으므로 각자의 값을 따로 기억해뒀다가 곱연산으로 합쳐서 표시한다.
-    const surgeBarSimContributions = { bracelet: 0, armor: 0, abilityStone: 0 };
-    function updateSurgeBar() {
-      const combined = (toMultiplier(surgeBarSimContributions.bracelet) * toMultiplier(surgeBarSimContributions.armor) * toMultiplier(surgeBarSimContributions.abilityStone) - 1) * 100;
+    // 통합 시뮬레이터 공유 상태 — 스톤/팔찌/장비/진화/아크그리드 탭이 각자의 로컬 상태(braceletSimState 등)와
+    // 별개로 여기에도 "지금 이 탭에서 고른 것"을 selections 형태 그대로 기록해둔다. 전투분석 지분도 별도로
+    // 기록. calculateCombinedSimulationTotal(calculate.js)이 이 상태 전체를 하나의 dealerData 사본에 합성해서
+    // 전체 체인을 한 번만 계산하므로, 예전(surgeBarSimContributions, 세 시뮬레이터의 totalChangePercent
+    // 3개를 곱연산으로 대충 합치던 방식)과 달리 소스 간 비선형 상호작용까지 정확히 반영된다.
+    const globalSimState = { abilityStone: null, bracelet: null, armorLevels: null, evolution: null, arkgrid: null };
+    let globalSimSkillShares = [];
+    let globalSimCtx = null;
+
+    // "현재 정보" 탭의 최종 딜 상승량 — 지금까지 각 탭에서 고른 시뮬레이션 값을 전부 합쳐서 실제 대비
+    // 변화율을 계산해 보여준다. 아무 탭도 안 건드렸으면 항상 0.00%.
+    function recomputeUnifiedSurgeBar() {
+      if (!globalSimCtx) return;
+      const result = calculateUnifiedSimulationResult(globalSimCtx, globalSimState, globalSimSkillShares);
       const surgeEl = document.getElementById('surgeBarValue');
-      if (surgeEl) surgeEl.textContent = pct(combined);
+      if (surgeEl) surgeEl.textContent = pct(result.totalChangePercent);
     }
-    function updateSurgeBarFromBracelet(totalChangePercent) {
-      surgeBarSimContributions.bracelet = totalChangePercent;
-      updateSurgeBar();
-    }
-    function updateSurgeBarFromArmor(totalChangePercent) {
-      surgeBarSimContributions.armor = totalChangePercent;
-      updateSurgeBar();
-    }
-    function updateSurgeBarFromAbilityStone(totalChangePercent) {
-      surgeBarSimContributions.abilityStone = totalChangePercent;
-      updateSurgeBar();
+
+    // 어떤 탭이든 자기 자신의 선택을 뺀 "다른 탭들 상태" 대비 변화율(맥락 안에서의 한계 기여도)을
+    // 계산 — 여러 탭을 동시에 만졌을 때 한 탭에서 바뀐 값이 다른 탭의 효율 계산에도 반영되도록 하는
+    // 핵심 함수. thisTabKey를 globalSimState에서 잠깐 비웠다가 복원하는 방식으로 "제외" 상태를 만든다.
+    function calculateContextAwareChangePercent(thisTabKey, currentSelection) {
+      if (!globalSimCtx) return 0;
+      const saved = globalSimState[thisTabKey];
+      globalSimState[thisTabKey] = null;
+      const baseline = calculateCombinedSimulationTotal(globalSimCtx.dealerData, globalSimCtx.supportData, globalSimCtx, globalSimState, globalSimSkillShares);
+      globalSimState[thisTabKey] = currentSelection;
+      const withThis = calculateCombinedSimulationTotal(globalSimCtx.dealerData, globalSimCtx.supportData, globalSimCtx, globalSimState, globalSimSkillShares);
+      globalSimState[thisTabKey] = saved;
+      return ((withThis / baseline) - 1) * 100;
     }
     // 진화 커스텀 시뮬레이터는 "실제 빌드 대비"가 아니라 "미투자(0) 대비"로 비교하는 게 목적이 달라서
     // (실제 트리를 통째로 지우고 비교하면 항상 큰 폭의 음수로 나와 오해를 줌 — buildDealerDataWithEvolutionSelections
-    // 주석 참고), 다른 세 시뮬레이터와 같은 surgeBar 곱연산에는 섞지 않고 자체 결과 박스에만 표시한다.
+    // 주석 참고), 자체 결과 박스의 "vs 미투자" 숫자는 그대로 두고, globalSimState에는 별도로 반영한다.
 
     function recomputeBraceletSimulator() {
       const resultEl = document.querySelector('.braceletSimResult');
@@ -867,7 +874,8 @@
       };
       if (!selections.basic.length && !selections.grant.length) {
         resultEl.innerHTML = '<p>옵션을 선택하면 결과가 표시됩니다.</p>';
-        updateSurgeBarFromBracelet(0);
+        globalSimState.bracelet = null;
+        recomputeUnifiedSurgeBar();
         return;
       }
       const result = calculateHypotheticalBraceletEfficiency(braceletSimCtx.dealerData, braceletSimCtx.supportData, braceletSimCtx, selections);
@@ -878,11 +886,14 @@
           return `<tr><th>${item.label}</th><td>${displayValue}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`;
         })
         .join('');
+      globalSimState.bracelet = selections;
+      const contextAwarePercent = calculateContextAwareChangePercent('bracelet', selections);
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>옵션</th><th>값</th><th>환산 효율</th></tr>${rows}</table>
         <p class="braceletSimTotal">실제 팔찌 대비 변화: ${pct(result.totalChangePercent)}%</p>
+        <p class="braceletSimTotal">다른 탭 선택 반영한 변화율: ${pct(contextAwarePercent)}%</p>
       `;
-      updateSurgeBarFromBracelet(result.totalChangePercent);
+      recomputeUnifiedSurgeBar();
     }
 
     function setupBraceletSimulator(ctx) {
@@ -992,16 +1003,20 @@
       const hasSelection = ARMOR_EQUIPMENT_TYPES.some((t) => armorSimState[t]);
       if (!hasSelection) {
         resultEl.innerHTML = '<p>레벨을 선택하면 결과가 표시됩니다.</p>';
-        updateSurgeBarFromArmor(0);
+        globalSimState.armorLevels = null;
+        recomputeUnifiedSurgeBar();
         return;
       }
       const result = calculateHypotheticalArmorEfficiency(armorSimCtx.dealerData, armorSimCtx.dealerStats, armorSimCtx, armorSimState);
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      globalSimState.armorLevels = { ...armorSimState };
+      const contextAwarePercent = calculateContextAwareChangePercent('armorLevels', globalSimState.armorLevels);
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>부위</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <p class="armorSimTotal">실제 장비 대비 변화: ${pct(result.totalChangePercent)}%</p>
+        <p class="armorSimTotal">다른 탭 선택 반영한 변화율: ${pct(contextAwarePercent)}%</p>
       `;
-      updateSurgeBarFromArmor(result.totalChangePercent);
+      recomputeUnifiedSurgeBar();
     }
 
     function setupArmorSimulator(ctx) {
@@ -1144,16 +1159,20 @@
       const selections = abilityStoneSimState.filter((r) => r.name && r.level).map((r) => ({ name: r.name, level: r.level }));
       if (!selections.length) {
         resultEl.innerHTML = '<p>각인과 레벨을 선택하면 결과가 표시됩니다.</p>';
-        updateSurgeBarFromAbilityStone(0);
+        globalSimState.abilityStone = null;
+        recomputeUnifiedSurgeBar();
         return;
       }
       const result = calculateHypotheticalAbilityStoneEfficiency(abilityStoneSimCtx.dealerData, abilityStoneSimCtx.dealerStats, abilityStoneSimCtx, selections);
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      globalSimState.abilityStone = selections;
+      const contextAwarePercent = calculateContextAwareChangePercent('abilityStone', selections);
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>각인</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <p class="braceletSimTotal">실제 스톤 대비 변화: ${pct(result.totalChangePercent)}%</p>
+        <p class="braceletSimTotal">다른 탭 선택 반영한 변화율: ${pct(contextAwarePercent)}%</p>
       `;
-      updateSurgeBarFromAbilityStone(result.totalChangePercent);
+      recomputeUnifiedSurgeBar();
     }
 
     function setupAbilityStoneSimulator(ctx) {
@@ -1279,20 +1298,36 @@
           if (level > 0) selections.push({ name, level });
         });
       });
+      // 통합 시뮬레이터용 — 1~4티어/5티어로 나눠서 buildDealerDataWithFullEvolutionSelections 형식으로도
+      // 기록(진화 최적화 엔진과 동일한, 5티어까지 지원하는 더 완전한 빌더 재사용).
+      const tier1to4Sels = [];
+      const tier5Sels = [];
+      EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => {
+        row.forEach((name, colIdx) => {
+          const level = evolutionSimState[tierIdx][colIdx];
+          if (level > 0) (tierIdx < 4 ? tier1to4Sels : tier5Sels).push({ name, level });
+        });
+      });
+      globalSimState.evolution = selections.length ? { tier1to4Sels, tier5Sels } : null;
+      recomputeUnifiedSurgeBar();
+
       if (!selections.length) {
         resultEl.innerHTML = '<p>노드를 선택하면 결과가 표시됩니다.</p>';
         return;
       }
       const result = calculateHypotheticalEvolutionEfficiency(evolutionSimCtx.dealerData, evolutionSimCtx.supportData, evolutionSimCtx, selections);
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
+      const contextAwarePercent = calculateContextAwareChangePercent('evolution', globalSimState.evolution);
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <table class="statTable">
           <tr><th>미투자 대비 커스텀 선택</th><td>${pct(result.totalChangePercent)}%</td></tr>
           <tr><th>미투자 대비 현재 실제 트리</th><td>${pct(result.realChangePercent)}%</td></tr>
           <tr><th>현재 실제 트리 대비 커스텀 선택</th><td>${pct(result.vsRealPercent)}%</td></tr>
+          <tr><th>다른 탭 선택 반영한, 실제 트리 대비 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:#888;">※ 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체는 아직 계산식이 없어 선택해도 0%로 반영됩니다(추후 추가 예정).</p>
+        <p style="font-size:11px;color:#888;">※ 위 3개 행(미투자 대비 등)은 아직 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체 계산식이 없어 선택해도 0%로 반영됩니다.
+        마지막 행("다른 탭 선택 반영한...")은 진화 최적화와 동일한 더 완전한 빌더를 사용해 5티어까지 반영됩니다.</p>
       `;
     }
 
@@ -1641,6 +1676,11 @@
         // 진화 트리 최적화(특히 뭉툭한 가시 판단)도 같은 스킬 지분으로 다시 계산 — 뭉툭한 가시는 스킬
         // 트라이포드의 치명타 적중률 보너스에 따라 유불리가 갈리기 때문에 지분 가중이 중요하다.
         renderEvolutionOptimizationSection(ctx, skillShares);
+
+        // 통합 시뮬레이터도 같은 스킬 지분을 반영해서 재계산(다른 탭들의 "다른 탭 선택 반영" 숫자에도
+        // 전투분석 지분 가중이 함께 반영되도록).
+        globalSimSkillShares = skillShares;
+        recomputeUnifiedSurgeBar();
       }
 
       panel.querySelector('.combatAnalysisRecalc').addEventListener('click', recalc);
@@ -1744,6 +1784,8 @@
         if (result.chaosCritDamagePercent) {
           chaosContribParts.push(`치명타 피해 +${pct(result.chaosCritDamagePercent)}%`);
         }
+        globalSimState.arkgrid = inputs;
+        const contextAwarePercent = calculateContextAwareChangePercent('arkgrid', inputs);
         panel.querySelector('.gemSimResult').innerHTML = `
           <table class="statTable">
             <tr><th>질서 코어 적주피 배율</th><td>${result.orderMultiplier.toFixed(4)} (해 ${pct(result.orderPercents.해)}% · 달 ${pct(result.orderPercents.달)}% · 별 ${pct(result.orderPercents.별)}%)</td></tr>
@@ -1754,8 +1796,10 @@
             <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>실제(현재) 대비 변화율</th><td>${pct(result.totalChangePercent)}%</td></tr>
+            <tr><th>다른 탭 선택 반영한 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
           </table>
         `;
+        recomputeUnifiedSurgeBar();
       }
 
       panel.querySelectorAll('.gemSimInput').forEach((input) => {
@@ -1765,6 +1809,13 @@
     }
 
     function renderDealerView(ctx) {
+      globalSimCtx = ctx;
+      globalSimState.abilityStone = null;
+      globalSimState.bracelet = null;
+      globalSimState.armorLevels = null;
+      globalSimState.evolution = null;
+      globalSimState.arkgrid = null;
+      globalSimSkillShares = [];
       const info = buildDealerCurrentInfo(ctx.dealerData, ctx.dealerStats, ctx);
       renderDealerInfoTab(ctx, info);
       renderDealerEquipTab(ctx);
