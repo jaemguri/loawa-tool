@@ -684,9 +684,9 @@
       document.getElementById('darkGrenadeCheckbox').addEventListener('change', () => recomputeDealerLiveNumbers(ctx));
     }
 
-    // 팔찌 시뮬레이터 상태: 기본 옵션 최대 2개(힘/민첩/지능/특화/신속/치명 중, 자유 입력),
+    // 팔찌 시뮬레이터 상태: 기본 옵션 최대 3개(힘/민첩/지능/특화/신속/치명 중, 자유 입력),
     // 부여 옵션 최대 3개(BRACELET_OPTION_CATALOG에서 옵션 종류 + 3단계 등급 선택)
-    const BRACELET_SIM_MAX = { basic: 2, grant: 3 };
+    const BRACELET_SIM_MAX = { basic: 3, grant: 3 };
     const braceletSimState = { basic: [{ type: '', value: '' }], grant: [{ catalogKey: '', tierIndex: null }] };
     let braceletSimCtx = null;
 
