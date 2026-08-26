@@ -105,6 +105,7 @@
       <button class="innerTabBtn" data-tab="equip">장비</button>
       <button class="innerTabBtn" data-tab="bracelet">팔찌</button>
       <button class="innerTabBtn" data-tab="stone">어빌리티스톤</button>
+      <button class="innerTabBtn" data-tab="engraving">각인</button>
       <button class="innerTabBtn" data-tab="evolution">아크패시브 진화</button>
       <button class="innerTabBtn" data-tab="analysis">전투분석</button>
       <button class="innerTabBtn" data-tab="arkgrid">아크그리드</button>
@@ -115,6 +116,7 @@
     <div class="tabPanel" data-panel="equip" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="bracelet" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="stone" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="engraving" hidden></div>
     <div class="tabPanel" data-panel="evolution" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="analysis" hidden></div>
     <div class="tabPanel" data-panel="arkgrid" hidden></div>
@@ -1375,6 +1377,96 @@
       `;
     }
 
+    // 각인 시뮬레이터 — 왼쪽 실제 상태 / 오른쪽 5슬롯(각인+레벨 0~4) 커스텀 시뮬레이터.
+    // 기본값은 현재 실제 5개 각인+레벨. 최적화 없음 — 고른 값 그대로 재계산만.
+    const ENGRAVING_NAMES = Object.keys(ENGRAVING_LEVEL_VALUE_TABLE);
+    const engravingSimState = [];
+    function renderDealerEngravingTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="engraving"]');
+      const realEngravings = getEngravingList(ctx.dealerData.engravings).filter((e) => ENGRAVING_NAMES.includes(e.name));
+
+      engravingSimState.length = 0;
+      for (let i = 0; i < 5; i++) {
+        engravingSimState.push(realEngravings[i] ? { name: realEngravings[i].name, level: realEngravings[i].level } : { name: '', level: 0 });
+      }
+
+      const currentRows = realEngravings.map((e) => {
+        const stoneLevel = (getArkPassiveEffectByName(ctx.dealerData.engravings, e.name) || {}).AbilityStoneLevel;
+        return `<tr><td>${e.name}</td><td>Lv.${e.level}(유물${e.level}단계)</td><td>${stoneLevel ? `스톤 Lv.${stoneLevel}` : '-'}</td></tr>`;
+      }).join('');
+
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>각인 시뮬레이터</h4>
+          <p style="font-size:11px;color:#888;">
+            최적화가 아닌 직접 입력 계산기입니다. 각인 자체의 레벨(유물0~4단계) 실제 값 표를 그대로 사용합니다.
+            어빌리티 스톤 보너스는 시뮬레이션한 각인 이름이 실제로 스톤이 걸린 각인과 같을 때만 유지됩니다
+            (이름을 바꾸면 그 각인의 스톤 보너스도 사라짐 — 실제 게임과 동일). 결투의 대가/기습의 대가 등
+            일부 각인의 "고정효과"(백/헤드어택 조건부, 캐스팅속도 등)는 계산에 아직 반영되지 않습니다.
+          </p>
+          <div class="braceletColumns">
+            <div>
+              <h5>현재 상태</h5>
+              <table class="statTable">
+                <tr><th>각인</th><th>레벨</th><th>스톤</th></tr>
+                ${currentRows || '<tr><td colspan="3">각인 정보 없음</td></tr>'}
+              </table>
+            </div>
+            <div>
+              <h5>시뮬레이터</h5>
+              <div class="gemSimGrid">
+                ${engravingSimState.map((s, i) => `
+                  <div class="gemSimGroup">
+                    <h5>슬롯 ${i + 1}</h5>
+                    <label>각인
+                      <select class="engravingNameSelect" data-idx="${i}">
+                        <option value="">(없음)</option>
+                        ${ENGRAVING_NAMES.map((name) => `<option value="${name}" ${name === s.name ? 'selected' : ''}>${name}</option>`).join('')}
+                      </select>
+                    </label>
+                    <label>레벨
+                      <select class="engravingLevelSelect" data-idx="${i}">
+                        ${[0, 1, 2, 3, 4].map((lv) => `<option value="${lv}" ${lv === s.level ? 'selected' : ''}>유물${lv}단계</option>`).join('')}
+                      </select>
+                    </label>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="engravingSimResult"></div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      function recalcEngravingSim() {
+        const result = calculateEngravingSetSimulation(ctx.dealerData, ctx, engravingSimState);
+        panel.querySelector('.engravingSimResult').innerHTML = `
+          <table class="statTable">
+            <tr><th>치명타 적중률</th><td>실제 ${pct(result.realCritRatePercent)}% → 시뮬 ${pct(result.simCritRatePercent)}%</td></tr>
+            <tr><th>치명타 피해</th><td>실제 ${pct(result.realCritDamagePercent)}% → 시뮬 ${pct(result.simCritDamagePercent)}%</td></tr>
+            <tr><th>각인 적주피 배율</th><td>실제 ${result.realEnemyMultiplier.toFixed(4)} → 시뮬 ${result.simEnemyMultiplier.toFixed(4)}</td></tr>
+            <tr><th>치명타 배율</th><td>${result.critAvgDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>실제(현재) 대비 변화율</th><td>${pct(result.totalChangePercent)}%</td></tr>
+          </table>
+        `;
+      }
+
+      panel.querySelectorAll('.engravingNameSelect').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          engravingSimState[parseInt(sel.dataset.idx, 10)].name = sel.value;
+          recalcEngravingSim();
+        });
+      });
+      panel.querySelectorAll('.engravingLevelSelect').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          engravingSimState[parseInt(sel.dataset.idx, 10)].level = parseInt(sel.value, 10);
+          recalcEngravingSim();
+        });
+      });
+      recalcEngravingSim();
+    }
+
     // 전투분석 탭에서 재계산할 때마다 이 진화 최적화 결과도 같이 갱신하기 위한 진입점(현재 정보 탭의
     // recomputeDealerLiveNumbers와 동일한 "실시간 갱신" 패턴).
     function renderEvolutionOptimizationSection(ctx, skillShares) {
@@ -1906,6 +1998,7 @@
       renderDealerEquipTab(ctx);
       renderDealerBraceletTab(ctx, info);
       renderDealerAbilityStoneTab(ctx);
+      renderDealerEngravingTab(ctx);
       renderDealerEvolutionTab(ctx);
       renderDealerAnalysisTab(ctx);
       renderDealerArkGridTab(ctx);
