@@ -389,23 +389,44 @@
       return `title="${escapeAttr(formatBreakdown(breakdown))}"`;
     }
 
-    // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움.
+    // 시너지 드롭다운을 카테고리별(<optgroup>)로 묶어서 보여주기 위한 그룹 정의 — 검색화면과
+    // 시너지 탭 시뮬레이터 select 양쪽이 공유한다.
+    const SYNERGY_CLASS_GROUPS = [
+      { label: '치명타 적중률', classList: SYNERGY_CRIT_RATE_CLASSES },
+      { label: '치명타 시 피해량', classList: SYNERGY_CRIT_DAMAGE_CLASSES },
+      { label: '피해 증가', classList: SYNERGY_DAMAGE_INCREASE_CLASSES },
+      { label: '주는 피해 증가', classList: SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES },
+      { label: '공격력 증가', classList: SYNERGY_ATTACK_POWER_CLASSES },
+      { label: '방어력 감소', classList: SYNERGY_DEFENSE_REDUCTION_CLASSES },
+    ];
+
+    // 시너지 직업 select 하나를 카테고리별 <optgroup>으로 채움 — 검색화면과 시너지 탭 시뮬레이터
+    // 양쪽에서 재사용.
+    function populateSynergyClassSelect(select, defaultValue) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '없음';
+      select.appendChild(emptyOption);
+      SYNERGY_CLASS_GROUPS.forEach((group) => {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = group.label;
+        group.classList.forEach((className) => {
+          const option = document.createElement('option');
+          option.value = className;
+          option.textContent = className;
+          optgroup.appendChild(option);
+        });
+        select.appendChild(optgroup);
+      });
+      select.value = defaultValue || '';
+    }
+
     // 아무것도 고르지 않으면 실전에서 가장 흔한 구성인 "피해 증가 시너지 2명"을 기본값으로 미리
     // 선택해둠(사용자 확정) — SYNERGY_DAMAGE_INCREASE_CLASSES의 첫 2개, 다른 시너지 카테고리와
     // 안 겹치는 직업들이라 부작용 없음.
     const DEFAULT_SYNERGY_CLASSES = SYNERGY_DAMAGE_INCREASE_CLASSES.slice(0, 2);
     [synergyClass2Select, synergyClass3Select].forEach((select, idx) => {
-      const emptyOption = document.createElement('option');
-      emptyOption.value = '';
-      emptyOption.textContent = '없음';
-      select.appendChild(emptyOption);
-      ALL_DEALER_CLASSES.forEach((className) => {
-        const option = document.createElement('option');
-        option.value = className;
-        option.textContent = className;
-        select.appendChild(option);
-      });
-      select.value = DEFAULT_SYNERGY_CLASSES[idx];
+      populateSynergyClassSelect(select, DEFAULT_SYNERGY_CLASSES[idx]);
     });
 
     // 닉네임 한쪽만 입력했을 때 반대쪽에 임의로 채워 넣는 기본 캐릭터
@@ -2029,22 +2050,6 @@
       { key: 'attack', label: '공격력 증가', classList: SYNERGY_ATTACK_POWER_CLASSES, percentEach: SYNERGY_ATTACK_POWER_PERCENT },
       { key: 'defense', label: '방어력 감소', classList: SYNERGY_DEFENSE_REDUCTION_CLASSES, percentEach: SYNERGY_DEFENSE_REDUCTION_PERCENT },
     ];
-
-    // 파티 드롭다운 2개(본인 제외) + 유효율 입력 2개(본인 제외) + 본인 유효율 입력 1개를 한 세트로
-    // 만들어주는 헬퍼 — 검색화면과 시너지 탭 시뮬레이터 양쪽에서 같은 모양의 컨트롤이 필요해 공용화.
-    function populateSynergyClassSelect(select, defaultValue) {
-      const emptyOption = document.createElement('option');
-      emptyOption.value = '';
-      emptyOption.textContent = '없음';
-      select.appendChild(emptyOption);
-      ALL_DEALER_CLASSES.forEach((className) => {
-        const option = document.createElement('option');
-        option.value = className;
-        option.textContent = className;
-        select.appendChild(option);
-      });
-      select.value = defaultValue || '';
-    }
 
     function renderDealerSynergyTab(ctx) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="synergy"]');
