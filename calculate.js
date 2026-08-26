@@ -4220,6 +4220,134 @@ function getArkgridCoreSummary(arkgridData) {
   }));
 }
 
+// 각인 자체의 레벨별(유물0단계=전설4단계, 유물1~4단계) 실제 효과 % — 사용자가 실측/정리해서 제공.
+// ABILITY_STONE_ENGRAVING_CATALOG(어빌리티 스톤이 "추가로" 주는 보너스, 이 표와는 완전히 다른 수치)와
+// 혼동하지 말 것 — 이건 각인 자체(스톤 없이도 적용되는) 순수 레벨값. method는 그 카탈로그와 동일 분류:
+// enemyDamage(적주피%, 곱연산)/critRate(치명타 적중률%, 합연산)/critDamage(치명타 피해%)/
+// attackPower(공격력%). 돌격대장은 "이동속도 증가량의 X%"로, 기존 getChargeCaptainEnemyDamagePercent와
+// 동일하게 ×0.4 적주피 전환이 필요(이 표엔 raw 값 그대로 저장 — 변환은 사용처에서).
+// 각 각인의 "고정효과"(레벨 무관 상시 적용, 예: 결투의 대가 헤드어택 성공 시 +15%)는 현재 계산 체인에
+// 대응하는 자리가 없어 주석으로만 기록 — 조건부/캐스팅속도/마나회복 등은 추후 별도 계산식 필요(TODO).
+// levels 배열 인덱스 0~4 = 유물0~4단계, 실제 API의 Level 필드가 그대로 이 인덱스와 일치함 — 실측으로
+// 확인 완료(잼구릿, Level=4인 예리한 둔기/기습의 대가/원한/돌격대장 4개 각인 전부 Description에서
+// 역산한 순수 각인값이 이 표의 levels[4](유물4단계)와 정확히 일치, 아드레날린도 기존
+// adrenalineCritRateBonus 공식과 levels[4]=20이 일치).
+const ENGRAVING_LEVEL_VALUE_TABLE = {
+  '결투의 대가': { method: 'enemyDamage', levels: [4.80, 5.50, 6.20, 6.90, 7.60] }, // 고정: 헤드어택 성공 시 +15%
+  '기습의 대가': { method: 'enemyDamage', levels: [4.80, 5.50, 6.20, 6.90, 7.60] }, // 고정: 백어택 성공 시 +15%
+  '달인의 저력': { method: 'enemyDamage', levels: [14.00, 14.75, 15.50, 16.25, 17.00] },
+  '바리케이드': { method: 'enemyDamage', levels: [14.00, 14.75, 15.50, 16.25, 17.00] },
+  '속전속결': { method: 'enemyDamage', levels: [18.00, 18.75, 19.50, 20.25, 21.00] }, // 고정: 홀딩/캐스팅 속도 +20%
+  '슈퍼 차지': { method: 'enemyDamage', levels: [18.00, 18.75, 19.50, 20.25, 21.00] }, // 고정: 차징속도 +40%
+  '안정된 상태': { method: 'enemyDamage', levels: [14.00, 14.75, 15.50, 16.25, 17.00] },
+  '원한': { method: 'enemyDamage', levels: [18.00, 18.75, 19.50, 20.25, 21.00] }, // 고정: 받는 피해 +20%
+  '저주받은 인형': { method: 'enemyDamage', levels: [14.00, 14.75, 15.50, 16.25, 17.00] }, // 고정: 회복효과 25% 감소
+  '질량 증가': { method: 'enemyDamage', levels: [16.00, 16.75, 17.50, 18.25, 19.00] }, // 고정: 공격속도 -10%
+  '타격의 대가': { method: 'enemyDamage', levels: [14.00, 14.75, 15.50, 16.25, 17.00] }, // 고정: 각성기 미적용
+  '마나 효율 증가': { method: 'enemyDamage', levels: [13.00, 13.75, 14.50, 15.25, 16.00] }, // 고정: 마나회복 +20%
+  '돌격대장': { method: 'enemyDamage', levels: [40.00, 42.00, 44.00, 46.00, 48.00] }, // 이동속도 증가량 raw값(×0.4 전환 필요)
+  '정밀 단도': { method: 'critRate', levels: [18.00, 18.75, 19.50, 20.25, 21.00] }, // 고정: 치명타 피해 -6%
+  // 이 levels 값은 기존 adrenalineCritRateBonus(14+level*1.5, 최대 20) 공식과 정확히 일치(치명타
+  // 적중률 보너스, .Level 기반 — 각인 자체 공격력%는 "중첩당 0.90%"로 별도 상시 스택 메커니즘이라
+  // 계산 체인에 아직 미반영). method는 실제로 critRate — 표 작성 시 attackPower로 잘못 분류했던 것 정정.
+  '아드레날린': { method: 'critRate', levels: [14.00, 15.50, 17.00, 18.50, 20.00] }, // 고정: 중첩당 공격력 0.90%
+  '예리한 둔기': { method: 'critDamage', levels: [44.00, 46.00, 48.00, 50.00, 52.00] }, // 고정: 확률적 피해 20% 감소
+};
+
+// 정밀 단도 각인 자체(스톤 아님)의 치명타 적중률% — Description에 이 각인 전용 문구가 없어(예리한
+// 둔기처럼 "치명타 피해량이 X%" 같은 고유 텍스트가 없음) 텍스트 파싱 대신 .Level을 직접 읽어서
+// 검증된 ENGRAVING_LEVEL_VALUE_TABLE로 조회한다(아드레날린과 동일한 방식).
+// 기존에는 이 각인 자체 값이 계산에 전혀 반영되지 않고(스톤 보너스만 반영) 있었던 갭 — 이번에 추가.
+// 정밀 단도를 실제로 착용한 캐릭터를 아직 못 구해 실측 검증은 못 했지만, 착용 안 한 모든 캐릭터에게는
+// 항상 0을 반환하므로(getArkPassiveEffectByName이 null) 회귀 위험은 없음.
+function getPrecisionDaggerOwnCritRatePercent(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '정밀 단도');
+  if (!eng || eng.Level === undefined || eng.Level === null) return 0;
+  const entry = ENGRAVING_LEVEL_VALUE_TABLE['정밀 단도'];
+  return (entry && entry.levels[eng.Level] !== undefined) ? entry.levels[eng.Level] : 0;
+}
+
+// 각인 하나(이름+레벨)의 스톤 보너스 값을 실제 착용 중인 스톤 정보에서 이름이 일치할 때만 가져옴 —
+// 스톤의 무작위 각인 효과는 그 이름의 각인이 실제로 활성화돼 있을 때만 발동하는 실제 게임 로직과
+// 동일하게, 시뮬레이션에서 이름을 바꾸면 스톤 보너스도 같이 사라지게 한다.
+function getEngravingStoneBonusValue(engravingsData, name) {
+  const eng = getArkPassiveEffectByName(engravingsData, name);
+  if (!eng || !eng.AbilityStoneLevel) return 0;
+  if (name === '돌격대장') return ABILITY_STONE_ENGRAVING_CATALOG['돌격대장'].levels[eng.AbilityStoneLevel - 1] || 0; // 이미 ×0.4된 적주피%
+  if (name === '예리한 둔기') return SHARP_WEAPON_STONE_BONUS[eng.AbilityStoneLevel] || 0;
+  if (name === '아드레날린') return 0; // 아드레날린 스톤 보너스는 크리티컬이 아니라 별도 공격력 경로(ctx.adrenalineBonusBase) — 여기서 다루지 않음
+  const catalogEntry = ABILITY_STONE_ENGRAVING_CATALOG[name];
+  return catalogEntry ? (catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0) : 0;
+}
+
+// 각인 세트(최대 5개, {name, level(0~4)}) 하나를 통째로 가정했을 때의 적주피 배율/치명타 적중률/
+// 치명타 피해/치명타 피해 페널티를 계산 — ENGRAVING_LEVEL_VALUE_TABLE을 직접 조회하는 방식(Description
+// 텍스트 합성이 아님, 더 정확하고 안전함). 스톤 보너스는 이름이 일치하는 경우에만 그대로 유지.
+function calculateEngravingSetStats(engravingsData, selections) {
+  const valid = (selections || []).filter((s) => s.name && ENGRAVING_LEVEL_VALUE_TABLE[s.name] && s.level !== undefined && s.level !== null);
+  let enemyDamageMultiplier = 1;
+  let critRatePercent = 0;
+  let critDamagePercent = 0;
+  let hasSharpWeapon = false;
+
+  valid.forEach(({ name, level }) => {
+    const entry = ENGRAVING_LEVEL_VALUE_TABLE[name];
+    const value = entry.levels[level] || 0;
+    const stoneValue = getEngravingStoneBonusValue(engravingsData, name);
+
+    if (name === '돌격대장') {
+      const MOVE_SPEED_FIXED = 40;
+      enemyDamageMultiplier *= toMultiplier((value * MOVE_SPEED_FIXED) / 100 + stoneValue);
+    } else if (entry.method === 'enemyDamage') {
+      enemyDamageMultiplier *= toMultiplier(value + stoneValue);
+    } else if (entry.method === 'critRate') {
+      critRatePercent += value + (name === '아드레날린' ? 0 : stoneValue);
+    } else if (entry.method === 'critDamage') {
+      critDamagePercent += value + stoneValue;
+      hasSharpWeapon = true;
+    }
+  });
+
+  return { enemyDamageMultiplier, critRatePercent, critDamagePercent, hasSharpWeapon };
+}
+
+// 각인 세트 시뮬레이터 진입점(최적화 없음). selections = [{name, level}] 최대 5개 — 지정 안 하면
+// 실제 5개 각인+레벨을 그대로 사용. 실제(ctx) 값 대비 총딜 변화율을 ratio 치환 방식으로 계산 —
+// 각인에서 오는 적주피/치명타 항목만 시뮬레이션 값으로 교체하고 그 외(코어/보석/진화 등)는 ctx의
+// 실제 계산 결과를 그대로 사용한다(calculateArkGridPointGemSimulation과 동일한 패턴).
+function calculateEngravingSetSimulation(dealerData, ctx, selections) {
+  const engravingsData = dealerData.engravings;
+  const real = calculateEngravingSetStats(engravingsData, getEngravingList(engravingsData));
+  const sim = calculateEngravingSetStats(engravingsData, selections);
+
+  // 치명타 배율: recalcCritAvgDamageMultiplierWithDelta 재사용(rate/damage/onHit이 비선형으로 얽혀있어
+  // 단순 비율 치환이 불가능 — calculate.js 상단 참고). onHit은 각인 시뮬레이터가 안 건드리므로 delta 0.
+  const critAvgDamageMultiplier = recalcCritAvgDamageMultiplierWithDelta(
+    ctx.critResult, sim.critRatePercent - real.critRatePercent, sim.critDamagePercent - real.critDamagePercent, 0
+  );
+  // 예리한 둔기의 "10% 확률로 20% 감소된 피해" 페널티는 착용 여부(레벨 무관)로만 결정되는 고정 배율이라
+  // ctx.critResult.sharpWeaponPenalty를 그대로 나눠서 빼고 새로 곱한다.
+  const sharpWeaponPenaltyMultiplier = 1 - 0.10 * 0.20; // getSharpWeaponDamagePenaltyMultiplier와 동일 고정값
+  const realSharpWeaponPenalty = ctx.critResult.sharpWeaponPenalty;
+  const simSharpWeaponPenalty = sim.hasSharpWeapon ? sharpWeaponPenaltyMultiplier : 1;
+  const adjustedCritMultiplier = critAvgDamageMultiplier / realSharpWeaponPenalty * simSharpWeaponPenalty;
+
+  const realEnemyMultiplier = real.enemyDamageMultiplier;
+  const simEnemyMultiplier = sim.enemyDamageMultiplier;
+  const enemyDamageMultiplier = ctx.enemyDamageResult.multiplier / realEnemyMultiplier * simEnemyMultiplier;
+
+  const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+  const totalDamage = ctx.finalDamage * adjustedCritMultiplier * ctx.extraDamageResult.multiplier * enemyDamageMultiplier;
+
+  return {
+    realCritRatePercent: real.critRatePercent, simCritRatePercent: sim.critRatePercent,
+    realCritDamagePercent: real.critDamagePercent, simCritDamagePercent: sim.critDamagePercent,
+    realEnemyMultiplier, simEnemyMultiplier,
+    critAvgDamageMultiplier: adjustedCritMultiplier, enemyDamageMultiplier,
+    totalDamage, totalChangePercent: ((totalDamage / realTotal) - 1) * 100,
+  };
+}
+
 // 딜러의 모든 각인(ArkPassiveEffects)을 이름/레벨만 나열 (유물 각인서 정보 표시용)
 function getEngravingList(engravingsData) {
   if (!engravingsData || !engravingsData.ArkPassiveEffects) return [];
