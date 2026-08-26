@@ -1638,6 +1638,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     백사멸: autoSameolType === 'back' ? 10 : 0,
     시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT),
     어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
+    정밀단도_각인: getPrecisionDaggerOwnCritRatePercent(dealerData.engravings),
     스킬_부가효과: getCombatSkillPersistentCritRatePercent(dealerData.combatSkills),
     전투분석_스킬전용: (options && options.extraCritRatePercent) || 0,
   };
@@ -1659,6 +1660,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     스톤_예리한둔기_전용보너스: sharpWeaponStoneDmg,
     딜러팔찌: dealerBracelet.critDamagePercent,
     아크그리드: arkgridCrit.critDamagePercent,
+    정밀단도_각인_페널티: getPrecisionDaggerCritDamagePenaltyPercent(dealerData.engravings),
     전투분석_스킬전용: (options && options.extraCritDamagePercent) || 0,
   };
   const critDamagePercent = Object.values(critDamageBreakdown).reduce((a, b) => a + b, 0);
@@ -4258,13 +4260,23 @@ const ENGRAVING_LEVEL_VALUE_TABLE = {
 // 둔기처럼 "치명타 피해량이 X%" 같은 고유 텍스트가 없음) 텍스트 파싱 대신 .Level을 직접 읽어서
 // 검증된 ENGRAVING_LEVEL_VALUE_TABLE로 조회한다(아드레날린과 동일한 방식).
 // 기존에는 이 각인 자체 값이 계산에 전혀 반영되지 않고(스톤 보너스만 반영) 있었던 갭 — 이번에 추가.
-// 정밀 단도를 실제로 착용한 캐릭터를 아직 못 구해 실측 검증은 못 했지만, 착용 안 한 모든 캐릭터에게는
-// 항상 0을 반환하므로(getArkPassiveEffectByName이 null) 회귀 위험은 없음.
+// 실측 검증: 사용자가 인게임 각인 정보창 스크린샷 제공(전설0단계=15+전설4단계보너스3=18%,
+// 유물1~4단계=18.75/19.50/20.25/21.00%, 스톤 Lv4=+6.00% 전부 ENGRAVING_LEVEL_VALUE_TABLE/
+// ABILITY_STONE_ENGRAVING_CATALOG 값과 정확히 일치) — API로 착용 캐릭터를 못 구했지만 스샷으로
+// 확정 검증됨.
 function getPrecisionDaggerOwnCritRatePercent(engravingsData) {
   const eng = getArkPassiveEffectByName(engravingsData, '정밀 단도');
   if (!eng || eng.Level === undefined || eng.Level === null) return 0;
   const entry = ENGRAVING_LEVEL_VALUE_TABLE['정밀 단도'];
   return (entry && entry.levels[eng.Level] !== undefined) ? entry.levels[eng.Level] : 0;
+}
+
+// 정밀 단도의 "치명타 피해 6% 감소" — 장식적 부가효과가 아니라 이 각인의 핵심 트레이드오프 자체
+// (치명타 적중률 15% 증가 "대신" 치명타 피해 6% 감소, 레벨/등급 무관 상시 적용 — 인게임 스크린샷으로
+// 확인). 착용 중이기만 하면(레벨 0 이상) 항상 -6%.
+function getPrecisionDaggerCritDamagePenaltyPercent(engravingsData) {
+  const eng = getArkPassiveEffectByName(engravingsData, '정밀 단도');
+  return (eng && eng.Level !== undefined && eng.Level !== null) ? -PRECISION_DAGGER_FIXED_CRIT_DAMAGE_PENALTY_PERCENT : 0;
 }
 
 // 각인 하나(이름+레벨)의 스톤 보너스 값을 실제 착용 중인 스톤 정보에서 이름이 일치할 때만 가져옴 —
@@ -4284,6 +4296,13 @@ function getEngravingStoneBonusValue(engravingsData, name) {
 // 기존 컨벤션(getBackHeadAttackExtraDamagePercent 등, 조건부는 "상시 발동" 가정)과 동일하게 상시
 // 적용으로 취급하고, 실제 계산과 동일하게 "추가 피해"(적주피 아님) 쪽에 더한다.
 const ENGRAVING_FIXED_BACK_HEAD_ATTACK_EXTRA_DAMAGE_PERCENT = 15;
+
+// 정밀 단도의 "고정효과" — 다른 각인들의 고정효과와 달리 이건 장식적인 부가효과가 아니라 이 각인의
+// 핵심 트레이드오프 자체(치명타 적중률 15% 증가 "대신" 치명타 피해 6% 감소, 레벨/등급 무관 상시 적용
+// — 사용자 제공 인게임 스크린샷으로 확인). ENGRAVING_LEVEL_VALUE_TABLE의 정밀 단도 levels 값은 이미
+// 이 기본 15%가 포함된 값이므로(전설0단계=15+전설4단계보너스3=18 등, 스크린샷과 정확히 일치 검증됨),
+// 치명타 피해 감소분만 별도로 빼주면 된다.
+const PRECISION_DAGGER_FIXED_CRIT_DAMAGE_PENALTY_PERCENT = 6;
 
 // 각인 세트(최대 5개, {name, level(0~4)}) 하나를 통째로 가정했을 때의 적주피 배율/치명타 적중률/
 // 치명타 피해/치명타 피해 페널티/추가 피해%(결투·기습의 대가 고정효과)를 계산 —
@@ -4310,6 +4329,7 @@ function calculateEngravingSetStats(engravingsData, selections) {
       enemyDamageMultiplier *= toMultiplier(value + stoneValue);
     } else if (entry.method === 'critRate') {
       critRatePercent += value + (name === '아드레날린' ? 0 : stoneValue);
+      if (name === '정밀 단도') critDamagePercent -= PRECISION_DAGGER_FIXED_CRIT_DAMAGE_PENALTY_PERCENT;
     } else if (entry.method === 'critDamage') {
       critDamagePercent += value + stoneValue;
       hasSharpWeapon = true;
