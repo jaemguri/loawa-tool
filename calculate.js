@@ -4280,14 +4280,22 @@ function getEngravingStoneBonusValue(engravingsData, name) {
   return catalogEntry ? (catalogEntry.levels[eng.AbilityStoneLevel - 1] || 0) : 0;
 }
 
+// 결투의 대가/기습의 대가의 "고정효과"(헤드/백어택 성공 시 피해량 추가로 15% 증가) — 레벨 무관 고정값.
+// 기존 컨벤션(getBackHeadAttackExtraDamagePercent 등, 조건부는 "상시 발동" 가정)과 동일하게 상시
+// 적용으로 취급하고, 실제 계산과 동일하게 "추가 피해"(적주피 아님) 쪽에 더한다.
+const ENGRAVING_FIXED_BACK_HEAD_ATTACK_EXTRA_DAMAGE_PERCENT = 15;
+
 // 각인 세트(최대 5개, {name, level(0~4)}) 하나를 통째로 가정했을 때의 적주피 배율/치명타 적중률/
-// 치명타 피해/치명타 피해 페널티를 계산 — ENGRAVING_LEVEL_VALUE_TABLE을 직접 조회하는 방식(Description
-// 텍스트 합성이 아님, 더 정확하고 안전함). 스톤 보너스는 이름이 일치하는 경우에만 그대로 유지.
+// 치명타 피해/치명타 피해 페널티/추가 피해%(결투·기습의 대가 고정효과)를 계산 —
+// ENGRAVING_LEVEL_VALUE_TABLE을 직접 조회하는 방식(Description 텍스트 합성이 아님, 더 정확하고
+// 안전함). 스톤 보너스는 이름이 일치하는 경우에만 그대로 유지. 원한의 받는 피해 증가, 캐스팅/차징
+// 속도, 마나회복 등은 사용자 확정으로 계산에 포함하지 않음.
 function calculateEngravingSetStats(engravingsData, selections) {
   const valid = (selections || []).filter((s) => s.name && ENGRAVING_LEVEL_VALUE_TABLE[s.name] && s.level !== undefined && s.level !== null);
   let enemyDamageMultiplier = 1;
   let critRatePercent = 0;
   let critDamagePercent = 0;
+  let extraDamagePercent = 0;
   let hasSharpWeapon = false;
 
   valid.forEach(({ name, level }) => {
@@ -4306,9 +4314,13 @@ function calculateEngravingSetStats(engravingsData, selections) {
       critDamagePercent += value + stoneValue;
       hasSharpWeapon = true;
     }
+
+    if (name === '결투의 대가' || name === '기습의 대가') {
+      extraDamagePercent += ENGRAVING_FIXED_BACK_HEAD_ATTACK_EXTRA_DAMAGE_PERCENT;
+    }
   });
 
-  return { enemyDamageMultiplier, critRatePercent, critDamagePercent, hasSharpWeapon };
+  return { enemyDamageMultiplier, critRatePercent, critDamagePercent, extraDamagePercent, hasSharpWeapon };
 }
 
 // 각인 세트 시뮬레이터 진입점(최적화 없음). selections = [{name, level}] 최대 5개 — 지정 안 하면
@@ -4336,14 +4348,19 @@ function calculateEngravingSetSimulation(dealerData, ctx, selections) {
   const simEnemyMultiplier = sim.enemyDamageMultiplier;
   const enemyDamageMultiplier = ctx.enemyDamageResult.multiplier / realEnemyMultiplier * simEnemyMultiplier;
 
+  // 결투의 대가/기습의 대가 고정효과(+15%, 백/헤드어택 성공 시 추가 피해) — extraDamageMultiplier =
+  // 1+합연산%/100 구조라 델타를 그대로 더하면 된다(ratio 치환 불필요).
+  const extraDamageMultiplier = ctx.extraDamageResult.multiplier + (sim.extraDamagePercent - real.extraDamagePercent) / 100;
+
   const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
-  const totalDamage = ctx.finalDamage * adjustedCritMultiplier * ctx.extraDamageResult.multiplier * enemyDamageMultiplier;
+  const totalDamage = ctx.finalDamage * adjustedCritMultiplier * extraDamageMultiplier * enemyDamageMultiplier;
 
   return {
     realCritRatePercent: real.critRatePercent, simCritRatePercent: sim.critRatePercent,
     realCritDamagePercent: real.critDamagePercent, simCritDamagePercent: sim.critDamagePercent,
     realEnemyMultiplier, simEnemyMultiplier,
-    critAvgDamageMultiplier: adjustedCritMultiplier, enemyDamageMultiplier,
+    realExtraDamagePercent: real.extraDamagePercent, simExtraDamagePercent: sim.extraDamagePercent,
+    critAvgDamageMultiplier: adjustedCritMultiplier, enemyDamageMultiplier, extraDamageMultiplier,
     totalDamage, totalChangePercent: ((totalDamage / realTotal) - 1) * 100,
   };
 }
