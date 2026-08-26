@@ -1612,8 +1612,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
   const partyClassNames = [className, ...((options && options.partyClassNames) || [])];
-  const critRateSynergyEffectiveRatio = (options && options.critRateSynergyEffectiveRatio) ?? 1;
-  const critDamageSynergyEffectiveRatio = (options && options.critDamageSynergyEffectiveRatio) ?? 1;
+  const partyMemberRatios = (options && options.partyMemberRatios) || {};
   const autoSameolType = getAutoSameolType(dealerData.arkpassive);
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -1638,7 +1637,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     서폿팔찌_치적저항감소: supportBracelet.critResistReductionPercent,
     치명스탯: critStatRate,
     백사멸: autoSameolType === 'back' ? 10 : 0,
-    시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT, critRateSynergyEffectiveRatio),
+    시너지_파티직업: sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT, partyMemberRatios),
     어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
     정밀단도_각인: getPrecisionDaggerOwnCritRatePercent(dealerData.engravings),
     스킬_부가효과: getCombatSkillPersistentCritRatePercent(dealerData.combatSkills),
@@ -1688,7 +1687,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
   const rate = Math.min(effectiveCritRatePercent, 100) / 100;
   const critDamageMultiplier = (1 - rate) + rate * toMultiplier(critDamagePercent) * onHitMultiplier;
   const sharpWeaponPenalty = getSharpWeaponDamagePenaltyMultiplier(dealerData.engravings);
-  const classSynergyCritDamagePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT, critDamageSynergyEffectiveRatio);
+  const classSynergyCritDamagePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT, partyMemberRatios);
   const avgDamageMultiplier = critDamageMultiplier * sharpWeaponPenalty * toMultiplier(classSynergyCritDamagePercent);
 
   return {
@@ -2629,9 +2628,9 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
   function totalFor(sels) {
     const modifiedDealerData = buildDealerDataWithEvolutionSelections(dealerData, sels);
     const newStats = calculateCharacterStats(modifiedDealerData);
-    const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
-    const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const newFinalDamage = calculateFinalDamage(
       newStats.basePower, newStats.accessoryAttackFlat, newStats.chaosCoreAttack.flat, ctx.supportBuffPower,
       newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
@@ -2740,8 +2739,8 @@ function buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCr
 // 놓친다 — 한가한신수 캐릭터로 실측 검증: 기본 비교로는 뭉툭한가시가 근소하게 불리했지만, 지분 가중
 // 시 +6.87%로 역전됨). skillShares가 비어있으면 기본(가중치 없음) 결합값을 그대로 반환한다.
 function calculateSkillWeightedCritEnemyMultiplier(dealerData, supportData, ctx, skillShares) {
-  const baseCrit = calculateCritMultiplier(dealerData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
-  const baseEnemy = calculateEnemyDamageMultiplier(dealerData, baseCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+  const baseCrit = calculateCritMultiplier(dealerData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
+  const baseEnemy = calculateEnemyDamageMultiplier(dealerData, baseCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
   const baseCombined = baseCrit.avgDamageMultiplier * baseEnemy.multiplier;
   if (!skillShares || skillShares.length === 0) return baseCombined;
 
@@ -2756,10 +2755,10 @@ function calculateSkillWeightedCritEnemyMultiplier(dealerData, supportData, ctx,
     if (skill && hasTripods) {
       const bonus = getCombatSkillSpecificCritBonus(skill);
       const skillCrit = calculateCritMultiplier(dealerData, supportData, {
-        partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio,
+        partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios,
         extraCritRatePercent: bonus.critRatePercent, extraCritDamagePercent: bonus.critDamagePercent,
       });
-      const skillEnemy = calculateEnemyDamageMultiplier(dealerData, skillCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+      const skillEnemy = calculateEnemyDamageMultiplier(dealerData, skillCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
       combined = skillCrit.avgDamageMultiplier * skillEnemy.multiplier;
     }
     majorShareTotal += share;
@@ -3112,8 +3111,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const equipment = dealerData.equipment;
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
   const partyClassNames = [className, ...((options && options.partyClassNames) || [])];
-  const damageIncreaseSynergyEffectiveRatio = (options && options.damageIncreaseSynergyEffectiveRatio) ?? 1;
-  const enemyDamageTakenSynergyEffectiveRatio = (options && options.enemyDamageTakenSynergyEffectiveRatio) ?? 1;
+  const partyMemberRatios = (options && options.partyMemberRatios) || {};
   const braceletItem = (equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
   const dealerBracelet = parseBraceletOptions(braceletText);
@@ -3131,11 +3129,11 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const bluntThornResult = getBluntThornConversionBonusPercent(dealerData.arkpassive, critRatePercent);
   const bluntThornBonus = bluntThornResult.bonus;
   const sameolPercent = getSameolEnemyDamagePercent(backSameolChecked, headSameolChecked);
-  const synergyDamageIncreasePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_DAMAGE_INCREASE_CLASSES, SYNERGY_DAMAGE_INCREASE_PERCENT, damageIncreaseSynergyEffectiveRatio);
+  const synergyDamageIncreasePercent = sumPartySynergyPercent(partyClassNames, SYNERGY_DAMAGE_INCREASE_CLASSES, SYNERGY_DAMAGE_INCREASE_PERCENT, partyMemberRatios);
   const synergyEnemyDamageTakenTierPercent = (backSameolChecked || headSameolChecked)
     ? SYNERGY_ENEMY_DAMAGE_TAKEN_SAMEOL_PERCENT
     : SYNERGY_ENEMY_DAMAGE_TAKEN_BASE_PERCENT;
-  const synergyEnemyDamageTakenPercent = sumPartySynergyPercent(partyClassNames, SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES, synergyEnemyDamageTakenTierPercent, enemyDamageTakenSynergyEffectiveRatio);
+  const synergyEnemyDamageTakenPercent = sumPartySynergyPercent(partyClassNames, SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES, synergyEnemyDamageTakenTierPercent, partyMemberRatios);
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
@@ -3392,37 +3390,38 @@ const ALL_DEALER_CLASSES = Array.from(new Set([
   ...SYNERGY_DEFENSE_REDUCTION_CLASSES,
 ]));
 
-// 파티(본인 포함 최대 3명) 직업 목록 중 주어진 시너지 직업 목록에 속하는 인원 수 × percent를 반환.
+// 파티(본인 포함 최대 3명) 직업 목록 중 주어진 시너지 직업 목록에 속하는 인원마다 percent를 더한다.
 // 같은 직업이 중복 선택될 일은 없다고 가정하고 종류 구분 없이 매치되는 만큼 그냥 더한다.
-// effectiveRatio(0~1) — 시너지가 실전에서 100% 상시 유지되지 않는 것을 감안한 유효율(사용자 입력,
-// 미기재 시 0.98 기본값은 UI 쪽에서 처리) — 안 넘기면 1(=100%, 기존 동작과 동일해 회귀 없음).
-function sumPartySynergyPercent(classNames, classList, percent, effectiveRatio) {
-  const ratio = effectiveRatio ?? 1;
-  return (classNames || []).filter((c) => classList.includes(c)).length * percent * ratio;
+// ratioByClassName(선택) — { 직업명: 0~1 } 형태로 인원별 유효율(시너지가 실전에서 100% 상시 유지되지
+// 않는 것을 감안, 사용자 입력, 미기재 시 0.98 기본값은 UI 쪽에서 처리) — 같은 직업이 항상 시너지
+// 카테고리 1개만 갖는 이 코드베이스 규칙 덕에 카테고리가 아니라 "사람"별로 유효율 하나만 있으면 된다.
+// 해당 직업의 값이 없으면 1(=100%, 기존 동작과 동일해 회귀 없음)로 취급.
+function sumPartySynergyPercent(classNames, classList, percent, ratioByClassName) {
+  return (classNames || []).filter((c) => classList.includes(c)).reduce((sum, c) => {
+    const ratio = (ratioByClassName && ratioByClassName[c] !== undefined) ? ratioByClassName[c] : 1;
+    return sum + percent * ratio;
+  }, 0);
 }
 
-// 시너지 탭 시뮬레이터 — 파티 시너지 직업 2명(본인 제외) + 카테고리별 유효율만 바꿔서 전체
-// 파이프라인을 처음부터 다시 계산하고 baseline(ctx.baselineFullBuffOutput) 대비 변화율을 반환한다.
-// ratios = { critRate, critDamage, damageIncrease, enemyDamageTaken, attack, defense } (전부 0~1 비율,
-// 각 카테고리마다 실전 유지율이 달라 하나로 통일하지 않고 개별로 받는다). 다른 스탯(스톤/장비/
-// 아크그리드 등)은 전부 ctx의 실제값 그대로 고정 — 시너지 6개 카테고리만 바뀐 값으로 재계산.
-function calculateSynergySimulation(ctx, simPartyClassNames, ratios) {
+// 시너지 탭 시뮬레이터 — 파티 시너지 직업 2명(본인 제외) + 인원별(본인 포함) 유효율만 바꿔서
+// 전체 파이프라인을 처음부터 다시 계산하고 baseline(ctx.baselineFullBuffOutput) 대비 변화율을
+// 반환한다. simPartyMemberRatios = { 직업명: 0~1 } — 같은 직업은 항상 시너지 카테고리 1개만
+// 갖기 때문에 카테고리가 아니라 "사람"별로 유효율 하나면 충분하다(본인 직업 포함 가능, 없으면 100%).
+// 다른 스탯(스톤/장비/아크그리드 등)은 전부 ctx의 실제값 그대로 고정 — 시너지 6개 카테고리만
+// 바뀐 값으로 재계산.
+function calculateSynergySimulation(ctx, simPartyClassNames, simPartyMemberRatios) {
   const fullPartyClassNames = [ctx.dealerStats.className, ...simPartyClassNames];
 
   const critResult = calculateCritMultiplier(ctx.dealerData, ctx.supportData, {
-    partyClassNames: simPartyClassNames,
-    critRateSynergyEffectiveRatio: ratios.critRate, critDamageSynergyEffectiveRatio: ratios.critDamage,
+    partyClassNames: simPartyClassNames, partyMemberRatios: simPartyMemberRatios,
   });
   const enemyDamageResult = calculateEnemyDamageMultiplier(
     ctx.dealerData, critResult.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio,
-    {
-      partyClassNames: simPartyClassNames,
-      damageIncreaseSynergyEffectiveRatio: ratios.damageIncrease, enemyDamageTakenSynergyEffectiveRatio: ratios.enemyDamageTaken,
-    }
+    { partyClassNames: simPartyClassNames, partyMemberRatios: simPartyMemberRatios }
   );
 
-  const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT, ratios.attack);
-  const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT, ratios.defense);
+  const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT, simPartyMemberRatios);
+  const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT, simPartyMemberRatios);
 
   const finalDamage = calculateFinalDamage(
     ctx.dealerStats.basePower, ctx.dealerStats.accessoryAttackFlat, ctx.dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
@@ -3682,9 +3681,9 @@ function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStat
     if (!value) return 0;
     const withoutData = buildDealerDataWithoutBraceletField(dealerData, braceletOptions, primaryStatFlat, excludeKey);
     const newStats = calculateCharacterStats(withoutData);
-    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const newExtra = calculateExtraDamageMultiplier(withoutData);
-    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const newFinalDamage = calculateFinalDamage(
       newStats.basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, ctx.supportBuffPower,
       dealerStats.chaosCoreAttack.percent, dealerStats.earringAttackPercent, dealerStats.arkgridGemsAttackPercent,
@@ -3697,8 +3696,8 @@ function calculateBraceletOptionEfficiencies(dealerData, supportData, dealerStat
   function critStatSensitivityPercent(value) {
     if (!value) return 0;
     const withoutData = buildDealerDataWithCritStatDelta(dealerData, -value);
-    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
-    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
+    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const withoutTotal = finalDamage * newCrit.avgDamageMultiplier * extraDamageMultiplier * newEnemy.multiplier;
     return ((baseTotal / withoutTotal) - 1) * 100;
   }
@@ -3997,9 +3996,9 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
   } = parseBraceletSelectionsToDealerData(dealerData, selections);
 
   const hypotheticalStats = calculateCharacterStats(hypotheticalDealerData);
-  const hypotheticalCrit = calculateCritMultiplier(hypotheticalDealerData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+  const hypotheticalCrit = calculateCritMultiplier(hypotheticalDealerData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
   const hypotheticalExtra = calculateExtraDamageMultiplier(hypotheticalDealerData);
-  const hypotheticalEnemy = calculateEnemyDamageMultiplier(hypotheticalDealerData, hypotheticalCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+  const hypotheticalEnemy = calculateEnemyDamageMultiplier(hypotheticalDealerData, hypotheticalCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
   const hypotheticalFinalDamage = calculateFinalDamage(
     hypotheticalStats.basePower, hypotheticalStats.accessoryAttackFlat, hypotheticalStats.chaosCoreAttack.flat, ctx.supportBuffPower,
     hypotheticalStats.chaosCoreAttack.percent, hypotheticalStats.earringAttackPercent, hypotheticalStats.arkgridGemsAttackPercent,
@@ -4031,9 +4030,9 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
     if (Object.keys(fieldDeltas).length) {
       const withoutData = buildDealerDataWithFieldDeltas(hypotheticalDealerData, braceletOptions, primaryStatFlat, fieldDeltas);
       const newStats = calculateCharacterStats(withoutData);
-      const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+      const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
       const newExtra = calculateExtraDamageMultiplier(withoutData);
-      const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+      const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
       const newFinalDamage = calculateFinalDamage(
         newStats.basePower, hypotheticalStats.accessoryAttackFlat, hypotheticalStats.chaosCoreAttack.flat, ctx.supportBuffPower,
         hypotheticalStats.chaosCoreAttack.percent, hypotheticalStats.earringAttackPercent, hypotheticalStats.arkgridGemsAttackPercent,
@@ -4070,8 +4069,8 @@ function calculateHypotheticalBraceletEfficiency(dealerData, supportData, ctx, s
   if (swiftStat) rows.push({ key: 'swiftness', label: '신속(스탯)', value: swiftStat, method: '고정환산(1당 0.02%)', efficiencyPercent: swiftStat * BRACELET_SWIFTNESS_RATE });
   if (critStat) {
     const withoutData = buildDealerDataWithCritStatDelta(hypotheticalDealerData, -critStat);
-    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
-    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+    const newCrit = calculateCritMultiplier(withoutData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
+    const newEnemy = calculateEnemyDamageMultiplier(withoutData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
     const withoutTotal = hypotheticalFinalDamage * newCrit.avgDamageMultiplier * hypotheticalExtra.multiplier * newEnemy.multiplier;
     rows.push({ key: 'critStat', label: '치명(스탯)', value: critStat, method: '실스펙 환산', efficiencyPercent: ((hypotheticalTotal / withoutTotal) - 1) * 100 });
   }
@@ -4179,9 +4178,9 @@ function calculateAbilityStoneTotal(dealerData, dealerStats, ctx, selections, ov
     engravings: buildEngravingsWithAbilityStoneSelections(dealerData.engravings, validSelections),
   };
 
-  const newCrit = calculateCritMultiplier(modifiedDealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+  const newCrit = calculateCritMultiplier(modifiedDealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
   const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
-  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, critRateSynergyEffectiveRatio: ctx.critRateSynergyEffectiveRatio, critDamageSynergyEffectiveRatio: ctx.critDamageSynergyEffectiveRatio, damageIncreaseSynergyEffectiveRatio: ctx.damageIncreaseSynergyEffectiveRatio, enemyDamageTakenSynergyEffectiveRatio: ctx.enemyDamageTakenSynergyEffectiveRatio });
+  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
 
   // overrideBaseAttackPercent가 주어지면(9-7 최적화용 — 모든 후보가 "새로 뽑은 3lv&2lv 스톤"이라는
   // 가정이라 실제 스톤의 레벨 보너스와 무관하게 고정 +1.5%로 교체) 그 값을 쓰고, 없으면(일반 시뮬레이터 —
