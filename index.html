@@ -1401,8 +1401,9 @@
           <p style="font-size:11px;color:#888;">
             최적화가 아닌 직접 입력 계산기입니다. 각인 자체의 레벨(유물0~4단계) 실제 값 표를 그대로 사용합니다.
             어빌리티 스톤 보너스는 시뮬레이션한 각인 이름이 실제로 스톤이 걸린 각인과 같을 때만 유지됩니다
-            (이름을 바꾸면 그 각인의 스톤 보너스도 사라짐 — 실제 게임과 동일). 결투의 대가/기습의 대가 등
-            일부 각인의 "고정효과"(백/헤드어택 조건부, 캐스팅속도 등)는 계산에 아직 반영되지 않습니다.
+            (이름을 바꾸면 그 각인의 스톤 보너스도 사라짐 — 실제 게임과 동일). 결투의 대가/기습의 대가는
+            백/헤드어택 성공 시 고정 +15%(상시 발동 가정, 추가피해로 반영)까지 계산에 포함됩니다.
+            원한의 받는 피해 증가, 캐스팅/차징 속도, 마나회복 등은 계산에 포함하지 않습니다.
           </p>
           <div class="braceletColumns">
             <div>
@@ -1445,7 +1446,9 @@
             <tr><th>치명타 적중률</th><td>실제 ${pct(result.realCritRatePercent)}% → 시뮬 ${pct(result.simCritRatePercent)}%</td></tr>
             <tr><th>치명타 피해</th><td>실제 ${pct(result.realCritDamagePercent)}% → 시뮬 ${pct(result.simCritDamagePercent)}%</td></tr>
             <tr><th>각인 적주피 배율</th><td>실제 ${result.realEnemyMultiplier.toFixed(4)} → 시뮬 ${result.simEnemyMultiplier.toFixed(4)}</td></tr>
+            <tr><th>결투/기습의 대가 고정효과(추가피해)</th><td>실제 ${pct(result.realExtraDamagePercent)}% → 시뮬 ${pct(result.simExtraDamagePercent)}%</td></tr>
             <tr><th>치명타 배율</th><td>${result.critAvgDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>실제(현재) 대비 변화율</th><td>${pct(result.totalChangePercent)}%</td></tr>
           </table>
