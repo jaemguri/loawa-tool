@@ -82,6 +82,8 @@
     <p>낙인 유효율(0~100): <input type="number" id="brandEffectiveRatio" min="0" max="100"></p>
     <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" min="0" max="100"></p>
     <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" min="0" max="100"></p>
+    <p>시너지 유효율(0~100): <input type="number" id="synergyEffectiveRatio" min="0" max="100">
+      <br><span style="color:#888;font-size:11px;">미기재 시 98%로 계산</span></p>
     <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select></p>
     <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select></p>
 
@@ -148,6 +150,7 @@
     const brandEffectiveRatioInput = document.getElementById('brandEffectiveRatio');
     const effectiveRatio1Input = document.getElementById('effectiveRatio1');
     const effectiveRatio2Input = document.getElementById('effectiveRatio2');
+    const synergyEffectiveRatioInput = document.getElementById('synergyEffectiveRatio');
     const synergyClass2Select = document.getElementById('synergyClass2');
     const synergyClass3Select = document.getElementById('synergyClass3');
     const combatAnalysisPhotoInput = document.getElementById('combatAnalysisPhoto');
@@ -380,8 +383,12 @@
       return `title="${escapeAttr(formatBreakdown(breakdown))}"`;
     }
 
-    // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움
-    [synergyClass2Select, synergyClass3Select].forEach((select) => {
+    // 시너지 직업 드롭다운을 전체 딜러 직업 목록(calculate.js의 ALL_DEALER_CLASSES)으로 채움.
+    // 아무것도 고르지 않으면 실전에서 가장 흔한 구성인 "피해 증가 시너지 2명"을 기본값으로 미리
+    // 선택해둠(사용자 확정) — SYNERGY_DAMAGE_INCREASE_CLASSES의 첫 2개, 다른 시너지 카테고리와
+    // 안 겹치는 직업들이라 부작용 없음.
+    const DEFAULT_SYNERGY_CLASSES = SYNERGY_DAMAGE_INCREASE_CLASSES.slice(0, 2);
+    [synergyClass2Select, synergyClass3Select].forEach((select, idx) => {
       const emptyOption = document.createElement('option');
       emptyOption.value = '';
       emptyOption.textContent = '없음';
@@ -392,6 +399,7 @@
         option.textContent = className;
         select.appendChild(option);
       });
+      select.value = DEFAULT_SYNERGY_CLASSES[idx];
     });
 
     // 닉네임 한쪽만 입력했을 때 반대쪽에 임의로 채워 넣는 기본 캐릭터
@@ -413,6 +421,13 @@
       if (value) return parseFloat(value) / 100;
       const classDefault = DEFAULT_SUPPORT_RATIO_TABLE[className]?.[ratioKey];
       return classDefault !== undefined ? classDefault / 100 : 1;
+    }
+
+    // 시너지 유효율 — 직업별 기본표 없이 고정 98% 기본값(미기재 시)만 사용.
+    const DEFAULT_SYNERGY_EFFECTIVE_RATIO = 98;
+    function readSynergyEffectiveRatio(inputEl) {
+      const value = inputEl.value.trim();
+      return (value ? parseFloat(value) : DEFAULT_SYNERGY_EFFECTIVE_RATIO) / 100;
     }
 
     // 딜러 본인 스탯/배율 표를 <table> HTML로 생성 (딜러용/동시 시뮬 공용)
@@ -1738,7 +1753,7 @@
           const sharePercent = parseFloat(row.querySelector('.combatAnalysisShareInput').value) || 0;
           skillShares.push({ name, sharePercent });
         });
-        const result = calculateCombatAnalysisWeightedCrit(ctx.dealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames }, skillShares);
+        const result = calculateCombatAnalysisWeightedCrit(ctx.dealerData, ctx.supportData, { partyClassNames: ctx.partyClassNames, synergyEffectiveRatio: ctx.synergyEffectiveRatio }, skillShares);
         const rowsHtml = result.skillRows.map((r) => `
           <tr>
             <td>${r.name || '(선택 안 함)'}</td>
@@ -1988,6 +2003,87 @@
       recalcGemSkillSim();
     }
 
+    // 시너지 6개 카테고리 표시용 — [라벨, 직업목록, 인원당 기본%, 실제 반영%] 행 HTML 하나 생성.
+    function buildSynergyCategoryRow(label, classList, percentEach, activePercent, fullPartyClassNames) {
+      const matched = fullPartyClassNames.filter((c) => classList.includes(c));
+      return `<tr><td>${label}</td><td>${matched.join(', ') || '-'}</td><td>${matched.length}명 × ${percentEach}%</td><td>${pct(activePercent)}%</td></tr>`;
+    }
+
+    function renderDealerSynergyTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="synergy"]');
+
+      const critRateSynergy = ctx.critResult.critRateBreakdown.시너지_파티직업;
+      const critDamageSynergy = ctx.critResult.시너지_치명타시피해량;
+      const damageIncreaseSynergy = ctx.enemyDamageResult.breakdown.시너지_피해증가;
+      const enemyDamageTakenSynergy = ctx.enemyDamageResult.breakdown.시너지_주는피해증가;
+      const enemyDamageTakenPercentEach = ctx.enemyDamageResult.breakdown.자동감지_사멸타입
+        ? SYNERGY_ENEMY_DAMAGE_TAKEN_SAMEOL_PERCENT : SYNERGY_ENEMY_DAMAGE_TAKEN_BASE_PERCENT;
+
+      panel.innerHTML = `
+        <div class="braceletColumns">
+          <div class="fieldGroup">
+            <h4>현재 시너지 (유효율 ${pct(ctx.synergyEffectiveRatio * 100)}% 적용됨)</h4>
+            <p style="font-size:11px;color:#888;">본인 직업도 시너지 제공 직업에 해당하면 자동으로 포함됩니다. 현재 파티: ${ctx.fullPartyClassNames.join(', ')}</p>
+            <table class="statTable">
+              <tr><th>종류</th><th>파티원</th><th>인원×기본%</th><th>실제 반영%</th></tr>
+              ${buildSynergyCategoryRow('치명타 적중률', SYNERGY_CRIT_RATE_CLASSES, SYNERGY_CRIT_RATE_PERCENT, critRateSynergy, ctx.fullPartyClassNames)}
+              ${buildSynergyCategoryRow('치명타 시 피해량', SYNERGY_CRIT_DAMAGE_CLASSES, SYNERGY_CRIT_DAMAGE_PERCENT, critDamageSynergy, ctx.fullPartyClassNames)}
+              ${buildSynergyCategoryRow('피해 증가', SYNERGY_DAMAGE_INCREASE_CLASSES, SYNERGY_DAMAGE_INCREASE_PERCENT, damageIncreaseSynergy, ctx.fullPartyClassNames)}
+              ${buildSynergyCategoryRow('주는 피해 증가', SYNERGY_ENEMY_DAMAGE_TAKEN_CLASSES, enemyDamageTakenPercentEach, enemyDamageTakenSynergy, ctx.fullPartyClassNames)}
+              ${buildSynergyCategoryRow('공격력 증가', SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT, ctx.classSynergyAttackPercent, ctx.fullPartyClassNames)}
+              ${buildSynergyCategoryRow('방어력 감소', SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT, ctx.classSynergyDefenseReductionPercent, ctx.fullPartyClassNames)}
+            </table>
+          </div>
+          <div>
+            <h4>시너지 시뮬레이터</h4>
+            <p>파티원 2 (본인 제외): <select id="synergySimClass2"></select></p>
+            <p>파티원 3 (본인 제외): <select id="synergySimClass3"></select></p>
+            <p>시너지 유효율(0~100): <input type="number" id="synergySimRatio" min="0" max="100" value="${(ctx.synergyEffectiveRatio * 100).toFixed(0)}">
+              <br><span style="color:#888;font-size:11px;">미기재 시 98%로 계산</span></p>
+            <div class="synergySimResult"></div>
+          </div>
+        </div>
+      `;
+
+      const class2Select = panel.querySelector('#synergySimClass2');
+      const class3Select = panel.querySelector('#synergySimClass3');
+      [class2Select, class3Select].forEach((select, idx) => {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '없음';
+        select.appendChild(emptyOption);
+        ALL_DEALER_CLASSES.forEach((className) => {
+          const option = document.createElement('option');
+          option.value = className;
+          option.textContent = className;
+          select.appendChild(option);
+        });
+        select.value = ctx.partyClassNames[idx] || '';
+      });
+      const ratioInput = panel.querySelector('#synergySimRatio');
+
+      function recalcSynergySim() {
+        const simPartyClassNames = [class2Select.value, class3Select.value].filter(Boolean);
+        const simRatio = readSynergyEffectiveRatio(ratioInput);
+        const result = calculateSynergySimulation(ctx, simPartyClassNames, simRatio);
+        panel.querySelector('.synergySimResult').innerHTML = `
+          <table class="statTable">
+            <tr><th>공격력 증가 시너지</th><td>${pct(result.classSynergyAttackPercent)}%</td></tr>
+            <tr><th>방어력 감소 시너지</th><td>${pct(result.classSynergyDefenseReductionPercent)}%</td></tr>
+            <tr><th>치명타 적중률 시너지</th><td>${pct(result.critResult.critRateBreakdown.시너지_파티직업)}%</td></tr>
+            <tr><th>치명타 시 피해량 시너지</th><td>${pct(result.critResult.시너지_치명타시피해량)}%</td></tr>
+            <tr><th>피해 증가 시너지</th><td>${pct(result.enemyDamageResult.breakdown.시너지_피해증가)}%</td></tr>
+            <tr><th>주는 피해 증가 시너지</th><td>${pct(result.enemyDamageResult.breakdown.시너지_주는피해증가)}%</td></tr>
+            <tr><th>최종 산출식(풀버프) 대비 변화율</th><td>${pct(result.changePercent)}%</td></tr>
+          </table>
+        `;
+      }
+
+      [class2Select, class3Select].forEach((el) => el.addEventListener('change', recalcSynergySim));
+      ratioInput.addEventListener('input', recalcSynergySim);
+      recalcSynergySim();
+    }
+
     function renderDealerView(ctx) {
       globalSimCtx = ctx;
       globalSimState.abilityStone = null;
@@ -2006,6 +2102,7 @@
       renderDealerAnalysisTab(ctx);
       renderDealerArkGridTab(ctx);
       renderDealerGemTab(ctx);
+      renderDealerSynergyTab(ctx);
     }
 
     function renderSupportView(ctx) {
@@ -2090,6 +2187,7 @@
         const brandEffectiveRatio = readRatio(brandEffectiveRatioInput, supportStats.className, '낙인');
         const effectiveRatio1 = readRatio(effectiveRatio1Input, supportStats.className, '피증1');
         const effectiveRatio2 = readRatio(effectiveRatio2Input, supportStats.className, '피증2');
+        const synergyEffectiveRatio = readSynergyEffectiveRatio(synergyEffectiveRatioInput);
 
         const allyBuffPercent = getTotalAllyAttackBuffPercent(data.support.equipment, supportStats.braceletOptions, data.support.arkgrid);
         const buffGemPercent = getSupportBuffGemPercent(data.support.gems, supportStats.className);
@@ -2097,7 +2195,7 @@
 
         const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
         const adrenalineBonusBase = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
-        const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT);
+        const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT, synergyEffectiveRatio);
         const arkPassiveAttackPercent = getArkPassivePersistentAttackPercent(data.dealer.arkpassive);
 
         const finalDamage = calculateFinalDamage(
@@ -2106,14 +2204,14 @@
           adrenalineBonusBase, classSynergyAttackPercent, arkPassiveAttackPercent
         );
 
-        const critResult = calculateCritMultiplier(data.dealer, data.support, { partyClassNames });
+        const critResult = calculateCritMultiplier(data.dealer, data.support, { partyClassNames, synergyEffectiveRatio });
         const extraDamageResult = calculateExtraDamageMultiplier(data.dealer);
-        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio, { partyClassNames });
+        const enemyDamageResult = calculateEnemyDamageMultiplier(data.dealer, critResult.critRatePercent, data.support, brandEffectiveRatio, { partyClassNames, synergyEffectiveRatio });
         const brandResult = calculateBrandMultiplier(data.support, { brandEffectiveRatio });
         const adenkiDamageBuffResult = calculateSupportAdenkiDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio1 });
         const hyperAwakeningDamageBuffResult = calculateSupportHyperAwakeningDamageBuffMultiplier(data.support, supportStats.className, { effectiveRatio2 });
         const cardExtraDamageResult = calculateCardExtraDamageMultiplier();
-        const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT);
+        const classSynergyDefenseReductionPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_DEFENSE_REDUCTION_CLASSES, SYNERGY_DEFENSE_REDUCTION_PERCENT, synergyEffectiveRatio);
         const defenseResult = calculateDefenseMultiplier({ synergyAPercent: classSynergyDefenseReductionPercent });
 
         const finalOutputResult = calculateFinalOutput(
@@ -2127,7 +2225,7 @@
         const ctx = {
           dealerData: data.dealer, supportData: data.support,
           dealerStats, supportStats, dealerLabel, supportLabel,
-          partyClassNames, brandEffectiveRatio,
+          partyClassNames, fullPartyClassNames, synergyEffectiveRatio, brandEffectiveRatio,
           allyBuffPercent, buffGemPercent, supportBuffPower,
           adrenalineBonusBase, classSynergyAttackPercent, classSynergyDefenseReductionPercent, arkPassiveAttackPercent,
           finalDamage, critResult, extraDamageResult, enemyDamageResult, brandResult,
