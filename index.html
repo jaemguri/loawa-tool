@@ -4,22 +4,129 @@
   <meta charset="UTF-8">
   <title>로아 CP - 캐릭터 시뮬레이터</title>
   <style>
-    .statTable { border-collapse: collapse; margin: 8px 0; }
-    .statTable th, .statTable td { border: 1px solid #ccc; padding: 4px 10px; text-align: left; }
-    .statTable th { background: #f5f5f5; font-weight: normal; color: #555; }
+    :root {
+      --bg: #12151d;
+      --bg-panel: #1a1e29;
+      --bg-panel-2: #222736;
+      --bg-input: #1e2330;
+      --border: #2c3242;
+      --border-strong: #3c4457;
+      --text: #e7e4da;
+      --text-muted: #8b93a7;
+      --accent: #d3a24a;
+      --accent-strong: #f0bd5e;
+      --accent-contrast: #1a1408;
+      --danger: #ff6b6b;
+      --info: #6bb0e6;
+      --radius: 6px;
+      --shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 28px 32px 60px;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    h1, h2, h3, h4, h5 { color: var(--accent-strong); font-weight: 700; margin: 0.7em 0 0.4em; letter-spacing: 0.2px; }
+    h1 { font-size: 24px; padding-bottom: 12px; border-bottom: 1px solid var(--border); margin: 0 0 20px; letter-spacing: 1px; }
+    h2 { font-size: 19px; }
+    h3 { font-size: 16px; }
+    h4 { font-size: 14px; color: var(--accent); }
+    h5 { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    p { margin: 8px 0; }
+    a { color: var(--accent); }
+
+    input[type="text"], input[type="number"], input[type="file"], select, textarea {
+      background: var(--bg-input);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    input[type="number"] { width: 70px; }
+    input::placeholder { color: var(--text-muted); }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(211,162,74,0.25);
+    }
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+    button {
+      background: var(--bg-panel-2);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent-strong); }
+
+    #searchBtn {
+      background: var(--accent);
+      color: var(--accent-contrast);
+      border: none;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 10px 28px;
+      margin-top: 6px;
+    }
+    #searchBtn:hover { background: var(--accent-strong); color: var(--accent-contrast); }
+
+    .backBtn { background: transparent; margin-bottom: 12px; }
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    #searchScreen {
+      max-width: 720px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px 32px;
+      box-shadow: var(--shadow);
+    }
+    #dealerView, #supportView, #duoView { max-width: 1100px; }
+
+    .statTable { border-collapse: collapse; margin: 8px 0; background: var(--bg-panel-2); border-radius: 6px; }
+    .statTable th, .statTable td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+    .statTable th { background: var(--bg-panel); font-weight: 600; color: var(--accent); }
+    .statTable tr:hover td { background: rgba(211,162,74,0.06); }
     .finalOutput { margin: 6px 0; }
-    .innerTabs { margin: 10px 0; }
-    .innerTabBtn { margin-right: 4px; }
-    .innerTabBtn.active { font-weight: bold; text-decoration: underline; }
+
+    .innerTabs { margin: 14px 0 18px; display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+    .innerTabBtn { margin-right: 0; background: transparent; border: 1px solid transparent; color: var(--text-muted); border-radius: 20px; padding: 6px 14px; }
+    .innerTabBtn:hover { color: var(--text); border-color: var(--border-strong); }
+    .innerTabBtn.active { font-weight: 700; text-decoration: none; background: var(--accent); color: var(--accent-contrast); border-color: var(--accent); }
+    .innerTabBtn.active:hover { color: var(--accent-contrast); }
     .tabPanel[hidden] { display: none; }
-    .fieldGroup { margin: 12px 0; }
-    .hoverInfo { cursor: help; border-bottom: 1px dotted #888; }
+    .tabPanel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 22px; }
+
+    .fieldGroup { margin: 0 0 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .fieldGroup:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
     .fieldGroup h4 { margin: 4px 0; }
-    .surgeBar { border: 1px solid #999; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; }
+    .hoverInfo { cursor: help; border-bottom: 1px dotted var(--text-muted); }
+    .surgeBar { border: 1px solid var(--border-strong); background: var(--bg-panel-2); border-radius: 6px; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; color: var(--accent-strong); }
+
     .braceletColumns { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
     .braceletColumns > div { flex: 1 1 320px; min-width: 280px; }
-    .braceletSimBox { border: 1px solid #ccc; padding: 10px; }
-    .braceletSimGroup { border: 1px solid #ddd; padding: 8px; margin-bottom: 10px; }
+    .braceletSimBox { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: var(--bg-panel-2); }
+    .braceletSimGroup { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 10px; }
     .braceletSimGroup h5 { margin: 0 0 6px 0; }
     .braceletSimRow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
     .braceletSimRow select { flex: 1 1 auto; }
@@ -28,38 +135,44 @@
     .braceletSimGrantRow select { flex: 1 1 220px; }
     .braceletSimTiers { display: flex; gap: 4px; }
     .braceletTierBtn { border: 2px solid transparent; border-radius: 4px; padding: 4px 8px; color: #fff; font-weight: bold; cursor: pointer; text-shadow: 0 1px 1px rgba(0,0,0,0.4); }
-    .braceletTierBtn.selected { border-color: #222; }
+    .braceletTierBtn.selected { border-color: var(--accent-strong); }
     .braceletSimRemoveBtn { flex: 0 0 auto; }
-    .braceletSimTotal { font-weight: bold; margin-top: 8px; }
+    .braceletSimRemoveBtn:hover { border-color: var(--danger); color: var(--danger); }
+    .braceletSimTotal { font-weight: bold; margin-top: 8px; color: var(--accent-strong); }
+
     .armorSimRow { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
-    .armorSimLabel { width: 70px; flex: 0 0 auto; }
-    .armorSimTotal { font-weight: bold; margin-top: 8px; }
+    .armorSimLabel { width: 70px; flex: 0 0 auto; color: var(--text-muted); }
+    .armorSimTotal { font-weight: bold; margin-top: 8px; color: var(--accent-strong); }
+
     .evolutionNodeGrid { display: flex; flex-wrap: wrap; gap: 10px; }
     .evolutionNode { width: 84px; text-align: center; }
-    .evolutionNode img { width: 48px; height: 48px; border: 1px solid #ccc; border-radius: 4px; }
-    .evolutionNodeLabel { font-size: 11px; margin-top: 2px; line-height: 1.3; }
+    .evolutionNode img { width: 48px; height: 48px; border: 1px solid var(--border-strong); border-radius: 4px; }
+    .evolutionNodeLabel { font-size: 11px; margin-top: 2px; line-height: 1.3; color: var(--text-muted); }
     .evolutionTierRow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .evolutionTierLabel { width: 40px; flex: 0 0 auto; font-weight: bold; text-align: center; }
+    .evolutionTierLabel { width: 40px; flex: 0 0 auto; font-weight: bold; text-align: center; color: var(--accent); }
     .evolutionTierNodes { display: flex; gap: 8px; }
     .evolutionCell { width: 76px; text-align: center; cursor: help; }
-    .evolutionCell img { width: 44px; height: 44px; border-radius: 50%; }
-    .evolutionCell.notInvested img { filter: grayscale(100%) brightness(0.65); opacity: 0.7; }
-    .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.55; }
-    .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; }
+    .evolutionCell img { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-strong); }
+    .evolutionCell.notInvested img { filter: grayscale(100%) brightness(0.5); opacity: 0.6; }
+    .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.5; }
+    .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; color: var(--text-muted); }
     .evolutionCustomCell { width: 76px; text-align: center; }
-    .evolutionCustomCell select { width: 100%; font-size: 11px; margin-top: 2px; }
+    .evolutionCustomCell select { width: 100%; font-size: 11px; margin-top: 2px; padding: 3px 4px; }
+    .evolutionCustomGrid { margin-bottom: 10px; }
+
     .combatAnalysisRow { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-    .combatAnalysisRow .rawText { flex: 1 1 220px; font-size: 12px; color: #666; }
+    .combatAnalysisRow .rawText { flex: 1 1 220px; font-size: 12px; color: var(--text-muted); }
     .combatAnalysisRow select { flex: 1 1 200px; }
     .combatAnalysisRow input[type="number"] { width: 70px; }
-    .combatAnalysisRow.unmatched select { border-color: #d9534f; }
-    .combatAnalysisDropZone { border: 2px dashed #bbb; border-radius: 6px; padding: 10px; margin-top: 4px; font-size: 12px; color: #888; text-align: center; width: 200px; height: 260px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; position: relative; }
-    .combatAnalysisDropZone.dragover { border-color: #5b9bd5; color: #5b9bd5; background: #f0f7ff; }
+    .combatAnalysisRow.unmatched select { border-color: var(--danger); }
+    .combatAnalysisDropZone { border: 2px dashed var(--border-strong); border-radius: 6px; padding: 10px; margin-top: 4px; font-size: 12px; color: var(--text-muted); text-align: center; width: 200px; height: 260px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; position: relative; background: var(--bg-input); }
+    .combatAnalysisDropZone.dragover { border-color: var(--accent); color: var(--accent-strong); background: rgba(211,162,74,0.08); }
     .combatAnalysisDropZone img { max-width: 100%; max-height: 100%; object-fit: contain; }
     .combatAnalysisRemoveBtn { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; padding: 0; line-height: 1; border: none; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; font-size: 13px; cursor: pointer; }
     .combatAnalysisRemoveBtn:hover { background: rgba(200,0,0,0.85); }
+
     .gemSimGrid { display: flex; gap: 24px; flex-wrap: wrap; margin: 8px 0; }
-    .gemSimGroup { border: 1px solid #ddd; padding: 8px 12px; }
+    .gemSimGroup { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; }
     .gemSimGroup h5 { margin: 0 0 6px 0; }
     .gemSimGroup label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
     .gemSimGroup input[type="number"] { width: 70px; }
@@ -83,13 +196,13 @@
     <p>피증1(아덴기) 유효율(0~100): <input type="number" id="effectiveRatio1" min="0" max="100"></p>
     <p>피증2(초각성) 유효율(0~100): <input type="number" id="effectiveRatio2" min="0" max="100"></p>
     <p>본인 시너지 유효율(0~100): <input type="number" id="synergySelfRatio" min="0" max="100">
-      <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+      <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
     <p>시너지 직업 2 (본인 제외): <select id="synergyClass2"></select>
       유효율(0~100): <input type="number" id="synergyClass2Ratio" min="0" max="100">
-      <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+      <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
     <p>시너지 직업 3 (본인 제외): <select id="synergyClass3"></select>
       유효율(0~100): <input type="number" id="synergyClass3Ratio" min="0" max="100">
-      <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+      <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
 
     <p>전투분석 사진 등록(선택): <input type="file" id="combatAnalysisPhoto" accept="image/*"></p>
     <div id="combatAnalysisDropZone" class="combatAnalysisDropZone">
@@ -97,7 +210,7 @@
       <img id="combatAnalysisPreviewImg" alt="등록된 전투분석 사진" style="display:none;">
       <button type="button" id="combatAnalysisRemoveBtn" class="combatAnalysisRemoveBtn" title="사진 삭제" style="display:none;">×</button>
     </div>
-    <div id="combatAnalysisOcrStatus" style="font-size:12px;color:#888;"></div>
+    <div id="combatAnalysisOcrStatus" style="font-size:12px;color:var(--text-muted);"></div>
 
     <button id="searchBtn">조회하기</button>
     <div id="searchMessage"></div>
@@ -1370,7 +1483,7 @@
           <tr><th>현재 실제 트리 대비 커스텀 선택</th><td>${pct(result.vsRealPercent)}%</td></tr>
           <tr><th>다른 탭 선택 반영한, 실제 트리 대비 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:#888;">※ 위 3개 행(미투자 대비 등)은 아직 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체 계산식이 없어 선택해도 0%로 반영됩니다.
+        <p style="font-size:11px;color:var(--text-muted);">※ 위 3개 행(미투자 대비 등)은 아직 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체 계산식이 없어 선택해도 0%로 반영됩니다.
         마지막 행("다른 탭 선택 반영한...")은 진화 최적화와 동일한 더 완전한 빌더를 사용해 5티어까지 반영됩니다.</p>
       `;
     }
@@ -1415,7 +1528,7 @@
           ${tierRow('5티어', result.tier5)}
           <tr><th>총 변화율</th><td colspan="2">${pct(result.totalChangePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:#888;">5티어는 뭉툭한 가시/입식 타격가(항상 비교)·마나 용광로(찍혀있을 때만 비교)만 대상입니다. 음속 돌파는 이동속도·공격속도 데이터가 아직 없어 제외됩니다.${skillShares && skillShares.length ? ' 전투분석 지분이 반영된 결과입니다.' : ' 전투분석 사진을 등록하면 스킬 지분이 반영됩니다(뭉툭한 가시 판단에 특히 중요).'}</p>
+        <p style="font-size:11px;color:var(--text-muted);">5티어는 뭉툭한 가시/입식 타격가(항상 비교)·마나 용광로(찍혀있을 때만 비교)만 대상입니다. 음속 돌파는 이동속도·공격속도 데이터가 아직 없어 제외됩니다.${skillShares && skillShares.length ? ' 전투분석 지분이 반영된 결과입니다.' : ' 전투분석 사진을 등록하면 스킬 지분이 반영됩니다(뭉툭한 가시 판단에 특히 중요).'}</p>
       `;
     }
 
@@ -1440,7 +1553,7 @@
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>각인 시뮬레이터</h4>
-          <p style="font-size:11px;color:#888;">
+          <p style="font-size:11px;color:var(--text-muted);">
             최적화가 아닌 직접 입력 계산기입니다. 각인 자체의 레벨(유물0~4단계) 실제 값 표를 그대로 사용합니다.
             어빌리티 스톤 보너스는 시뮬레이션한 각인 이름이 실제로 스톤이 걸린 각인과 같을 때만 유지됩니다
             (이름을 바꾸면 그 각인의 스톤 보너스도 사라짐 — 실제 게임과 동일). 결투의 대가/기습의 대가는
@@ -1721,7 +1834,7 @@
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>전투분석 사진 등록${pendingCombatAnalysisRows.length ? ' — OCR 인식 결과 (확인/수정 후 재계산)' : ''}</h4>
-          <p style="font-size:12px;color:#888;">
+          <p style="font-size:12px;color:var(--text-muted);">
             ${pendingCombatAnalysisRows.length
               ? '이름이 자동으로 안 맞혀진 행은 빨간 테두리로 표시됩니다 — 스킬 아이콘으로 자동 추정해 채워보지만("아이콘 추정" 표시), 정확하지 않을 수 있으니 꼭 눈으로 확인/수정해주세요.'
               : '조회 화면에서 전투분석 사진을 등록하지 않았습니다. 아래에서 직접 스킬/지분을 입력할 수도 있습니다.'}
@@ -1848,7 +1961,7 @@
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>아크그리드 시뮬레이터</h4>
-          <p style="font-size:11px;color:#888;">
+          <p style="font-size:11px;color:var(--text-muted);">
             최적화가 아닌 직접 입력 계산기이며, 적주피 하나만이 아니라 스펙 전체(공격력·추가피해·적주피 등)에
             걸친 총딜 변화를 봅니다. 질서 코어는 코어마다 오르는 스탯이 달라 17P부터 1P당 적주피 0.15%로
             통일해서 환산하고(16P 미만은 0%), 혼돈 코어는 통일하지 않고 코어가 실제로 주는 스탯(공격력/적주피/
@@ -1962,7 +2075,7 @@
         panel.innerHTML = `
           <div class="fieldGroup">
             <h4>보석 시뮬레이터</h4>
-            <p style="color:#888;">전투분석 데이터가 있어야 계산할 수 있습니다 — 조회 화면에서 전투분석 사진을 등록하거나,
+            <p style="color:var(--text-muted);">전투분석 데이터가 있어야 계산할 수 있습니다 — 조회 화면에서 전투분석 사진을 등록하거나,
             "전투분석" 탭에서 스킬/지분을 입력하고 재계산을 눌러주세요. 겁화/광휘(피해 증가형) 보석은 특정 스킬 하나에만
             적용되는 보너스라, 그 스킬이 총딜에서 차지하는 지분 없이는 전체 기여도를 계산할 수 없습니다.</p>
           </div>
@@ -1982,7 +2095,7 @@
           .map((lv) => `<option value="${lv}" ${lv === selectedLevel ? 'selected' : ''}>Lv.${lv} (피해 ${pct(damageGemLevelToPercent(lv))}% · 기본공격력 ${pct(baseAttackGemLevelToPercent(lv))}%)</option>`)
           .join('');
         const warning = belowMin
-          ? `<div style="color:#d9534f;font-size:11px;">⚠ 실제 레벨이 6 미만이라 기본 공격력 증가분은 정확히 반영되지 않습니다(6레벨 보석 이상부터 지원)</div>`
+          ? `<div style="color:var(--danger);font-size:11px;">⚠ 실제 레벨이 6 미만이라 기본 공격력 증가분은 정확히 반영되지 않습니다(6레벨 보석 이상부터 지원)</div>`
           : '';
         return `
           <tr>
@@ -1997,7 +2110,7 @@
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>보석 시뮬레이터 (겁화/광휘 — 피해 증가형만, 최적화 없음)</h4>
-          <p style="font-size:11px;color:#888;">
+          <p style="font-size:11px;color:var(--text-muted);">
             작열(재사용 대기시간 감소형) 보석은 레벨을 고려하지 않습니다(로테이션 모델이 없어 정확한 딜 환산이
             불가능). 전투분석 스킬 지분으로 가중평균한 배율을 사용합니다 — 지분이 없는 스킬의 보석은 계산에서
             빠집니다(전투분석 탭에서 해당 스킬의 지분을 채워주세요). 레벨이 오를 때 붙는 "기본 공격력%" 증가분도
@@ -2073,7 +2186,7 @@
         <div class="braceletColumns">
           <div class="fieldGroup">
             <h4>현재 시너지</h4>
-            <p style="font-size:11px;color:#888;">본인 직업도 시너지 제공 직업에 해당하면 자동으로 포함됩니다. 현재 파티: ${ctx.fullPartyClassNames.join(', ')} (괄호는 각자의 유효율)</p>
+            <p style="font-size:11px;color:var(--text-muted);">본인 직업도 시너지 제공 직업에 해당하면 자동으로 포함됩니다. 현재 파티: ${ctx.fullPartyClassNames.join(', ')} (괄호는 각자의 유효율)</p>
             <table class="statTable">
               <tr><th>종류</th><th>파티원(유효율)</th><th>인원×기본%</th><th>실제 반영%</th></tr>
               ${currentRowsHtml}
@@ -2082,13 +2195,13 @@
           <div>
             <h4>시너지 시뮬레이터</h4>
             <p>본인 유효율(0~100): <input type="number" id="synergySimSelfRatio" min="0" max="100">
-              <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+              <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
             <p>파티원 2 (본인 제외): <select id="synergySimClass2"></select>
               유효율(0~100): <input type="number" id="synergySimClass2Ratio" min="0" max="100">
-              <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+              <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
             <p>파티원 3 (본인 제외): <select id="synergySimClass3"></select>
               유효율(0~100): <input type="number" id="synergySimClass3Ratio" min="0" max="100">
-              <span style="color:#888;font-size:11px;">미기재 시 98%</span></p>
+              <span style="color:var(--text-muted);font-size:11px;">미기재 시 98%</span></p>
             <div class="synergySimResult"></div>
           </div>
         </div>
