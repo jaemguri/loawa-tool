@@ -919,7 +919,7 @@
         </div>
         <div class="fieldGroup">
           <h4>특화 스탯 효과 (API 실측 — 캐릭터 정보창 "특화" hover와 동일한 원문, 참고용)</h4>
-          <p style="font-size:11px;color:var(--text-muted);">전부 특정 스킬 하나에만 적용되는 조건부 효과라 아직 계산에는 반영하지 않습니다(스킬 계수 계산 + 전투분석 스킬 지분 가중 시스템을 만든 뒤 정확히 반영할 예정 — 그 전까지 "적에게 주는 피해"에 그대로 곱하면 실제보다 심하게 과대평가됩니다).</p>
+          <p style="font-size:11px;color:var(--text-muted);">전부 특정 스킬 하나에만 적용되는 조건부 효과라 여기 표시된 원문 그대로 "적에게 주는 피해"에 곱하지는 않습니다. 대신 "전투분석" 탭에서 실제 로테이션 스킬 지분과 매칭해 그 스킬의 사용 비중만큼만 가중 반영합니다("특화 스탯 스킬 피해 지분 가중" 표 참고).</p>
           <ul style="margin:4px 0; padding-left:20px; font-size:12.5px;">
             ${getSpecializationTooltipLines(ctx.dealerData.profiles).map((line) => `<li>${line}</li>`).join('')}
           </ul>
@@ -2006,6 +2006,20 @@
             <td>${r.avgDamageMultiplier.toFixed(4)}</td>
           </tr>
         `).join('');
+        const specResult = calculateSpecializationSkillWeightedEnemyDamage(
+          ctx.dealerData, ctx.critResult.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio,
+          { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios }, skillShares
+        );
+        const specRowsHtml = specResult.skillRows.map((r) => `
+          <tr>
+            <td>${r.name || '(선택 안 함)'}</td>
+            <td>${r.sharePercent.toFixed(2)}%</td>
+            <td>${r.matched ? '✓' : '-'}</td>
+            <td>${pct(r.percent)}%</td>
+            <td>${r.multiplier.toFixed(4)}</td>
+          </tr>
+        `).join('');
+
         panel.querySelector('.combatAnalysisResult').innerHTML = `
           <table class="statTable">
             <tr><th>스킬</th><th>지분</th><th>매칭</th><th>치적 보너스</th><th>치피 보너스</th><th>평균피해배율</th></tr>
@@ -2016,13 +2030,25 @@
             <tr><th>지분 가중 평균피해배율</th><td>${result.weightedAvgDamageMultiplier.toFixed(4)}</td></tr>
             <tr><th>변화율</th><td>${(((result.weightedAvgDamageMultiplier / result.baseAvgDamageMultiplier) - 1) * 100).toFixed(2)}%</td></tr>
           </table>
+          <h5 style="margin-top:12px;">특화 스탯 스킬 피해 지분 가중 (전투분석 스킬 지분과 매칭된 것만 반영)</h5>
+          <p style="font-size:11px;color:var(--text-muted);">특화 Tooltip의 "OO 스킬 피해량 X% 증가" 항목을 그 스킬이 실제로 로테이션에서 차지하는 지분만큼만 반영합니다. 매칭 안 된 스킬(각성기 등 이름이 다르거나 전투분석에 없는 스킬)은 0으로 처리됩니다.</p>
+          <table class="statTable">
+            <tr><th>스킬</th><th>지분</th><th>매칭</th><th>특화 피해%</th><th>적주피 배율</th></tr>
+            ${specRowsHtml}
+          </table>
+          <table class="statTable">
+            <tr><th>기본(특화 스킬 보너스 없음) 적주피 배율</th><td>${specResult.baseMultiplier.toFixed(4)}</td></tr>
+            <tr><th>지분 가중 적주피 배율</th><td>${specResult.weightedMultiplier.toFixed(4)}</td></tr>
+            <tr><th>변화율</th><td>${(((specResult.weightedMultiplier / specResult.baseMultiplier) - 1) * 100).toFixed(2)}%</td></tr>
+          </table>
         `;
 
-        // 지분 가중 평균피해배율을 최종 산출식에 실제로 반영(더 이상 실험용 표시 전용이 아님) — 지분
-        // 데이터가 없으면 calculateCombatAnalysisWeightedCrit가 자동으로 기본 배율과 동일한 값을 반환하므로
-        // 별도 분기 없이 항상 덮어써도 안전하다. "현재 정보" 탭의 최종 산출식/풀버프 최종 산출식 실시간
+        // 지분 가중 평균피해배율/적주피 배율을 최종 산출식에 실제로 반영(더 이상 실험용 표시 전용이
+        // 아님) — 지분 데이터가 없으면 두 함수 모두 자동으로 기본 배율과 동일한 값을 반환하므로 별도
+        // 분기 없이 항상 덮어써도 안전하다. "현재 정보" 탭의 최종 산출식/풀버프 최종 산출식 실시간
         // 표시(recomputeDealerLiveNumbers, 아드/암수 체크박스와 동일 갱신 경로)에 그대로 반영됨.
         ctx.critResult.avgDamageMultiplier = result.weightedAvgDamageMultiplier;
+        ctx.enemyDamageResult.multiplier = specResult.weightedMultiplier;
         recomputeDealerLiveNumbers(ctx);
 
         // 진화 트리 최적화(특히 뭉툭한 가시 판단)도 같은 스킬 지분으로 다시 계산 — 뭉툭한 가시는 스킬

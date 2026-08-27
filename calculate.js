@@ -1475,6 +1475,31 @@ function getSpecializationSkillDamagePercent(profilesData) {
   return total;
 }
 
+// getSpecializationSkillDamagePercent와 같은 텍스트에서, 이번엔 합계가 아니라 "어떤 스킬 이름에
+// 몇 %가 붙어있는지" 개별 항목으로 쪼개서 반환 — 전투분석 스킬 지분과 매칭시켜 그 스킬 하나의
+// 실제 사용 비중만큼만 반영하기 위한 원자료. label은 "OO 스킬" 앞부분(스킬명 추정치)을 그대로 쓰고,
+// 매칭은 소비 측(calculateSpecializationSkillWeightedEnemyDamage)에서 공백 무시 부분일치로 처리한다
+// (예: "블러디러쉬 스킬의 피해량이 316.90% 증가합니다" → {label:"블러디러쉬", percent:316.90}).
+// "각성 스킬"처럼 특정 스킬 이름이 아니라 범주인 라벨도 그대로 포함되지만, 전투분석에 그 이름의
+// 스킬이 없으면 자연히 매칭 안 돼서 0으로 처리된다(추측하지 않음).
+function getSpecializationSkillDamageEntries(profilesData) {
+  if (!profilesData || !profilesData.Stats) return [];
+  const stat = profilesData.Stats.find((s) => s.Type === '특화');
+  if (!stat || !stat.Tooltip) return [];
+  let text = stripHtml(stat.Tooltip.join(' '));
+  text = text
+    .replace(/치명타\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '')
+    .replace(/추가\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '')
+    .replace(/진화형\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '');
+  const regex = /([가-힣A-Za-z0-9]+(?:\s+[가-힣A-Za-z0-9]+)*)\s*스킬(?:의)?\s*피해량?(?:이|가)?\s*([\d.]+)\s*%\s*증가/g;
+  const entries = [];
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    entries.push({ label: m[1].trim(), percent: parseFloat(m[2]) });
+  }
+  return entries;
+}
+
 // 반지의 치명타 적중률 / 치명타 피해 % 합산 (목걸이·귀걸이 제외, 반지만)
 function getRingCritRatePercent(equipmentList) {
   let total = 0;
@@ -3198,6 +3223,12 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
   const identityEnemyDamagePercent = getIdentityEnemyDamagePercent(dealerData);
+  // 전투분석 스킬 지분 가중 전용 — calculateCritMultiplier의 extraCritRatePercent/extraCritDamagePercent와
+  // 같은 패턴. 특정 스킬 하나에 국한된 조건부 피해%(예: 특화 스탯의 "OO 스킬 피해량 X% 증가")를 그
+  // 스킬의 실제 전투분석 지분만큼만 반영하고 싶을 때, 호출부가 스킬별로 이 값을 넣어 여러 번 호출한
+  // 뒤 지분 가중평균을 낸다(calculateSpecializationSkillWeightedEnemyDamage 참고) — 기본값 0이라
+  // 안 넘기면 기존 호출부(수십 곳)는 전혀 영향 없음.
+  const extraEnemyDamagePercent = (options && options.extraEnemyDamagePercent) || 0;
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -3209,6 +3240,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
     toMultiplier(identityEnemyDamagePercent) *
+    toMultiplier(extraEnemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -3228,6 +3260,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
       아이덴티티_상시버프_적주피: identityEnemyDamagePercent,
+      전투분석_특화스킬전용: extraEnemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
@@ -3238,6 +3271,45 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       서폿_낙인의흔적_코어배율: supportBrandTraceCoreMultiplier,
     },
   };
+}
+
+// 특화 스탯의 "OO 스킬 피해량 X% 증가" 항목들을 전투분석 스킬 지분으로 가중해서 실제 적에게 주는
+// 피해 배율에 반영 — calculateCombatAnalysisWeightedCrit(치명타 배율 버전)과 완전히 같은 패턴.
+// 스킬 지분 중 이 특화 항목의 라벨과 이름이 겹치는 스킬만 그 %를 적용하고, 나머지 지분은 기본
+// 배율(특화 보너스 없음)로 취급 — 스킬 하나에만 적용되는 조건부를 전체에 곱하는 과대평가를 피하고
+// (지난 세션 사고), 실제 로테이션 비중만큼만 정확히 반영한다. skillShares가 비어있으면 특화 스킬
+// 보너스가 전혀 반영되지 않은 기본 배율을 그대로 반환(안전한 기본값).
+function calculateSpecializationSkillWeightedEnemyDamage(dealerData, critRatePercent, supportData, brandEffectiveRatio, options, skillShares) {
+  const baseEnemy = calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData, brandEffectiveRatio, options);
+  const entries = getSpecializationSkillDamageEntries(dealerData.profiles);
+  const skillRows = [];
+
+  if (!entries.length || !skillShares || !skillShares.length) {
+    return { baseMultiplier: baseEnemy.multiplier, weightedMultiplier: baseEnemy.multiplier, skillRows, majorShareTotal: 0, remainderSharePercent: 100 };
+  }
+
+  const normalize = (s) => (s || '').replace(/\s+/g, '');
+  let majorShareTotal = 0;
+  let weightedMultiplier = 0;
+
+  skillShares.forEach((row) => {
+    const share = row.sharePercent || 0;
+    if (share < COMBAT_ANALYSIS_MAJOR_SHARE_THRESHOLD) return;
+    const match = entries.find((e) => normalize(row.name).includes(normalize(e.label)) || normalize(e.label).includes(normalize(row.name)));
+    let multiplier = baseEnemy.multiplier;
+    if (match) {
+      const skillEnemy = calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData, brandEffectiveRatio, { ...options, extraEnemyDamagePercent: match.percent });
+      multiplier = skillEnemy.multiplier;
+    }
+    skillRows.push({ name: row.name, sharePercent: share, matched: !!match, percent: match ? match.percent : 0, multiplier });
+    majorShareTotal += share;
+    weightedMultiplier += (share / 100) * multiplier;
+  });
+
+  const remainderSharePercent = Math.max(0, 100 - majorShareTotal);
+  weightedMultiplier += (remainderSharePercent / 100) * baseEnemy.multiplier;
+
+  return { baseMultiplier: baseEnemy.multiplier, weightedMultiplier, skillRows, majorShareTotal, remainderSharePercent };
 }
 
 // 방어율 배율 = 방어율상수 / (방어율상수 + 유효 적 방어력)
