@@ -1435,6 +1435,44 @@ function getStatValueFromProfile(profilesData, statType) {
   return stat ? parseFloat(stat.Value) || 0 : 0;
 }
 
+// profiles.Stats의 "특화" 항목 Tooltip에서 스킬별 피해량 증가 % 전부 추출(직업마다 문구가 전부 다름
+// — 예: 블레이드 "버스트 스킬 피해량이 X% 증가", 리퍼 "급습 스킬 피해량이 X% 증가", "각성 스킬의
+// 피해량이 X% 증가" 등). API가 그 캐릭터의 실제 특화 스탯 값을 이미 직업별 공식으로 환산해서 주는
+// 값이라 별도 계수 없이 그대로 쓸 수 있다. 치명타 피해/추가 피해/진화형 피해는 이미 다른 곳에서
+// 추적 중이라 여기서 또 잡으면 이중 반영이라 미리 제거. "게이지 회복량"/"재사용 대기시간" 등은
+// "피해"라는 단어 자체가 없어서 이 정규식에 자연히 안 걸림.
+// 주의: 이 값들은 원래 "그 스킬 하나"에만 적용되는 조건부 보너스라(예: 버스트 스킬만, 각성 스킬만),
+// 이 앱처럼 "적에게 주는 피해"를 스킬 구분 없이 캐릭터 전체 배율로 적용하는 모델에서는 실제보다
+// 과대평가될 수 있다 — 특히 특화 투자가 집중된 빌드는 200%를 넘는 경우도 있어 다른 근사(아이덴티티/
+// 깨달음)보다 왜곡 폭이 훨씬 클 수 있음(사용자 확인 후 반영, 눈에 잘 띄게 별도 breakdown 키로 노출).
+// 화면 표시용 — 특화 스탯 Tooltip 원문 줄 그대로(스트립만) 반환. 계산에 실제로 얼마나 반영됐는지
+// 사용자가 원문과 대조해서 확인할 수 있도록.
+function getSpecializationTooltipLines(profilesData) {
+  if (!profilesData || !profilesData.Stats) return [];
+  const stat = profilesData.Stats.find((s) => s.Type === '특화');
+  if (!stat || !stat.Tooltip) return [];
+  return stat.Tooltip.map((t) => stripHtml(t)).filter(Boolean);
+}
+
+function getSpecializationSkillDamagePercent(profilesData) {
+  if (!profilesData || !profilesData.Stats) return 0;
+  const stat = profilesData.Stats.find((s) => s.Type === '특화');
+  if (!stat || !stat.Tooltip) return 0;
+  let text = stripHtml(stat.Tooltip.join(' '));
+  text = text
+    .replace(/치명타\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '')
+    .replace(/추가\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '')
+    .replace(/진화형\s*피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가/g, '');
+  const regex = /피해량?(?:이|가)?\s*((?:[\d.]+\s*%[,\s]*)+)증가/g;
+  let total = 0;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    const numbers = m[1].match(/[\d.]+/g).map(Number);
+    total += Math.max(...numbers);
+  }
+  return total;
+}
+
 // 반지의 치명타 적중률 / 치명타 피해 % 합산 (목걸이·귀걸이 제외, 반지만)
 function getRingCritRatePercent(equipmentList) {
   let total = 0;
@@ -3158,6 +3196,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
   const identityEnemyDamagePercent = getIdentityEnemyDamagePercent(dealerData);
+  const specializationSkillDamagePercent = getSpecializationSkillDamagePercent(dealerData.profiles);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -3169,6 +3208,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
     toMultiplier(identityEnemyDamagePercent) *
+    toMultiplier(specializationSkillDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -3188,6 +3228,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
       아이덴티티_상시버프_적주피: identityEnemyDamagePercent,
+      특화스탯_스킬피해: specializationSkillDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
