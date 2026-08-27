@@ -1435,18 +1435,8 @@ function getStatValueFromProfile(profilesData, statType) {
   return stat ? parseFloat(stat.Value) || 0 : 0;
 }
 
-// profiles.Stats의 "특화" 항목 Tooltip에서 스킬별 피해량 증가 % 전부 추출(직업마다 문구가 전부 다름
-// — 예: 블레이드 "버스트 스킬 피해량이 X% 증가", 리퍼 "급습 스킬 피해량이 X% 증가", "각성 스킬의
-// 피해량이 X% 증가" 등). API가 그 캐릭터의 실제 특화 스탯 값을 이미 직업별 공식으로 환산해서 주는
-// 값이라 별도 계수 없이 그대로 쓸 수 있다. 치명타 피해/추가 피해/진화형 피해는 이미 다른 곳에서
-// 추적 중이라 여기서 또 잡으면 이중 반영이라 미리 제거. "게이지 회복량"/"재사용 대기시간" 등은
-// "피해"라는 단어 자체가 없어서 이 정규식에 자연히 안 걸림.
-// 주의: 이 값들은 원래 "그 스킬 하나"에만 적용되는 조건부 보너스라(예: 버스트 스킬만, 각성 스킬만),
-// 이 앱처럼 "적에게 주는 피해"를 스킬 구분 없이 캐릭터 전체 배율로 적용하는 모델에서는 실제보다
-// 과대평가될 수 있다 — 특히 특화 투자가 집중된 빌드는 200%를 넘는 경우도 있어 다른 근사(아이덴티티/
-// 깨달음)보다 왜곡 폭이 훨씬 클 수 있음(사용자 확인 후 반영, 눈에 잘 띄게 별도 breakdown 키로 노출).
-// 화면 표시용 — 특화 스탯 Tooltip 원문 줄 그대로(스트립만) 반환. 계산에 실제로 얼마나 반영됐는지
-// 사용자가 원문과 대조해서 확인할 수 있도록.
+// 화면 표시용 — 특화 스탯 Tooltip 원문 줄 그대로(스트립만) 반환(현재정보 탭 "특화 스탯 효과"
+// 섹션에서 참고용으로 그대로 나열).
 function getSpecializationTooltipLines(profilesData) {
   if (!profilesData || !profilesData.Stats) return [];
   const stat = profilesData.Stats.find((s) => s.Type === '특화');
@@ -1454,6 +1444,18 @@ function getSpecializationTooltipLines(profilesData) {
   return stat.Tooltip.map((t) => stripHtml(t)).filter(Boolean);
 }
 
+// profiles.Stats의 "특화" 항목 Tooltip에서 스킬별 피해량 증가 % 전부 추출(직업마다 문구가 전부 다름
+// — 예: 블레이드 "버스트 스킬 피해량이 X% 증가", 리퍼 "급습 스킬 피해량이 X% 증가", "각성 스킬의
+// 피해량이 X% 증가" 등). API가 그 캐릭터의 실제 특화 스탯 값을 이미 직업별 공식으로 환산해서 주는
+// 값이라 별도 계수 없이 그대로 쓸 수 있다.
+//
+// ⚠️ 정책(사용자 확정): 이 값은 계산에 반영하지 않는다. 전부 "그 스킬 하나"에만 적용되는 조건부
+// 보너스인데(버스트 스킬만, 각성 스킬만 등), 이 앱처럼 "적에게 주는 피해"를 스킬 구분 없이 캐릭터
+// 전체 배율로 적용하는 모델에 넣으면 실제보다 심하게 과대평가된다(실측: 잼구릿 265.87%, 포구릿
+// 171.92% — 최종 산출식이 2~4배씩 뻥튀기됨, 다른 근사보다 폭이 훨씬 큼). 사용자가 나중에 스킬
+// 계수 계산 + 전투분석 스킬 지분 가중 시스템을 만들 예정이라, 그때까지는 잘못된 근사값을 넣느니
+// 아예 미반영 상태(0)로 둔다 — 이 함수는 그 미래 작업에서 재사용할 수 있게 남겨두되, 현재는 어느
+// calculate* 함수에서도 호출하지 않는다(getSpecializationTooltipLines만 화면 표시에 사용 중).
 function getSpecializationSkillDamagePercent(profilesData) {
   if (!profilesData || !profilesData.Stats) return 0;
   const stat = profilesData.Stats.find((s) => s.Type === '특화');
@@ -3196,7 +3198,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
   const identityEnemyDamagePercent = getIdentityEnemyDamagePercent(dealerData);
-  const specializationSkillDamagePercent = getSpecializationSkillDamagePercent(dealerData.profiles);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -3208,7 +3209,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
     toMultiplier(identityEnemyDamagePercent) *
-    toMultiplier(specializationSkillDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -3228,7 +3228,6 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
       아이덴티티_상시버프_적주피: identityEnemyDamagePercent,
-      특화스탯_스킬피해: specializationSkillDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
@@ -4594,10 +4593,14 @@ function getClassBuildEngravingName(arkpassiveData) {
 // 딜 %버프 없음)과 시너지/디버프 성격이라 별도 처리할 인파이터·기상술사는 이번 범위에 없음(표에
 // 없으면 자동으로 보너스 0). 리퍼는 아래 6번에 추가로 포함됨.
 //
-// enemyDamagePercent로 넣은 항목(기공사/디스트로이어/소서리스/블래스터/차원술사) 중 상당수는 원래
-// "해방스킬" "몬스터 대상 스킬" "일반 스킬" "각성기"처럼 특정 스킬군에만 적용되는 조건부 버프다. 이
-// 앱은 "적에게 주는 피해"를 스킬 구분 없이 캐릭터 전체에 곱하는 단일 배율 모델이라, 조건 없이 항상
-// 적용된다고 근사한 값이라 실제보다 다소 과대평가될 수 있음(전투분석 스킬 지분 가중 연동은 다음 단계).
+// 정책(사용자 확정): "특정 스킬(군)의 데미지가 올라가는" 조건부 버프는 enemyDamagePercent(적에게
+// 주는 피해, 캐릭터 전체에 곱연산)에 절대 넣지 않는다 — 스킬 하나에만 적용되는 걸 전체 공격에
+// 곱하면 심하게 과대평가되고, 이런 건 나중에 스킬 계수/전투분석 스킬 지분 가중 시스템으로 정확히
+// 반영할 예정이라 그때까지는 아예 미반영 상태로 둔다(잘못된 근사값을 넣느니 0이 낫다는 판단).
+// 이 규칙 때문에 초기 버전에 있던 디스트로이어("해방스킬 사용 시"), 소서리스("속성 스킬"),
+// 블래스터("일반 스킬"), 차원술사("각성기"), 리퍼("급습 스킬") 각각의 enemyDamagePercent 항목을
+// 전부 제거했다 — 전부 실측 문서에 특정 스킬(군) 이름이 명시돼 있었음. 기공사(금강선공)의
+// "주는 피해 X% 증가"만 스킬명 지정 없이 정말로 전체 데미지에 적용되는 general 버프라 그대로 유지.
 const IDENTITY_PERSISTENT_STAT_BONUS = {
   // 1. 단순 스탯 버프형(상시 켜짐 가정) — 폭주모드/사신화/악마화/하이퍼 싱크
   '버서커': { critRatePercent: 30, moveSpeedPercent: 20, attackSpeedPercent: 20 },
@@ -4607,23 +4610,20 @@ const IDENTITY_PERSISTENT_STAT_BONUS = {
   '스카우터': { attackPercent: 6, moveSpeedPercent: 30, attackSpeedPercent: 15 },
   // 2. 단계/스택형 — 최고 스택 기준(사용자 확정)
   '블레이드': { attackPercent: 30, moveSpeedPercent: 10, attackSpeedPercent: 20 }, // 블레이드 아츠, 오브 최대치
-  '기공사': { enemyDamagePercent: 60, attackSpeedPercent: 15 }, // 금강선공 3단계
-  '디스트로이어': { enemyDamagePercent: 45 }, // 중력코어 3개, 해방스킬 조건부 근사
+  '기공사': { enemyDamagePercent: 60, attackSpeedPercent: 15 }, // 금강선공 3단계, 스킬명 지정 없는 general 버프
+  // 디스트로이어(중력코어): "해방스킬 사용 시" 조건부라 enemyDamagePercent 미반영(위 정책 참고)
   // 3. 스탠스 전환형 — 창술사는 집중 스탠스 고정(사용자 확정, 추후 변경 가능). 브레이커는 각인별로
   // 갈려서 아래 getIdentityPersistentStatBonus에서 Title(직업각인명)로 분기 처리.
   '창술사': { critDamagePercent: 60, moveSpeedPercent: 15 },
-  // 4. 게이지/자원 소모형(딜러만, 상시 켜짐 가정) — 마력 해방/오버히트/차원 간섭
-  '소서리스': { enemyDamagePercent: 18 }, // 마력 해방(게이지100%), 몬스터 대상 스킬 조건부 근사
-  '블래스터': { enemyDamagePercent: 25 }, // 오버히트, 일반 스킬 조건부 근사
-  '차원술사': { enemyDamagePercent: 50 }, // 간섭 2중첩, 각성기 조건부 근사
+  // 4. 게이지/자원 소모형(딜러만, 상시 켜짐 가정) — 소서리스("속성 스킬")/블래스터("일반 스킬")/
+  // 차원술사("각성기")는 전부 특정 스킬군 조건부라 enemyDamagePercent 미반영(위 정책 참고)
   // 5. 카드형 — 아르카나는 "도태" 카드 상시 가정(사용자 확정, 랜덤 요소 무시 — 추후 변경 가능)
   '아르카나': { critRatePercent: 100, critDamagePercent: 50 },
   // 6. 리퍼 — 각인 무관 고정 시스템(페르소나+혼돈상태가 배타적 빌드가 아니라 같이 유지되는 상태이므로
   // 둘 다 상시 켜짐 가정으로 합산). 페르소나 이동속도30% + 혼돈상태 이동속도10%=합산 40%, 혼돈상태
-  // 공격속도10%·치명타적중률15%. "급습 스킬 피해 +25%/스택 최대 5중첩"은 급습 스킬 전용 조건부라
-  // 다른 게이지형 항목과 동일하게 적주피에 근사 적용, 최고 스택(5중첩=125%) 가정 — 노트: 이 수치는
-  // 표기("+25%/스택")를 "스택당 25%p"로 해석한 것이라 실제보다 클 수 있음(사용자 확인 시 조정 예정).
-  '리퍼': { critRatePercent: 15, moveSpeedPercent: 40, attackSpeedPercent: 10, enemyDamagePercent: 125 },
+  // 공격속도10%·치명타적중률15%. "급습 스킬 피해 +25%/스택"은 급습 스킬 전용 조건부라 위 정책에
+  // 따라 enemyDamagePercent 미반영.
+  '리퍼': { critRatePercent: 15, moveSpeedPercent: 40, attackSpeedPercent: 10 },
 };
 
 // 브레이커는 채용한 각인(직업각인명)에 따라 권왕태세/수라 상태 중 하나만 적용된다.
@@ -4656,14 +4656,12 @@ function getIdentityEnemyDamagePercent(dealerData) { return getIdentityPersisten
 const IDENTITY_STAT_SOURCE_TEXT = {
   '버서커': '폭주모드', '슬레이어': '폭주모드', '소울이터': '사신화', '데모닉': '악마화',
   '스카우터': '하이퍼 싱크', '블레이드': '블레이드 아츠(오브 최대치 가정)',
-  '기공사': '금강선공 3단계', '디스트로이어': '중력코어 3개 해방(해방스킬 조건부 근사)',
-  '창술사': '집중 스탠스(고정 가정)', '소서리스': '마력 해방(몬스터 대상 스킬 조건부 근사)',
-  '블래스터': '오버히트(일반 스킬 조건부 근사)', '차원술사': '간섭 2중첩(각성기 조건부 근사)',
+  '기공사': '금강선공 3단계', '창술사': '집중 스탠스(고정 가정)',
   '아르카나': '도태 카드 가정(랜덤 요소 무시)',
 };
 const REAPER_STAT_SOURCE_TEXT = {
   critRatePercent: '혼돈 상태', moveSpeedPercent: '페르소나(30%) + 혼돈 상태(10%) 합산',
-  attackSpeedPercent: '혼돈 상태', enemyDamagePercent: '급습 스킬 피해(최대 5중첩 근사)',
+  attackSpeedPercent: '혼돈 상태',
 };
 const BREAKER_STANCE_SOURCE_TEXT = {
   '권왕': '권왕태세(권왕파천무 각인)', '수라': '수라 상태(수라의 길 각인)',
