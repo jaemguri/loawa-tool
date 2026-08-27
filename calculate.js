@@ -1647,6 +1647,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     어빌리티스톤_각인보너스_정밀단도: getAbilityStoneOtherEngravingBonus(dealerData.engravings).critRatePercent,
     정밀단도_각인: getPrecisionDaggerOwnCritRatePercent(dealerData.engravings),
     스킬_부가효과: getCombatSkillPersistentCritRatePercent(dealerData.combatSkills),
+    아이덴티티_상시버프: getIdentityCritRatePercent(dealerData),
     전투분석_스킬전용: (options && options.extraCritRatePercent) || 0,
   };
   const critRatePercent = Object.values(critRateBreakdown).reduce((a, b) => a + b, 0);
@@ -1668,6 +1669,7 @@ function calculateCritMultiplier(dealerData, supportData, options) {
     딜러팔찌: dealerBracelet.critDamagePercent,
     아크그리드: arkgridCrit.critDamagePercent,
     정밀단도_각인_페널티: getPrecisionDaggerCritDamagePenaltyPercent(dealerData.engravings),
+    아이덴티티_상시버프: getIdentityCritDamagePercent(dealerData),
     전투분석_스킬전용: (options && options.extraCritDamagePercent) || 0,
   };
   const critDamagePercent = Object.values(critDamageBreakdown).reduce((a, b) => a + b, 0);
@@ -3151,6 +3153,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportPassionateDanceBonus = getSupportPassionateDanceEvolutionDamageBonus(supportData?.arkpassive);
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
+  const identityEnemyDamagePercent = getIdentityEnemyDamagePercent(dealerData);
 
   const multiplier =
     toMultiplier(necklacePercent) *
@@ -3161,6 +3164,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(dealerBracelet.enemyDamagePercent) *
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
+    toMultiplier(identityEnemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
     toMultiplier(synergyEnemyDamageTakenPercent) *
@@ -3179,6 +3183,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해: evolutionDamagePercent,
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
+      아이덴티티_상시버프_적주피: identityEnemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
       사멸옵션: sameolPercent,
@@ -4526,6 +4531,74 @@ function getEngravingList(engravingsData) {
 function getClassBuildEngravingName(arkpassiveData) {
   return (arkpassiveData && arkpassiveData.Title) || null;
 }
+
+// 직업별 "아이덴티티(Z/X) 상시 버프" — 사용자가 정리해 제공한 전 직업 초각성/아이덴티티 스킬 문서를
+// 근거로, 아이덴티티 효과가 "상시 켜져 있다"고 가정(사용자 확정)했을 때 딜러 계산에 반영할 수치.
+// API로는 이 토글이 실제로 켜져 있는지 알 수 없으므로 항상 켜진 것으로 가정 — 실제 게임에서는
+// 게이지/쿨타임 관리에 따라 이보다 낮은 평균 가동률이 나올 수 있음(추후 유효율 개념 도입 가능).
+//
+// 값 종류: critRatePercent(치명타 적중률)/critDamagePercent(치명타 피해)/attackPercent(공격력%)/
+// enemyDamagePercent(적에게 주는 피해%, 곱연산 신규 항)/moveSpeedPercent·attackSpeedPercent
+// (이동/공격속도% — 이 앱의 데미지 공식엔 아직 안 쓰이지만 음속돌파/돌격대장 효율 계산에 쓸 예정이라
+// 사용자 확정으로 일단 계산만 해서 노출, 최종 데미지에는 미반영).
+//
+// 서포터 전용 클래스(발키리/홀리나이트/도화가/바드)는 유효율(effectiveRatio) 개념이 필요해서 이번
+// 범위에서 제외(별도 처리 예정). 스탠스가 배타적인 데빌헌터/건슬링어(고정 수치 자체가 없음)는 계산
+// 대상에서 제외(사용자 확정). 그 외 "상시 스탯% 버프가 아예 없는" 직업(워로드/호크아이/환수사 —
+// 생존기·순수 액티브 데미지형, 서머너/가디언나이트/배틀마스터/스트라이커 — 자원관리형 스킬만 있고
+// 딜 %버프 없음)과 시너지/디버프 성격이라 별도 처리할 인파이터·기상술사·리퍼는 이번 범위에 없음
+// (표에 없으면 자동으로 보너스 0).
+//
+// enemyDamagePercent로 넣은 항목(기공사/디스트로이어/소서리스/블래스터/차원술사) 중 상당수는 원래
+// "해방스킬" "몬스터 대상 스킬" "일반 스킬" "각성기"처럼 특정 스킬군에만 적용되는 조건부 버프다. 이
+// 앱은 "적에게 주는 피해"를 스킬 구분 없이 캐릭터 전체에 곱하는 단일 배율 모델이라, 조건 없이 항상
+// 적용된다고 근사한 값이라 실제보다 다소 과대평가될 수 있음(전투분석 스킬 지분 가중 연동은 다음 단계).
+const IDENTITY_PERSISTENT_STAT_BONUS = {
+  // 1. 단순 스탯 버프형(상시 켜짐 가정) — 폭주모드/사신화/악마화/하이퍼 싱크
+  '버서커': { critRatePercent: 30, moveSpeedPercent: 20, attackSpeedPercent: 20 },
+  '슬레이어': { critRatePercent: 30, moveSpeedPercent: 20, attackSpeedPercent: 20 },
+  '소울이터': { critRatePercent: 20, moveSpeedPercent: 20, attackSpeedPercent: 10 },
+  '데모닉': { moveSpeedPercent: 20 },
+  '스카우터': { attackPercent: 6, moveSpeedPercent: 30, attackSpeedPercent: 15 },
+  // 2. 단계/스택형 — 최고 스택 기준(사용자 확정)
+  '블레이드': { attackPercent: 30, moveSpeedPercent: 10, attackSpeedPercent: 20 }, // 블레이드 아츠, 오브 최대치
+  '기공사': { enemyDamagePercent: 60, attackSpeedPercent: 15 }, // 금강선공 3단계
+  '디스트로이어': { enemyDamagePercent: 45 }, // 중력코어 3개, 해방스킬 조건부 근사
+  // 3. 스탠스 전환형 — 창술사는 집중 스탠스 고정(사용자 확정, 추후 변경 가능). 브레이커는 각인별로
+  // 갈려서 아래 getIdentityPersistentStatBonus에서 Title(직업각인명)로 분기 처리.
+  '창술사': { critDamagePercent: 60, moveSpeedPercent: 15 },
+  // 4. 게이지/자원 소모형(딜러만, 상시 켜짐 가정) — 마력 해방/오버히트/차원 간섭
+  '소서리스': { enemyDamagePercent: 18 }, // 마력 해방(게이지100%), 몬스터 대상 스킬 조건부 근사
+  '블래스터': { enemyDamagePercent: 25 }, // 오버히트, 일반 스킬 조건부 근사
+  '차원술사': { enemyDamagePercent: 50 }, // 간섭 2중첩, 각성기 조건부 근사
+  // 5. 카드형 — 아르카나는 "도태" 카드 상시 가정(사용자 확정, 랜덤 요소 무시 — 추후 변경 가능)
+  '아르카나': { critRatePercent: 100, critDamagePercent: 50 },
+};
+
+// 브레이커는 채용한 각인(직업각인명)에 따라 권왕태세/수라 상태 중 하나만 적용된다.
+const BREAKER_STANCE_STAT_BONUS = {
+  '권왕': { attackSpeedPercent: 20 }, // 권왕파천무 각인 → Z 권왕태세
+  '수라': { moveSpeedPercent: 15 }, // 수라의 길 각인 → Z 수라 상태
+};
+
+// 딜러 데이터로 아이덴티티 상시 버프 객체를 조회 (없는 직업은 빈 객체)
+function getIdentityPersistentStatBonus(dealerData) {
+  const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  if (className === '브레이커') {
+    const buildName = getClassBuildEngravingName(dealerData.arkpassive) || '';
+    if (buildName.includes('수라')) return BREAKER_STANCE_STAT_BONUS['수라'];
+    if (buildName.includes('권왕')) return BREAKER_STANCE_STAT_BONUS['권왕'];
+    return {};
+  }
+  return IDENTITY_PERSISTENT_STAT_BONUS[className] || {};
+}
+
+function getIdentityCritRatePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).critRatePercent || 0; }
+function getIdentityCritDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).critDamagePercent || 0; }
+function getIdentityAttackPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).attackPercent || 0; }
+function getIdentityEnemyDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).enemyDamagePercent || 0; }
+function getIdentityMoveSpeedPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).moveSpeedPercent || 0; }
+function getIdentityAttackSpeedPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).attackSpeedPercent || 0; }
 
 // 서포터 아덴기(정체성 스킬) 피해량 증가 배율
 // = [1 + 기본%×(1+아군피해량효과증가/100)×(1+특화계수/100)×1.2×보석레벨×(1+스킬전용운명코어%/100)] × 피증1유효율

@@ -877,9 +877,21 @@
         <div class="fieldGroup">
           <h4>아크패시브 진화+깨달음 (조건부·시간제한 노드도 일단 포함, 클래스별 예외는 추후 정리 예정)</h4>
           <table class="statTable">
-            <tr><th>공격력</th><td>${pct(ctx.arkPassiveAttackPercent)}%</td></tr>
+            <tr><th>공격력</th><td>${pct(ctx.arkPassiveOnlyAttackPercent)}%</td></tr>
             <tr><th>적에게 주는 피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크패시브_상시버프_적주피)}%</td></tr>
             <tr><th>추가 피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크패시브_상시버프)}%</td></tr>
+          </table>
+        </div>
+        <div class="fieldGroup">
+          <h4>아이덴티티 상시 버프 (Z/X 효과가 항상 켜져있다고 가정 — 실제 게이지/쿨타임 가동률은 미반영)</h4>
+          <p style="font-size:11px;color:var(--text-muted);">이동속도/공격속도는 아직 이 계산기의 최종 데미지 공식에 반영되지 않습니다(향후 음속돌파/돌격대장 효율 계산용으로만 기록).</p>
+          <table class="statTable">
+            <tr><th>치명타 적중률</th><td>${pct(ctx.critResult.critRateBreakdown.아이덴티티_상시버프)}%</td></tr>
+            <tr><th>치명타 피해</th><td>${pct(ctx.critResult.critDamageBreakdown.아이덴티티_상시버프)}%</td></tr>
+            <tr><th>공격력</th><td>${pct(ctx.identityAttackPercent)}%</td></tr>
+            <tr><th>적에게 주는 피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아이덴티티_상시버프_적주피)}%</td></tr>
+            <tr><th>이동속도</th><td>${pct(ctx.identityMoveSpeedPercent)}%</td></tr>
+            <tr><th>공격속도</th><td>${pct(ctx.identityAttackSpeedPercent)}%</td></tr>
           </table>
         </div>
         <div class="fieldGroup">
@@ -2471,7 +2483,16 @@
         const adrenalineStoneBonus = getAdrenalineStoneBonus(data.dealer.equipment);
         const adrenalineBonusBase = (hasAdrenalineEngraving(data.dealer.engravings) ? 9 : 0) + adrenalineStoneBonus;
         const classSynergyAttackPercent = sumPartySynergyPercent(fullPartyClassNames, SYNERGY_ATTACK_POWER_CLASSES, SYNERGY_ATTACK_POWER_PERCENT, partyMemberRatios);
-        const arkPassiveAttackPercent = getArkPassivePersistentAttackPercent(data.dealer.arkpassive);
+        const arkPassiveOnlyAttackPercent = getArkPassivePersistentAttackPercent(data.dealer.arkpassive);
+        const identityAttackPercent = getIdentityAttackPercent(data.dealer);
+        const identityMoveSpeedPercent = getIdentityMoveSpeedPercent(data.dealer);
+        const identityAttackSpeedPercent = getIdentityAttackSpeedPercent(data.dealer);
+        // 아이덴티티 상시버프의 공격력%도 calculateFinalDamage의 arkPassiveAttackPercent 자리(합연산
+        // 퍼센트 합)에 그대로 합쳐서 넘긴다 — 이 값을 쓰는 15곳 이상의 호출부(각 시뮬레이터 포함)를
+        //전부 고치는 대신, ctx.arkPassiveAttackPercent 하나로 흘러들어가는 이 지점에서만 더하면
+        // 자동으로 전체에 반영된다. 화면 표시는 arkPassiveOnlyAttackPercent/identityAttackPercent를
+        // 따로 보여줘서 출처가 헷갈리지 않게 한다.
+        const arkPassiveAttackPercent = arkPassiveOnlyAttackPercent + identityAttackPercent;
 
         const finalDamage = calculateFinalDamage(
           dealerStats.basePower, dealerStats.accessoryAttackFlat, dealerStats.chaosCoreAttack.flat, supportBuffPower,
@@ -2503,6 +2524,7 @@
           partyClassNames, fullPartyClassNames, partyMemberRatios, brandEffectiveRatio,
           allyBuffPercent, buffGemPercent, supportBuffPower,
           adrenalineBonusBase, classSynergyAttackPercent, classSynergyDefenseReductionPercent, arkPassiveAttackPercent,
+          arkPassiveOnlyAttackPercent, identityAttackPercent, identityMoveSpeedPercent, identityAttackSpeedPercent,
           finalDamage, critResult, extraDamageResult, enemyDamageResult, brandResult,
           adenkiDamageBuffResult, hyperAwakeningDamageBuffResult, cardExtraDamageResult,
           defenseResult, finalOutputResult, fullBuffFinalOutputResult,
