@@ -1575,13 +1575,16 @@
         });
       });
       // 통합 시뮬레이터용 — 1~4티어/5티어로 나눠서 buildDealerDataWithFullEvolutionSelections 형식으로도
-      // 기록(진화 최적화 엔진과 동일한, 5티어까지 지원하는 더 완전한 빌더 재사용).
+      // 기록(진화 최적화 엔진과 동일한, 5티어까지 지원하는 더 완전한 빌더 재사용). 치명은 레벨 0도
+      // "0으로 명시적으로 선택함"이라는 유효한 정보라 다른 노드와 달리 level>0 필터에서 제외하고 항상
+      // 넣는다 — 안 그러면 배열에서 사라져서 buildDealerDataWithFullEvolutionSelections가 "손 안 댐"으로
+      // 오해하고 실제 치명 스탯을 그대로 남겨버린다(치명을 0으로 낮춰도 변화율에 반영이 안 되는 버그).
       const tier1to4Sels = [];
       const tier5Sels = [];
       EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => {
         row.forEach((name, colIdx) => {
           const level = evolutionSimState[tierIdx][colIdx];
-          if (level > 0) (tierIdx < 4 ? tier1to4Sels : tier5Sels).push({ name, level });
+          if (level > 0 || name === '치명') (tierIdx < 4 ? tier1to4Sels : tier5Sels).push({ name, level });
         });
       });
       globalSimState.evolution = selections.length ? { tier1to4Sels, tier5Sels } : null;
@@ -1594,12 +1597,37 @@
       const result = calculateHypotheticalEvolutionEfficiency(evolutionSimCtx.dealerData, evolutionSimCtx.supportData, evolutionSimCtx, selections);
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
       const contextAwarePercent = calculateContextAwareChangePercent('evolution', globalSimState.evolution);
+
+      // "변동 정보" — 이 커스텀 선택을 실제로 적용했을 때 캐릭터 스펙이 어떻게 바뀌는지(치명타/추가피해/
+      // 적주피 배율)와, 최종 산출식/풀버프 최종 산출식까지 그대로 계산해서 보여준다. 진화 트리는 무기공격력에
+      // 영향을 주는 노드가 없어 finalDamage 자체는 대개 변하지 않고, 세 배율(치명타/추가피해/적주피)만
+      // 바뀌는 게 정상 — 방어율/서포터낙인/카드/아덴기·초각성 버프는 진화 트리와 무관하므로 ctx의 실제값을
+      // 그대로 재사용(현재정보 탭의 recomputeDealerLiveNumbers와 동일한 조합 방식).
+      const p = result.hypotheticalPieces;
+      const hypFinalOutput = calculateFinalOutput(
+        p.finalDamage, p.avgDamageMultiplier, p.extraMultiplier, p.enemyMultiplier,
+        evolutionSimCtx.defenseResult.multiplier, evolutionSimCtx.brandResult.multiplier, evolutionSimCtx.cardExtraDamageResult.multiplier
+      );
+      const hypFullBuffOutput = calculateFullBuffFinalOutput(
+        hypFinalOutput.output, evolutionSimCtx.adenkiDamageBuffResult.multiplier, evolutionSimCtx.hyperAwakeningDamageBuffResult.multiplier
+      );
+
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <table class="statTable">
           <tr><th>변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:var(--text-muted);">※ 진화 최적화와 동일한 빌더를 사용해 5티어까지 반영되며, 다른 탭에서 선택한 스톤/팔찌/장비/아크그리드/전투분석도 함께 반영됩니다.</p>
+        <h5 style="margin-top:12px;">변동 정보 (커스텀 선택 반영)</h5>
+        <table class="statTable">
+          <tr><th>최종 공격력</th><td>${Math.round(p.finalDamage).toLocaleString()}</td></tr>
+          <tr><th>치명타 평균피해배율</th><td>${p.avgDamageMultiplier.toFixed(4)}</td></tr>
+          <tr><th>추가피해 배율</th><td>${p.extraMultiplier.toFixed(4)}</td></tr>
+          <tr><th>적에게 주는 피해 배율</th><td>${p.enemyMultiplier.toFixed(4)}</td></tr>
+          <tr><th>최종 산출식</th><td>${Math.round(hypFinalOutput.output).toLocaleString()}</td></tr>
+          <tr><th>풀버프 최종 산출식</th><td>${Math.round(hypFullBuffOutput.output).toLocaleString()}</td></tr>
+          <tr><th>최종 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
+        </table>
+        <p style="font-size:11px;color:var(--text-muted);">※ 진화 최적화와 동일한 빌더를 사용해 5티어까지 반영되며, 다른 탭에서 선택한 스톤/팔찌/장비/아크그리드/전투분석도 함께 반영됩니다. 최종 산출식/풀버프 산출식은 방어율·서포터 낙인·카드·아덴기/초각성 버프는 실제 값을 그대로 사용하고 치명타/추가피해/적주피 배율만 이 커스텀 선택으로 재계산한 값입니다.</p>
       `;
     }
 
