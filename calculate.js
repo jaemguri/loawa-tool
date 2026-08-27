@@ -1,11 +1,34 @@
-// 무기 강화 표 (재련 단계 → 무기 공격력)
-// 무기 강화 표 (재련 단계 → 무기 공격력)
-const WEAPON_LEVEL_TABLE = {
-  1: 128059, 2: 131439, 3: 134936, 4: 138556, 5: 142303,
-  6: 146182, 7: 150196, 8: 154350, 9: 158649, 10: 163099,
-  11: 167706, 12: 172473, 13: 177406, 14: 182514, 15: 187799,
-  16: 193270, 17: 198101, 18: 203054, 19: 208130, 20: 213333,
-  21: 218667, 22: 224133, 23: 229737, 24: 235480, 25: 241367,
+// 장비 강화 표(무기/방어구) — 아이템 이름에 어느 티어(등급) 텍스트가 들어있는지로 어느 표를 쓸지
+// 정한다. 케누아트 요새(운명의 결단, 레벨 0~13)와 에기르(운명의 업화, 레벨 14~25)는 같은 강화
+// 트랙의 연속(구버전 유물 갱신처럼 특정 단계를 넘으면 아이템 이름이 바뀜)이고, 세르카(운명의
+// 전율, 레벨 0~25)는 그 다음 독립적인 상위 티어다. 셋 다 사용자 실측 제공(2026-08-28) — 이전에는
+// '운명의 전율'(가장 최신 티어) 표만 있어서 아직 이전 티어 장비를 착용 중인 캐릭터는 무기/방어구
+// 공격력이 0으로 계산되는 문제가 있었음.
+const EQUIPMENT_TIER_NAMES = ['운명의 결단', '운명의 업화', '운명의 전율'];
+
+// 아이템 이름 텍스트에서 위 티어 이름 중 어느 것이 포함돼 있는지 찾는다(못 찾으면 null).
+function getEquipmentTierFromName(name) {
+  const text = stripHtml(name || '');
+  return EQUIPMENT_TIER_NAMES.find((tier) => text.includes(tier)) || null;
+}
+
+// 무기 강화 표 (티어 → 재련 단계 → 무기 공격력)
+const WEAPON_LEVEL_TABLE_BY_TIER = {
+  '운명의 결단': {
+    0: 60362, 1: 67051, 2: 73796, 3: 80599, 4: 87463, 5: 89390, 6: 91381,
+    7: 93439, 8: 95566, 9: 97764, 10: 100036, 11: 102384, 12: 104811, 13: 107429,
+  },
+  '운명의 업화': {
+    14: 110139, 15: 112944, 16: 115847, 17: 118851, 18: 121961, 19: 125180,
+    20: 128511, 21: 131959, 22: 135527, 23: 139221, 24: 143044, 25: 147000,
+  },
+  '운명의 전율': {
+    0: 124793, 1: 128059, 2: 131439, 3: 134936, 4: 138556, 5: 142303,
+    6: 146182, 7: 150196, 8: 154350, 9: 158649, 10: 163099,
+    11: 167706, 12: 172473, 13: 177406, 14: 182514, 15: 187799,
+    16: 193270, 17: 198101, 18: 203054, 19: 208130, 20: 213333,
+    21: 218667, 22: 224133, 23: 229737, 24: 235480, 25: 241367,
+  },
 };
 
 // 퍼센트 합(예: 8, 3, 2)을 배수(1.13 같은 값)로 변환
@@ -13,11 +36,24 @@ function toMultiplier(percentSum) {
   return 1 + (percentSum || 0) / 100;
 }
 
+// 티어별 표에서 (티어, 레벨) 조합을 찾되, 그 레벨이 표에 없으면(실측: 권구릿이 "+20 운명의 결단"
+// 착용 — 사용자가 준 표는 결단을 레벨 0~13까지만 담고 있어서 실제로는 더 높은 레벨까지 존재함이
+// 확인됨) 0으로 끊지 않고 가장 최신/전체범위 티어(운명의 전율)의 같은 레벨 값으로 대체한다 — 완전
+// 정확하진 않지만 예전 방식(티어 구분 없이 항상 전율 표 기준)과 동일한 근사라 최소한 이전보다
+// 나빠지지 않는다. usedFallback으로 언제 대체됐는지 breakdown에서 확인 가능.
+function getWeaponLevelTableValue(tier, level) {
+  const exact = tier && WEAPON_LEVEL_TABLE_BY_TIER[tier] && WEAPON_LEVEL_TABLE_BY_TIER[tier][level];
+  if (exact !== undefined) return { value: exact, usedFallback: false };
+  const fallback = WEAPON_LEVEL_TABLE_BY_TIER['운명의 전율'][level];
+  return { value: fallback || 0, usedFallback: true };
+}
+
 // 무기 공격력 계산
+// weaponTier: getEquipmentTierFromName(weaponItem.Name)로 얻은 티어 문자열(null이면 표 없음 취급)
 // flatBonuses: {coreFixed, braceletFlat, feast} 같은 고정 수치들의 합
 // percentBonuses: {earring, coreMulti, arkPassive} 같은 퍼센트들의 합
-function calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum) {
-  const base = WEAPON_LEVEL_TABLE[weaponLevel] ?? 0;
+function calculateWeaponAttack(weaponLevel, weaponTier, flatBonusSum, percentBonusSum) {
+  const base = getWeaponLevelTableValue(weaponTier, weaponLevel).value;
   const flatTotal = base + (flatBonusSum || 0);
   const multiplier = toMultiplier(percentBonusSum);
   return flatTotal * multiplier;
@@ -428,7 +464,7 @@ function getCoreOptionText(tooltipStr) {
 
 // 모든 장비(팔찌 제외)의 "기본 효과"에서 특정 스탯(힘/민첩/지능)을 다 더해서 총합 계산
 // (팔찌는 별도로 계산해서 더하므로 여기서 제외해 중복 방지)
-// 방어구 5종(머리장식/견장/상의/하의/장갑)은 텍스트 파싱 대신 ARMOR_LEVEL_TABLE로 별도 계산하므로
+// 방어구 5종(머리장식/견장/상의/하의/장갑)은 텍스트 파싱 대신 ARMOR_LEVEL_TABLE_BY_TIER로 별도 계산하므로
 // (getArmorPrimaryStatFlat 참고) 여기서는 제외해서 중복 합산을 막는다.
 const ARMOR_EQUIPMENT_TYPES = ['투구', '어깨', '상의', '하의', '장갑'];
 
@@ -443,16 +479,41 @@ function getStatTotalFromEquipment(equipmentList, statName) {
   return total;
 }
 
-// 방어구 5종 레벨(10~25)별 힘/민첩/지능 고정 테이블 — 완갑/무기처럼 텍스트 파싱 대신 레벨→수치 고정
+// 방어구 5종 레벨별 힘/민첩/지능 고정 테이블 — 완갑/무기처럼 텍스트 파싱 대신 레벨→수치 고정
 // 테이블로 관리(레벨별 수치가 게임 데이터 그대로라 텍스트 파싱보다 표가 더 정확하고 안전함).
-// API의 실제 Type 값은 '투구'/'어깨'(모자/견장이 아님).
-const ARMOR_LEVEL_TABLE = {
-  '투구': { 10: 94140, 11: 96801, 12: 99554, 13: 102404, 14: 105353, 15: 108406, 16: 111565, 17: 114358, 18: 117218, 19: 120150, 20: 123155, 21: 126236, 22: 129393, 23: 132629, 24: 135946, 25: 139346 },
-  '어깨': { 10: 100193, 11: 103023, 12: 105954, 13: 108987, 14: 112126, 15: 115375, 16: 118738, 17: 121709, 18: 124754, 19: 127874, 20: 131072, 21: 134351, 22: 137711, 23: 141155, 24: 144686, 25: 148304 },
-  '상의': { 10: 75313, 11: 77441, 12: 79644, 13: 81924, 14: 84283, 15: 86725, 16: 89253, 17: 91486, 18: 93775, 19: 96120, 20: 98524, 21: 100989, 22: 103514, 23: 106103, 24: 108757, 25: 111477 },
-  '하의': { 10: 81364, 11: 83664, 12: 86043, 13: 88506, 14: 91056, 15: 93693, 16: 96424, 17: 98838, 18: 101310, 19: 103844, 20: 106441, 21: 109104, 22: 111833, 23: 114630, 24: 117497, 25: 120435 },
-  '장갑': { 10: 112969, 11: 116161, 12: 119465, 13: 122885, 14: 126425, 15: 130087, 16: 133879, 17: 137229, 18: 140662, 19: 144180, 20: 147786, 21: 151483, 22: 155271, 23: 159155, 24: 163136, 25: 167216 },
+// API의 실제 Type 값은 '투구'/'어깨'(모자/견장이 아님). 무기와 마찬가지로 티어(운명의 결단/업화/전율)
+// 별로 표가 다르다 — EQUIPMENT_TIER_NAMES/getEquipmentTierFromName 참고.
+const ARMOR_LEVEL_TABLE_BY_TIER = {
+  '운명의 결단': {
+    '투구': { 0: 34806, 1: 38669, 2: 42565, 3: 46495, 4: 50459, 5: 51572, 6: 52722, 7: 53911, 8: 55139, 9: 56409, 10: 57721, 11: 59077, 12: 60478, 13: 61991 },
+    '어깨': { 0: 37043, 1: 41155, 2: 45302, 3: 49483, 4: 53703, 5: 54887, 6: 56111, 7: 57376, 8: 58684, 9: 60035, 10: 61431, 11: 62875, 12: 64366, 13: 65976 },
+    '상의': { 0: 27845, 1: 30936, 2: 34053, 3: 37197, 4: 40368, 5: 41248, 6: 42178, 7: 43129, 8: 44112, 9: 45128, 10: 46177, 11: 47262, 12: 48383, 13: 49593 },
+    '하의': { 0: 30082, 1: 33421, 2: 36788, 3: 40185, 4: 43611, 5: 44573, 6: 45567, 7: 46594, 8: 47656, 9: 48753, 10: 49887, 11: 51059, 12: 52270, 13: 53577 },
+    '장갑': { 0: 41767, 1: 46403, 2: 51079, 3: 55794, 4: 60552, 5: 61887, 6: 63267, 7: 64693, 8: 66167, 9: 67691, 10: 69211, 11: 70892, 12: 72574, 13: 74389 },
+  },
+  '운명의 업화': {
+    '투구': { 14: 63556, 15: 65176, 16: 66852, 17: 68588, 18: 70384, 19: 72243, 20: 74167, 21: 76158, 22: 78219, 23: 80352, 24: 82560, 25: 84845 },
+    '어깨': { 14: 67642, 15: 69366, 16: 71150, 17: 72997, 18: 74909, 19: 76887, 20: 78935, 21: 81054, 22: 83248, 23: 85518, 24: 87868, 25: 90300 },
+    '상의': { 14: 50845, 15: 52141, 16: 53483, 17: 54871, 18: 56308, 19: 57795, 20: 59334, 21: 60927, 22: 62576, 23: 64283, 24: 66049, 25: 67877 },
+    '하의': { 14: 54930, 15: 56330, 16: 57779, 17: 59279, 18: 60831, 19: 62438, 20: 64101, 21: 65822, 22: 67603, 23: 69447, 24: 71355, 25: 73330 },
+    '장갑': { 14: 76267, 15: 78211, 16: 80223, 17: 82306, 18: 84461, 19: 86692, 20: 89000, 21: 91390, 22: 93863, 23: 96423, 24: 99072, 25: 101815 },
+  },
+  '운명의 전율': {
+    '투구': { 0: 72017, 1: 73903, 2: 75855, 3: 77875, 4: 79965, 5: 82129, 6: 84369, 7: 86688, 8: 89087, 9: 91570, 10: 94140, 11: 96801, 12: 99554, 13: 102404, 14: 105353, 15: 108406, 16: 111565, 17: 114358, 18: 117218, 19: 120150, 20: 123155, 21: 126236, 22: 129393, 23: 132629, 24: 135946, 25: 139346 },
+    '어깨': { 0: 76646, 1: 78654, 2: 80731, 3: 82881, 4: 85106, 5: 87410, 6: 89793, 7: 92261, 8: 94815, 9: 97457, 10: 100193, 11: 103023, 12: 105954, 13: 108987, 14: 112126, 15: 115375, 16: 118738, 17: 121709, 18: 124754, 19: 127874, 20: 131072, 21: 134351, 22: 137711, 23: 141155, 24: 144686, 25: 148304 },
+    '상의': { 0: 57614, 1: 59123, 2: 60684, 3: 62300, 4: 63973, 5: 65704, 6: 67497, 7: 69351, 8: 71270, 9: 73257, 10: 75313, 11: 77441, 12: 79644, 13: 81924, 14: 84283, 15: 86725, 16: 89253, 17: 91486, 18: 93775, 19: 96120, 20: 98524, 21: 100989, 22: 103514, 23: 106103, 24: 108757, 25: 111477 },
+    '하의': { 0: 62242, 1: 63872, 2: 65559, 3: 67306, 4: 69113, 5: 70983, 6: 72919, 7: 74922, 8: 76996, 9: 79142, 10: 81364, 11: 83664, 12: 86043, 13: 88506, 14: 91056, 15: 93693, 16: 96424, 17: 98838, 18: 101310, 19: 103844, 20: 106441, 21: 109104, 22: 111833, 23: 114630, 24: 117497, 25: 120435 },
+    '장갑': { 0: 86421, 1: 88684, 2: 91026, 3: 93450, 4: 95959, 5: 98556, 6: 101244, 7: 104025, 8: 106905, 9: 109885, 10: 112969, 11: 116161, 12: 119465, 13: 122885, 14: 126425, 15: 130087, 16: 133879, 17: 137229, 18: 140662, 19: 144180, 20: 147786, 21: 151483, 22: 155271, 23: 159155, 24: 163136, 25: 167216 },
+  },
 };
+
+// 무기와 같은 이유로 같은 안전장치(getWeaponLevelTableValue 주석 참고) — 실제 착용 티어에 그 레벨이
+// 없으면 운명의 전율 표의 같은 레벨로 대체(0으로 끊지 않음).
+function getArmorLevelTableValue(apiType, tier, level) {
+  const exact = tier && ARMOR_LEVEL_TABLE_BY_TIER[tier] && ARMOR_LEVEL_TABLE_BY_TIER[tier][apiType] && ARMOR_LEVEL_TABLE_BY_TIER[tier][apiType][level];
+  if (exact) return exact;
+  return (ARMOR_LEVEL_TABLE_BY_TIER['운명의 전율'][apiType] && ARMOR_LEVEL_TABLE_BY_TIER['운명의 전율'][apiType][level]) || 0;
+}
 
 // 방어구 아이템 이름의 "+N"에서 강화 레벨 추출 (무기/완갑과 동일한 패턴)
 function getArmorLevel(item) {
@@ -461,19 +522,20 @@ function getArmorLevel(item) {
   return levelMatch ? parseInt(levelMatch[1], 10) : 0;
 }
 
-// 방어구 5종 각각의 실제 착용 레벨을 ARMOR_LEVEL_TABLE에서 찾아 합산한 힘/민첩/지능 고정치.
+// 방어구 5종 각각의 실제 착용 레벨을 ARMOR_LEVEL_TABLE_BY_TIER에서 찾아 합산한 힘/민첩/지능 고정치.
 // (부위별 상세는 getArmorBreakdown 참고 — 장비 탭 표시용)
 function getArmorPrimaryStatFlat(equipmentList) {
   return getArmorBreakdown(equipmentList).reduce((sum, row) => sum + row.statFlat, 0);
 }
 
-// 장비 탭/디버그 표시용 — 방어구 5종 부위별 [type, item, level, statFlat] 나열
+// 장비 탭/디버그 표시용 — 방어구 5종 부위별 [type, item, level, tier, statFlat] 나열
 function getArmorBreakdown(equipmentList) {
   return ARMOR_EQUIPMENT_TYPES.map((apiType) => {
     const item = (equipmentList || []).find((it) => it.Type === apiType);
     const level = getArmorLevel(item);
-    const statFlat = (ARMOR_LEVEL_TABLE[apiType] && ARMOR_LEVEL_TABLE[apiType][level]) || 0;
-    return { type: apiType, item, level, statFlat };
+    const tier = item ? getEquipmentTierFromName(item.Name) : null;
+    const statFlat = getArmorLevelTableValue(apiType, tier, level);
+    return { type: apiType, item, level, tier, statFlat };
   });
 }
 
@@ -508,8 +570,11 @@ function calculateHypotheticalArmorEfficiency(dealerData, dealerStats, ctx, leve
   let hypotheticalArmorFlat = 0;
   ARMOR_EQUIPMENT_TYPES.forEach((apiType) => {
     const level = levelSelections[apiType];
-    const realStatFlat = realBreakdown.find((b) => b.type === apiType).statFlat;
-    const statFlat = level ? ((ARMOR_LEVEL_TABLE[apiType] && ARMOR_LEVEL_TABLE[apiType][level]) || 0) : realStatFlat;
+    const realRow = realBreakdown.find((b) => b.type === apiType);
+    // 시뮬레이터는 "지금 착용한 티어 안에서 레벨만 바꿔보면?"이 자연스러운 질문이라 실제 착용 티어를
+    // 그대로 쓰고, 실착용 정보가 없으면(미착용) 가장 최신 티어(운명의 전율)를 기본값으로 사용한다.
+    const tier = realRow.tier || '운명의 전율';
+    const statFlat = level ? getArmorLevelTableValue(apiType, tier, level) : realRow.statFlat;
     perPieceFlat[apiType] = statFlat;
     hypotheticalArmorFlat += statFlat;
   });
@@ -863,6 +928,7 @@ function calculateCharacterStats(data, customDeltas) {
 
   const levelMatch = stripHtml(weaponItem.Name).match(/\+(\d+)/);
   const weaponLevel = levelMatch ? parseInt(levelMatch[1], 10) : 0;
+  const weaponTier = getEquipmentTierFromName(weaponItem.Name);
 
   const braceletItem = (data.equipment || []).find((it) => it.Type === '팔찌');
   const braceletText = braceletItem ? parseTooltip(braceletItem.Tooltip).join(' ') : '';
@@ -893,10 +959,12 @@ function calculateCharacterStats(data, customDeltas) {
   const customWeaponAttackPercent = (customDeltas && customDeltas.weaponAttackPercent) || 0;
   const flatBonusSum = braceletFlat + coreFlat + wanjibStats.weaponAttackFlat + customWeaponAttackFlat;
   const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent + customWeaponAttackPercent;
-  const weaponAttack = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
+  const weaponAttack = calculateWeaponAttack(weaponLevel, weaponTier, flatBonusSum, percentBonusSum);
   const weaponAttackBreakdown = {
     무기_강화단계: weaponLevel,
-    강화단계_기본값: WEAPON_LEVEL_TABLE[weaponLevel] || 0,
+    무기_티어: weaponTier || '(인식 안됨)',
+    강화단계_기본값: getWeaponLevelTableValue(weaponTier, weaponLevel).value,
+    강화단계_표누락_전율표로대체: getWeaponLevelTableValue(weaponTier, weaponLevel).usedFallback,
     팔찌_고정: braceletFlat,
     아크그리드코어_고정: coreFlat,
     완갑_고정: wanjibStats.weaponAttackFlat,
@@ -4948,8 +5016,9 @@ function calculateFullBuffFinalOutput(finalOutput, adenkiDamageBuffMultiplier, h
 // 슬롯 하나에 붙여서 반영한다. 질서 코어는 (사용자 확정) 코어마다 스탯이 달라 적주피로 통일 근사하는
 // 기존 방식을 그대로 유지 — dealerData에 굽지 않고 계산 마지막에 별도 배율로 곱한다.
 
-// 장비 탭과 동일한 방식(아이템 이름의 "+N"을 갈아끼움) — ARMOR_LEVEL_TABLE이 이름 텍스트가 아니라
-// 레벨 자체로 조회되므로(getArmorLevel), 실제 아이템의 다른 필드는 건드릴 필요가 없다.
+// 장비 탭과 동일한 방식(아이템 이름의 "+N"을 갈아끼움) — ARMOR_LEVEL_TABLE_BY_TIER가 이름 텍스트가
+// 아니라 (티어, 레벨)로 조회되므로(getArmorLevel/getEquipmentTierFromName), 실제 아이템의 다른
+// 필드는 건드릴 필요가 없다.
 function buildDealerDataWithArmorLevels(dealerData, levelSelections) {
   if (!levelSelections) return dealerData;
   const equipment = (dealerData.equipment || []).map((item) => {
