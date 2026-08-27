@@ -172,7 +172,12 @@
     .evolutionCell.notInvested .evolutionCellLabel { opacity: 0.5; }
     .evolutionCellLabel { font-size: 10.5px; margin-top: 2px; line-height: 1.25; color: var(--text-muted); }
     .evolutionCustomCell { width: 76px; text-align: center; }
-    .evolutionCustomCell select { width: 100%; font-size: 11px; margin-top: 2px; padding: 3px 4px; }
+    .evolutionCustomCell img { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-strong); }
+    .evolutionCustomCell.zeroLevel img { filter: grayscale(100%) brightness(0.5); opacity: 0.6; }
+    .evolutionCustomCell.zeroLevel .evolutionCellLabel { opacity: 0.5; }
+    .evolutionLevelBtn { display: block; width: 100%; margin-top: 3px; padding: 2px 4px; font-size: 10.5px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--bg-input); color: var(--text); cursor: pointer; }
+    .evolutionLevelBtn:hover { border-color: var(--accent); color: var(--accent-strong); }
+    .evolutionCustomCell.zeroLevel .evolutionLevelBtn { color: var(--text-muted); }
     .evolutionCustomGrid { margin-bottom: 10px; }
 
     .combatAnalysisRow { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
@@ -1511,6 +1516,10 @@
       return Math.max(0, Math.min(individualMax, tierBudget - othersSum));
     }
 
+    // 왼쪽 "실제 트리"와 완전히 같은 아이콘 레이아웃을 쓰되, 칸마다 이름 바로 밑에 "Lv.X/Y" 버튼을
+    // 붙여서 클릭할 때마다 레벨이 0→1→...→최대→0 순으로 순환하도록 한다(기존 드롭다운 대체).
+    // 아이콘은 실제 캐릭터의 투자 여부와 무관하게 항상 위치 기반 고정 아이콘(getEvolutionPlaceholderIconPath)을
+    // 쓴다 — 커스텀 시뮬레이터는 가상의 조합을 다루므로 "이 캐릭터가 실제로 찍었는지"는 의미가 없다.
     function renderEvolutionCustomGrid() {
       const container = document.querySelector('.evolutionCustomGrid');
       const rowsHtml = EVOLUTION_TREE_LAYOUT.map((row, tierIdx) => {
@@ -1520,16 +1529,17 @@
           <div class="evolutionTierLabel">${tierIdx + 1}티어<br><span style="font-weight:normal;font-size:10.5px;">(${tierUsed}/${EVOLUTION_TIER_MAX_TOTAL[tierIdx]})</span></div>
           <div class="evolutionTierNodes">
             ${row.map((name, colIdx) => {
-              const maxLevel = getEvolutionCellMaxLevel(tierIdx, colIdx, name);
               const current = evolutionSimState[tierIdx][colIdx];
-              const options = [];
-              for (let lv = 0; lv <= maxLevel; lv++) {
-                options.push(`<option value="${lv}" ${lv === current ? 'selected' : ''}>${lv === 0 ? '-' : 'Lv.' + lv}</option>`);
-              }
+              // 표시되는 최대값은 노드 자체 상한과, 지금 남은 티어 예산(다른 칸이 이미 쓴 만큼 줄어듦)
+              // 중 더 작은 쪽 — 클릭했을 때 실제로 도달 가능한 최대치와 항상 일치시킨다.
+              const maxAllowed = getEvolutionCellMaxLevel(tierIdx, colIdx, name);
+              const displayMax = Math.max(maxAllowed, current);
+              const icon = getEvolutionPlaceholderIconPath(tierIdx + 1, colIdx);
               return `
-                <div class="evolutionCustomCell">
+                <div class="evolutionCustomCell${current === 0 ? ' zeroLevel' : ''}">
+                  <img src="${icon}" alt="${name}">
                   <div class="evolutionCellLabel">${name}</div>
-                  <select data-tier="${tierIdx}" data-col="${colIdx}">${options.join('')}</select>
+                  <button type="button" class="evolutionLevelBtn" data-tier="${tierIdx}" data-col="${colIdx}">Lv.${current}/${displayMax}</button>
                 </div>
               `;
             }).join('')}
@@ -1538,14 +1548,17 @@
       `;
       }).join('');
       container.innerHTML = rowsHtml;
-      container.querySelectorAll('select').forEach((sel) => {
-        sel.addEventListener('change', () => {
-          const tierIdx = parseInt(sel.dataset.tier, 10);
-          const colIdx = parseInt(sel.dataset.col, 10);
+      container.querySelectorAll('.evolutionLevelBtn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const tierIdx = parseInt(btn.dataset.tier, 10);
+          const colIdx = parseInt(btn.dataset.col, 10);
           const name = EVOLUTION_TREE_LAYOUT[tierIdx][colIdx];
-          const desired = parseInt(sel.value, 10);
+          const current = evolutionSimState[tierIdx][colIdx];
           const maxAllowed = getEvolutionCellMaxLevel(tierIdx, colIdx, name);
-          evolutionSimState[tierIdx][colIdx] = Math.min(desired, maxAllowed);
+          // 0에서 시작해 maxAllowed까지 한 칸씩 순환하고, maxAllowed에서 다시 0으로 돌아간다. 다른 칸이
+          // 이미 티어 예산을 많이 써서 maxAllowed가 0이 되면(예: 4티어에서 이미 다른 노드를 찍은 경우)
+          // 클릭해도 0에 머문다.
+          evolutionSimState[tierIdx][colIdx] = maxAllowed === 0 ? 0 : (current + 1) % (maxAllowed + 1);
           renderEvolutionCustomGrid();
           recomputeEvolutionSimulator();
         });
@@ -1584,19 +1597,23 @@
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <table class="statTable">
-          <tr><th>미투자 대비 커스텀 선택</th><td>${pct(result.totalChangePercent)}%</td></tr>
-          <tr><th>미투자 대비 현재 실제 트리</th><td>${pct(result.realChangePercent)}%</td></tr>
-          <tr><th>현재 실제 트리 대비 커스텀 선택</th><td>${pct(result.vsRealPercent)}%</td></tr>
-          <tr><th>다른 탭 선택 반영한, 실제 트리 대비 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
+          <tr><th>변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
         </table>
-        <p style="font-size:11px;color:var(--text-muted);">※ 위 3개 행(미투자 대비 등)은 아직 1티어 스탯(치명 제외)/4티어 분쇄·선각자·진군·기원/5티어 전체 계산식이 없어 선택해도 0%로 반영됩니다.
-        마지막 행("다른 탭 선택 반영한...")은 진화 최적화와 동일한 더 완전한 빌더를 사용해 5티어까지 반영됩니다.</p>
+        <p style="font-size:11px;color:var(--text-muted);">※ 진화 최적화와 동일한 빌더를 사용해 5티어까지 반영되며, 다른 탭에서 선택한 스톤/팔찌/장비/아크그리드/전투분석도 함께 반영됩니다.</p>
       `;
     }
 
     function setupEvolutionSimulator(ctx) {
       evolutionSimCtx = ctx;
-      EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => { row.forEach((_, colIdx) => { evolutionSimState[tierIdx][colIdx] = 0; }); });
+      // 빈 상태(전부 0)에서 시작하지 않고, 캐릭터가 실제로 찍은 트리를 기본값으로 미리 채워둔다 —
+      // "내가 설정한 처음 설정이 기본"이라는 요청. 왼쪽 실제 트리와 같은 소스(getArkPassiveNodeIcons)를
+      // 그대로 재사용해서 이름으로 매칭.
+      const investedNodes = getArkPassiveNodeIcons(ctx.dealerData.arkpassive, '진화');
+      const levelByName = {};
+      investedNodes.forEach((n) => { levelByName[n.name] = n.level; });
+      EVOLUTION_TREE_LAYOUT.forEach((row, tierIdx) => {
+        row.forEach((name, colIdx) => { evolutionSimState[tierIdx][colIdx] = levelByName[name] || 0; });
+      });
       renderEvolutionCustomGrid();
       recomputeEvolutionSimulator();
     }
