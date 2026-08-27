@@ -95,13 +95,25 @@
 
     #searchScreen {
       max-width: 720px;
+      margin: 0 auto;
       background: var(--bg-panel);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 28px 32px;
       box-shadow: var(--shadow);
     }
-    #dealerView, #supportView, #duoView { max-width: 1100px; }
+    #dealerView, #supportView, #duoView { max-width: 1200px; margin: 0 auto; }
+
+    .infoGrid { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 16px; align-items: start; }
+    .infoGrid .infoCol { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+    .infoGrid .infoColWide { grid-row: 1 / -1; min-width: 0; }
+    .infoGrid .infoColWide .fieldGroup { height: 100%; }
+    @media (max-width: 900px) {
+      .infoGrid { grid-template-columns: 1fr; }
+      .infoGrid .infoColWide { grid-row: auto; }
+    }
+
+    .itemIcon { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--bg-input); object-fit: cover; vertical-align: middle; margin-right: 8px; }
 
     .statTable { border-collapse: collapse; margin: 8px 0; background: var(--bg-panel-2); border-radius: 6px; }
     .statTable th, .statTable td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
@@ -621,18 +633,22 @@
       const equipment = dealerData.equipment || [];
       const weaponItem = findEquip(equipment, '무기');
       const wanjibItem = findEquip(equipment, '완갑');
+      const braceletItem = findEquip(equipment, '팔찌');
       const braceletOptions = getBraceletOptionsFromEquipment(equipment);
 
       return {
         arkgridCores: getArkgridCoreSummary(dealerData.arkgrid),
         engravingList: getEngravingList(dealerData.engravings),
         // API의 실제 Type 값은 '투구'/'어깨'(모자/견장이 아님) — 실 캐릭터로 확인한 값
-        equipList: [['모자', '투구'], ['견장', '어깨'], ['상의', '상의'], ['하의', '하의'], ['장갑', '장갑']].map(([label, apiType]) => ({
-          type: label,
-          name: findEquip(equipment, apiType)?.Name ? stripHtml(findEquip(equipment, apiType).Name) : '(미장착)',
-        })),
+        equipList: [['모자', '투구'], ['견장', '어깨'], ['상의', '상의'], ['하의', '하의'], ['장갑', '장갑']].map(([label, apiType]) => {
+          const item = findEquip(equipment, apiType);
+          return { type: label, name: item ? stripHtml(item.Name) : '(미장착)', icon: item?.Icon || '' };
+        }),
         weaponName: weaponItem ? stripHtml(weaponItem.Name) : '(미장착)',
+        weaponIcon: weaponItem?.Icon || '',
         wanjibName: wanjibItem ? stripHtml(wanjibItem.Name) : '(미장착)',
+        wanjibIcon: wanjibItem?.Icon || '',
+        braceletItem,
         braceletOptions,
         braceletEfficiency: calculateBraceletEfficiencyTable(dealerData, extra.supportData, dealerStats, braceletOptions, extra),
         necklace: findEquip(equipment, '목걸이'),
@@ -653,8 +669,14 @@
       };
     }
 
+    // 아이템/코어 아이콘 하나를 <img>로 렌더링 — API의 Icon URL을 그대로 사용, 없으면 빈 문자열.
+    function itemIconHtml(iconUrl, name) {
+      if (!iconUrl) return '';
+      return `<img class="itemIcon" src="${iconUrl}" alt="${escapeAttr(name || '')}" title="${escapeAttr(name || '')}">`;
+    }
+
     function buildArkgridSectionHtml(info) {
-      const coreRows = info.arkgridCores.map((c) => `<tr><td>${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
+      const coreRows = info.arkgridCores.map((c) => `<tr><td>${itemIconHtml(c.icon, c.name)}${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
       return `
         <div class="fieldGroup">
           <h4>아크그리드 정보</h4>
@@ -674,14 +696,14 @@
     }
 
     function buildEquipmentSectionHtml(info) {
-      const armorRows = info.equipList.map((e) => `<tr><th>${e.type}</th><td>${e.name}</td></tr>`).join('');
+      const armorRows = info.equipList.map((e) => `<tr><th>${e.type}</th><td>${itemIconHtml(e.icon, e.name)}${e.name}</td></tr>`).join('');
       return `
         <div class="fieldGroup">
           <h4>장비 정보</h4>
           <table class="statTable">
+            <tr><th>무기</th><td>${itemIconHtml(info.weaponIcon, info.weaponName)}${info.weaponName}</td></tr>
             ${armorRows}
-            <tr><th>무기</th><td>${info.weaponName}</td></tr>
-            <tr><th>완갑</th><td>${info.wanjibName}</td></tr>
+            <tr><th>완갑</th><td>${itemIconHtml(info.wanjibIcon, info.wanjibName)}${info.wanjibName}</td></tr>
           </table>
         </div>
       `;
@@ -692,9 +714,10 @@
         .filter(([, value]) => value)
         .map(([key, value]) => `<tr><th>${key}</th><td>${key.endsWith('Percent') ? pct(value) + '%' : value}</td></tr>`)
         .join('');
+      const braceletName = info.braceletItem ? stripHtml(info.braceletItem.Name) : '(미장착)';
       return `
         <div class="fieldGroup">
-          <h4>팔찌 정보</h4>
+          <h4>${itemIconHtml(info.braceletItem?.Icon, braceletName)}팔찌 정보 — ${braceletName}</h4>
           <table class="statTable">${rows || '<tr><td>팔찌 미장착 또는 옵션 없음</td></tr>'}</table>
         </div>
         ${buildBraceletEfficiencySectionHtml(info)}
@@ -721,19 +744,32 @@
     }
 
     function buildAccessorySectionHtml(info) {
+      const necklaceName = info.necklace ? stripHtml(info.necklace.Name) : '(미장착)';
       const earringNames = info.earrings.map((e) => stripHtml(e.Name)).join(', ') || '(미장착)';
       const ringNames = info.rings.map((r) => stripHtml(r.Name)).join(', ') || '(미장착)';
+      return `
+        <div class="fieldGroup">
+          <h4>장신구 정보</h4>
+          <table class="statTable">
+            <tr><th>목걸이</th><td>${itemIconHtml(info.necklace?.Icon, necklaceName)}${necklaceName} (추가피해 ${pct(info.necklaceExtraDamagePercent)}%, 적주피 ${pct(info.necklaceEnemyDamagePercent)}%)</td></tr>
+            <tr><th>귀걸이</th><td>${itemIconHtml(info.earrings[0]?.Icon, earringNames)}${earringNames} (공격력 ${pct(info.earringAttackPercent)}%, 무기 공격력 ${pct(info.earringWeaponAttackPercent)}%)</td></tr>
+            <tr><th>반지</th><td>${itemIconHtml(info.rings[0]?.Icon, ringNames)}${ringNames} (치명타 ${pct(info.ringCritRatePercent)}%, 치명타피해 ${pct(info.ringCritDamagePercent)}%)</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    function buildAbilityStoneSectionHtml(info) {
+      const stoneName = info.abilityStone ? stripHtml(info.abilityStone.Name) : '(미장착)';
       const stoneEffectsText = info.stoneEngravingEffects.length
         ? info.stoneEngravingEffects.map((e) => `${e.name} Lv.${e.level}`).join(', ')
         : '없음';
       return `
         <div class="fieldGroup">
-          <h4>장신구 정보</h4>
+          <h4>${itemIconHtml(info.abilityStone?.Icon, stoneName)}어빌리티 스톤 정보 — ${stoneName}</h4>
           <table class="statTable">
-            <tr><th>목걸이</th><td>${info.necklace ? stripHtml(info.necklace.Name) : '(미장착)'} (추가피해 ${pct(info.necklaceExtraDamagePercent)}%, 적주피 ${pct(info.necklaceEnemyDamagePercent)}%)</td></tr>
-            <tr><th>귀걸이</th><td>${earringNames} (공격력 ${pct(info.earringAttackPercent)}%, 무기 공격력 ${pct(info.earringWeaponAttackPercent)}%)</td></tr>
-            <tr><th>반지</th><td>${ringNames} (치명타 ${pct(info.ringCritRatePercent)}%, 치명타피해 ${pct(info.ringCritDamagePercent)}%)</td></tr>
-            <tr><th>어빌리티 스톤</th><td>${info.abilityStone ? stripHtml(info.abilityStone.Name) : '(미장착)'} (기본공격력 ${pct(info.stoneBaseAttackPercent)}%, 각인 효과: ${stoneEffectsText})</td></tr>
+            <tr><th>기본 공격력</th><td>${pct(info.stoneBaseAttackPercent)}%</td></tr>
+            <tr><th>각인 효과</th><td>${stoneEffectsText}</td></tr>
           </table>
         </div>
       `;
@@ -788,6 +824,22 @@
       document.getElementById('liveFullBuffOutput').textContent = fullBuffFinalOutputResult.output.toLocaleString();
     }
 
+    function buildArkgridGemSectionHtml(ctx) {
+      return `
+        <div class="fieldGroup">
+          <h4>아크그리드 젬 정보</h4>
+          <table class="statTable">
+            <tr><th>공격력</th><td>${pct(ctx.dealerStats.arkgridGemsAttackPercent)}%</td></tr>
+            <tr><th>추가피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬)}%</td></tr>
+            <tr><th>보스피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해)}%</td></tr>
+          </table>
+        </div>
+      `;
+    }
+
+    // "현재 정보" 탭 레이아웃 — 사용자가 제공한 스프레드시트 목업 구조를 그대로 따름:
+    // 상단에 캐릭터 이름/직업각인 헤더, 그 아래 3열 그리드(왼쪽=장비/아크그리드 계열,
+    // 가운데=장신구/어빌리티스톤/팔찌/각인, 오른쪽=폭넓은 캐릭터 스펙 정보가 전체 행에 걸쳐 표시).
     function renderDealerInfoTab(ctx, info) {
       const panel = views.dealer.querySelector('.tabPanel[data-panel="info"]');
 
@@ -802,20 +854,22 @@
           <h4>${ctx.dealerLabel} (${ctx.dealerStats.className})</h4>
           <p>직업각인 명: ${buildEngravingName || '(확인 불가)'}</p>
         </div>
-        ${buildArkgridSectionHtml(info)}
-        <div class="fieldGroup">
-          <h4>아크그리드 젬 정보</h4>
-          <table class="statTable">
-            <tr><th>공격력</th><td>${pct(ctx.dealerStats.arkgridGemsAttackPercent)}%</td></tr>
-            <tr><th>추가피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬)}%</td></tr>
-            <tr><th>보스피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해)}%</td></tr>
-          </table>
+        <div class="infoGrid">
+          <div class="infoCol">
+            ${buildEquipmentSectionHtml(info)}
+            ${buildArkgridSectionHtml(info)}
+            ${buildArkgridGemSectionHtml(ctx)}
+          </div>
+          <div class="infoCol">
+            ${buildAccessorySectionHtml(info)}
+            ${buildAbilityStoneSectionHtml(info)}
+            ${buildBraceletSectionHtml(info)}
+            ${buildEngravingSectionHtml(info)}
+          </div>
+          <div class="infoColWide">
+            ${buildSpecSectionHtml(info, ctx)}
+          </div>
         </div>
-        ${buildEngravingSectionHtml(info)}
-        ${buildEquipmentSectionHtml(info)}
-        ${buildBraceletSectionHtml(info)}
-        ${buildAccessorySectionHtml(info)}
-        ${buildSpecSectionHtml(info, ctx)}
         <div class="fieldGroup">
           <h4>아크패시브 진화+깨달음 (조건부·시간제한 노드도 일단 포함, 클래스별 예외는 추후 정리 예정)</h4>
           <table class="statTable">

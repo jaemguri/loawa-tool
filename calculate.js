@@ -4274,6 +4274,7 @@ function getArkgridCoreSummary(arkgridData) {
     name: slot.Name,
     point: slot.Point,
     grade: slot.Grade,
+    icon: slot.Icon || '',
   }));
 }
 
