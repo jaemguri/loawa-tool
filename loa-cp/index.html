@@ -1237,13 +1237,19 @@
         keepOption.value = '';
         keepOption.textContent = '실제 착용 유지';
         select.appendChild(keepOption);
-        for (let lv = 10; lv <= 25; lv++) {
+        // 실제 착용 중인 티어(운명의 결단/업화/전율) 안에서만 레벨을 고를 수 있게 한다 — 티어마다
+        // 표에 있는 레벨 범위가 달라서(결단=0~13, 업화=14~25, 전율=0~25) 고정된 10~25 범위를 쓰면
+        // 예를 들어 결단 착용자가 Lv.20을 고를 경우 표에 없어 0으로 계산되는 버그가 생긴다.
+        const realRow = getArmorBreakdown(armorSimCtx.dealerData.equipment).find((b) => b.type === apiType);
+        const tier = (realRow && realRow.tier) || '운명의 전율';
+        const availableLevels = Object.keys((ARMOR_LEVEL_TABLE_BY_TIER[tier] && ARMOR_LEVEL_TABLE_BY_TIER[tier][apiType]) || {}).map(Number).sort((a, b) => a - b);
+        availableLevels.forEach((lv) => {
           const optionEl = document.createElement('option');
           optionEl.value = lv;
           optionEl.textContent = `Lv.${lv}`;
           if (armorSimState[apiType] === lv) optionEl.selected = true;
           select.appendChild(optionEl);
-        }
+        });
         select.addEventListener('change', () => {
           armorSimState[apiType] = select.value ? parseInt(select.value, 10) : 0;
           recomputeArmorSimulator();
