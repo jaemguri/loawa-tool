@@ -3233,6 +3233,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
   const supportBrandTraceCoreMultiplier = getSupportBrandTraceCoreEnemyDamageMultiplier(supportData?.arkgrid, brandEffectiveRatio ?? 1);
   const arkPassivePersistentEnemyDamagePercent = getArkPassivePersistentEnemyDamagePercent(dealerData.arkpassive);
   const identityEnemyDamagePercent = getIdentityEnemyDamagePercent(dealerData);
+  const specializationIdentityWideEnemyDamagePercent = getSpecializationIdentityWideEnemyDamagePercent(dealerData);
   // 전투분석 스킬 지분 가중 전용 — calculateCritMultiplier의 extraCritRatePercent/extraCritDamagePercent와
   // 같은 패턴. 특정 스킬 하나에 국한된 조건부 피해%(예: 특화 스탯의 "OO 스킬 피해량 X% 증가")를 그
   // 스킬의 실제 전투분석 지분만큼만 반영하고 싶을 때, 호출부가 스킬별로 이 값을 넣어 여러 번 호출한
@@ -3250,6 +3251,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
     toMultiplier(evolutionDamagePercent + bluntThornBonus + supportPassionateDanceBonus) *
     toMultiplier(arkPassivePersistentEnemyDamagePercent) *
     toMultiplier(identityEnemyDamagePercent) *
+    toMultiplier(specializationIdentityWideEnemyDamagePercent) *
     toMultiplier(extraEnemyDamagePercent) *
     toMultiplier(sameolPercent) *
     toMultiplier(synergyDamageIncreasePercent) *
@@ -3270,6 +3272,7 @@ function calculateEnemyDamageMultiplier(dealerData, critRatePercent, supportData
       아크패시브_진화형피해_상세: getArkPassiveEvolutionDamageBreakdown(dealerData.arkpassive),
       아크패시브_상시버프_적주피: arkPassivePersistentEnemyDamagePercent,
       아이덴티티_상시버프_적주피: identityEnemyDamagePercent,
+      특화_아이덴티티전체버프: specializationIdentityWideEnemyDamagePercent,
       전투분석_특화스킬전용: extraEnemyDamagePercent,
       뭉툭한가시_전환보너스: bluntThornBonus,
       뭉툭한가시_디버그: bluntThornResult.debug,
@@ -4756,6 +4759,27 @@ function getIdentityCritRatePercent(dealerData) { return getIdentityPersistentSt
 function getIdentityCritDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).critDamagePercent || 0; }
 function getIdentityAttackPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).attackPercent || 0; }
 function getIdentityEnemyDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).enemyDamagePercent || 0; }
+
+// 특화 스탯 Tooltip에 붙은 보너스 중, 특정 스킬 하나가 아니라 그 직업의 아이덴티티 메커니즘 전체(주요
+// 스킬 대부분이 걸리는 범주)에 적용되는 경우 — [[project_specialization_stat_tooltip]]에서 확정한
+// "특정 스킬 전용 피해%는 반영 금지" 정책의 예외로, 지분가중 없이 바로 general 적주피%로 반영한다.
+// 실측(햄현이): 소서리스 "마력 강화 및 마력 해방의 속성 피해 효율이 528.46% 증가합니다" — 마력
+// 강화/마력 해방은 소서리스 아이덴티티(Z/X)의 두 축이고 사실상 모든 주력 스킬이 "속성 피해"로
+// 이 효율을 타므로 하나의 이름 붙은 스킬이 아니라 클래스 전체 딜사이클에 거는 general 버프로 취급.
+const SPECIALIZATION_IDENTITY_WIDE_PATTERN = {
+  '소서리스': /마력\s*강화\s*및\s*마력\s*해방의\s*속성\s*피해\s*효율이?\s*([\d.]+)\s*%\s*증가/,
+};
+
+function getSpecializationIdentityWideEnemyDamagePercent(dealerData) {
+  const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  const pattern = SPECIALIZATION_IDENTITY_WIDE_PATTERN[className];
+  if (!pattern || !dealerData.profiles || !dealerData.profiles.Stats) return 0;
+  const stat = dealerData.profiles.Stats.find((s) => s.Type === '특화');
+  if (!stat || !stat.Tooltip) return 0;
+  const text = stripHtml(stat.Tooltip.join(' '));
+  const m = text.match(pattern);
+  return m ? parseFloat(m[1]) : 0;
+}
 
 // 아이덴티티 상시 버프의 "출처"(어떤 Z/X 메커니즘에서 나온 값인지) — 표시 전용, hover로 근거를
 // 보여주기 위함. 대부분 직업은 메커니즘이 하나뿐이라 모든 스탯이 같은 출처지만, 리퍼는 페르소나/
