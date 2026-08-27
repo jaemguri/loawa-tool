@@ -4607,6 +4607,38 @@ function getIdentityCritRatePercent(dealerData) { return getIdentityPersistentSt
 function getIdentityCritDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).critDamagePercent || 0; }
 function getIdentityAttackPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).attackPercent || 0; }
 function getIdentityEnemyDamagePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).enemyDamagePercent || 0; }
+
+// 아이덴티티 상시 버프의 "출처"(어떤 Z/X 메커니즘에서 나온 값인지) — 표시 전용, hover로 근거를
+// 보여주기 위함. 대부분 직업은 메커니즘이 하나뿐이라 모든 스탯이 같은 출처지만, 리퍼는 페르소나/
+// 혼돈상태 두 메커니즘이 스탯별로 겹쳐 적용되고 브레이커는 채용 각인에 따라 완전히 다른 메커니즘이라
+// 별도 표로 분리.
+const IDENTITY_STAT_SOURCE_TEXT = {
+  '버서커': '폭주모드', '슬레이어': '폭주모드', '소울이터': '사신화', '데모닉': '악마화',
+  '스카우터': '하이퍼 싱크', '블레이드': '블레이드 아츠(오브 최대치 가정)',
+  '기공사': '금강선공 3단계', '디스트로이어': '중력코어 3개 해방(해방스킬 조건부 근사)',
+  '창술사': '집중 스탠스(고정 가정)', '소서리스': '마력 해방(몬스터 대상 스킬 조건부 근사)',
+  '블래스터': '오버히트(일반 스킬 조건부 근사)', '차원술사': '간섭 2중첩(각성기 조건부 근사)',
+  '아르카나': '도태 카드 가정(랜덤 요소 무시)',
+};
+const REAPER_STAT_SOURCE_TEXT = {
+  critRatePercent: '혼돈 상태', moveSpeedPercent: '페르소나(30%) + 혼돈 상태(10%) 합산',
+  attackSpeedPercent: '혼돈 상태', enemyDamagePercent: '급습 스킬 피해(최대 5중첩 근사)',
+};
+const BREAKER_STANCE_SOURCE_TEXT = {
+  '권왕': '권왕태세(권왕파천무 각인)', '수라': '수라 상태(수라의 길 각인)',
+};
+
+function getIdentityStatSourceText(dealerData, statKey) {
+  const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
+  if (className === '브레이커') {
+    const buildName = getClassBuildEngravingName(dealerData.arkpassive) || '';
+    if (buildName.includes('수라')) return BREAKER_STANCE_SOURCE_TEXT['수라'];
+    if (buildName.includes('권왕')) return BREAKER_STANCE_SOURCE_TEXT['권왕'];
+    return '';
+  }
+  if (className === '리퍼') return REAPER_STAT_SOURCE_TEXT[statKey] || '';
+  return IDENTITY_STAT_SOURCE_TEXT[className] || '';
+}
 function getIdentityMoveSpeedPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).moveSpeedPercent || 0; }
 function getIdentityAttackSpeedPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).attackSpeedPercent || 0; }
 
