@@ -5130,12 +5130,14 @@ function buildDealerDataWithAllOverrides(dealerData, overrides) {
   return result;
 }
 
-// 통합 시뮬레이터 엔진의 진입점 — overrides에 담긴 여러 탭의 선택을 전부(또는 일부) 반영한 총딜을 계산.
-// skillShares가 있으면 전투분석 지분 가중까지 같은 계산에 포함된다(calculateSkillWeightedCritEnemyMultiplier
-// 재사용). 반환값은 절대 총딜(스칼라)이며, "실제 대비"/"다른 탭 반영 상태 대비" 비교는 호출부에서
-// ctx.finalDamage×ctx.critResult.avgDamageMultiplier×... 또는 다른 overrides 조합으로 한 번 더 호출한
-// 값과 나눠서 계산한다.
-function calculateCombinedSimulationTotal(dealerData, supportData, ctx, overrides, skillShares) {
+// 통합 시뮬레이터 엔진의 진입점 — overrides에 담긴 여러 탭의 선택을 전부(또는 일부) 반영한 결과를
+// 계산. skillShares가 있으면 전투분석 지분 가중까지 같은 계산에 포함된다(calculateSkillWeightedCritEnemyMultiplier
+// 재사용, 스킬 지분 가중 시 치명타/적주피가 하나의 값으로 합쳐져서 나오므로 둘을 분리해서 반환할 수
+// 없다 — "변동 정보" 탭처럼 최종 산출식을 만들어야 하는 곳에서는 이 combined 값을 그대로 하나의
+// 곱연산 인자로 취급하면 된다). "전체 pieces가 필요한지 총딜 스칼라 하나만 필요한지"에 따라 아래
+// calculateCombinedSimulationTotal(기존 호출부 전부가 쓰는 숫자 하나짜리 버전, 시그니처 불변이라
+// 회귀 없음)과 이 함수를 나눠서 제공.
+function calculateCombinedSimulationPieces(dealerData, supportData, ctx, overrides, skillShares) {
   const modifiedDealerData = buildDealerDataWithAllOverrides(dealerData, overrides);
   const newStats = calculateCharacterStats(modifiedDealerData);
   const critEnemyCombined = calculateSkillWeightedCritEnemyMultiplier(modifiedDealerData, supportData, ctx, skillShares);
@@ -5149,7 +5151,19 @@ function calculateCombinedSimulationTotal(dealerData, supportData, ctx, override
     adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
   );
 
-  return newFinalDamage * critEnemyCombined * newExtra.multiplier * orderAdjustment;
+  const total = newFinalDamage * critEnemyCombined * newExtra.multiplier * orderAdjustment;
+  return {
+    total,
+    weaponAttack: newStats.weaponAttack,
+    finalDamage: newFinalDamage,
+    critEnemyCombined,
+    extraMultiplier: newExtra.multiplier,
+    orderAdjustment,
+  };
+}
+
+function calculateCombinedSimulationTotal(dealerData, supportData, ctx, overrides, skillShares) {
+  return calculateCombinedSimulationPieces(dealerData, supportData, ctx, overrides, skillShares).total;
 }
 
 // 실제(현재) 대비 변화율 + "다른 탭에서 이미 선택된 것들" 대비 변화율(맥락 안에서의 한계 기여도)을
