@@ -245,6 +245,7 @@
       <button class="innerTabBtn" data-tab="arkgrid">아크그리드</button>
       <button class="innerTabBtn" data-tab="gem">보석</button>
       <button class="innerTabBtn" data-tab="synergy">시너지</button>
+      <button class="innerTabBtn" data-tab="custom">커스텀</button>
     </div>
     <div class="tabPanel" data-panel="info"></div>
     <div class="tabPanel" data-panel="equip" hidden>준비 중입니다.</div>
@@ -256,6 +257,7 @@
     <div class="tabPanel" data-panel="arkgrid" hidden></div>
     <div class="tabPanel" data-panel="gem" hidden></div>
     <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
+    <div class="tabPanel" data-panel="custom" hidden></div>
   </div>
 
   <div id="supportView" style="display:none;">
@@ -2301,6 +2303,56 @@
       recalcSynergySim();
     }
 
+    // "커스텀" 탭 입력칸 정의 — [라벨, input id, calculateCustomSimulation에 넘길 필드명]
+    const CUSTOM_TAB_FIELDS = [
+      { label: '치명타 적중률', id: 'customCritRate', key: 'critRatePercent' },
+      { label: '치명타 피해', id: 'customCritDamage', key: 'critDamagePercent' },
+      { label: '적에게 주는 피해', id: 'customEnemyDamage', key: 'enemyDamagePercent' },
+      { label: '추가피해', id: 'customExtraDamage', key: 'extraDamagePercent' },
+      { label: '공격력+', id: 'customAttackFlat', key: 'attackFlat' },
+      { label: '공격력%', id: 'customAttackPercent', key: 'attackPercent' },
+      { label: '무기공격력+', id: 'customWeaponAttackFlat', key: 'weaponAttackFlat' },
+      { label: '무기공격력%', id: 'customWeaponAttackPercent', key: 'weaponAttackPercent' },
+    ];
+
+    // 실제 스탯 위에 사용자가 입력한 값을 그대로 더해서 전체 파이프라인을 재계산하는 자유 입력 탭.
+    // 다른 시뮬레이터(스톤/팔찌/진화 등)처럼 실제 옵션 중에서 고르는 게 아니라, 8개 항목에 원하는
+    // 숫자를 직접 타이핑하면 즉시 반영된다(빈 칸은 0=변화 없음으로 취급).
+    function renderDealerCustomTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="custom"]');
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>커스텀 — 실제 스탯에 값을 더해서 계산</h4>
+          <p style="font-size:11px;color:var(--text-muted);">빈 칸은 0(실제 그대로)으로 계산됩니다. %는 %p 단위로 더해집니다.</p>
+          ${CUSTOM_TAB_FIELDS.map((f) => `<p>${f.label}: <input type="number" class="customTabInput" id="${f.id}" step="any"></p>`).join('')}
+          <div class="customTabResult"></div>
+        </div>
+      `;
+
+      const inputs = CUSTOM_TAB_FIELDS.map((f) => panel.querySelector(`#${f.id}`));
+
+      function recalcCustomTab() {
+        const customInputs = {};
+        CUSTOM_TAB_FIELDS.forEach((f, i) => { customInputs[f.key] = parseFloat(inputs[i].value) || 0; });
+        const result = calculateCustomSimulation(ctx, customInputs);
+        panel.querySelector('.customTabResult').innerHTML = `
+          <table class="statTable">
+            <tr><th>무기공격력</th><td>${result.newDealerStats.weaponAttack.toLocaleString()}</td></tr>
+            <tr><th>기본공격력</th><td>${Math.round(result.newDealerStats.basePower).toLocaleString()}</td></tr>
+            <tr><th>최종 공격력</th><td>${Math.round(result.finalDamage).toLocaleString()}</td></tr>
+            <tr><th>치명타 적중률</th><td>${result.critResult.critRatePercent.toFixed(2)}%</td></tr>
+            <tr><th>치명타 배율</th><td>${result.critResult.avgDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>추가피해 배율</th><td>${result.extraDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>적에게 주는 피해 배율</th><td>${result.enemyDamageMultiplier.toFixed(4)}</td></tr>
+            <tr><th>최종 산출식(풀버프) 대비 변화율</th><td>${pct(result.changePercent)}%</td></tr>
+          </table>
+        `;
+      }
+
+      inputs.forEach((el) => el.addEventListener('input', recalcCustomTab));
+      recalcCustomTab();
+    }
+
     function renderDealerView(ctx) {
       globalSimCtx = ctx;
       globalSimState.abilityStone = null;
@@ -2320,6 +2372,7 @@
       renderDealerArkGridTab(ctx);
       renderDealerGemTab(ctx);
       renderDealerSynergyTab(ctx);
+      renderDealerCustomTab(ctx);
     }
 
     function renderSupportView(ctx) {

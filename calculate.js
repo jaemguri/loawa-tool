@@ -852,8 +852,12 @@ function calculateFinalDamage(basePower, accessoryFlat, coreFlat, supportBuffPow
 }
 
 // 캐릭터 데이터(profiles, equipment, arkgrid, arkpassive, gems, avatars) 하나를 받아서
-// 무기공격력 → 순수공격력 → 기본공격력 → 스탯창공격력까지 전부 계산해서 객체로 반환
-function calculateCharacterStats(data) {
+// 무기공격력 → 순수공격력 → 기본공격력 → 스탯창공격력까지 전부 계산해서 객체로 반환.
+// customDeltas(선택) — { weaponAttackFlat, weaponAttackPercent } — "커스텀" 탭 시뮬레이터가
+// 무기공격력에 임의의 고정치/퍼센트를 더해서 재계산할 때 사용(순수공격력=sqrt(주스탯×무기공격력/6)
+// 관계상 단순 후처리로는 정확한 값이 안 나와서, 무기공격력을 만드는 시점에 직접 더해야 함).
+// 안 넘기면 전부 0이라 기존 호출부(수십 곳)는 전혀 영향 없음.
+function calculateCharacterStats(data, customDeltas) {
   const weaponItem = (data.equipment || []).find((item) => item.Type === '무기');
   if (!weaponItem) return null;
 
@@ -885,8 +889,10 @@ function calculateCharacterStats(data) {
 
   const wanjibStats = getWanjibStats(data.equipment);
 
-  const flatBonusSum = braceletFlat + coreFlat + wanjibStats.weaponAttackFlat;
-  const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent;
+  const customWeaponAttackFlat = (customDeltas && customDeltas.weaponAttackFlat) || 0;
+  const customWeaponAttackPercent = (customDeltas && customDeltas.weaponAttackPercent) || 0;
+  const flatBonusSum = braceletFlat + coreFlat + wanjibStats.weaponAttackFlat + customWeaponAttackFlat;
+  const percentBonusSum = earringWeaponPercent + corePercentWeapon + enlightenmentPercent + customWeaponAttackPercent;
   const weaponAttack = calculateWeaponAttack(weaponLevel, flatBonusSum, percentBonusSum);
   const weaponAttackBreakdown = {
     무기_강화단계: weaponLevel,
@@ -3453,6 +3459,66 @@ function calculateSynergySimulation(ctx, simPartyClassNames, simPartyMemberRatio
     changePercent,
     classSynergyAttackPercent, classSynergyDefenseReductionPercent,
     critResult, enemyDamageResult,
+  };
+}
+
+// "커스텀" 탭 — 실제 스탯과 무관하게 사용자가 8개 항목(치명타 적중률/치명타 피해/적에게 주는 피해/
+// 추가피해/공격력+/공격력%/무기공격력/무기공격력%)에 원하는 숫자를 직접 입력하면 그 값을 실제 캐릭터
+// 스탯 위에 "더해서" 전체 파이프라인을 재계산한다(순수 가상치가 아니라 실제 캐릭터 + 커스텀 델타).
+// customInputs의 모든 필드는 %는 %p 단위 덧셈, flat은 그대로 덧셈, 안 넘기면 0(=실제 그대로).
+// - 치명타 적중률/피해: calculateCritMultiplier의 extraCritRatePercent/extraCritDamagePercent를
+//   그대로 재사용(치적/치피/onHit 비선형 상호작용까지 실제 계산 체인이 그대로 처리).
+// - 적에게 주는 피해: calculateEnemyDamageMultiplier의 결과 배율에 새 곱연산 항을 하나 추가
+//   (이 배율 자체가 여러 %의 곱이라 덧셈이 아니라 toMultiplier로 추가 항 곱셈이 맞음).
+// - 추가피해: calculateExtraDamageMultiplier는 순수 합연산(1+sum%/100) 구조라 결과값에 %/100을
+//   그대로 더하면 된다.
+// - 공격력+/%: calculateFinalDamage 내부 공식(고정치 합 × (1+%합/100) × (1+시너지%/100))을 그대로
+//   재현하되 고정치 합/퍼센트 합에 커스텀 값을 얹어서 직접 계산(원본 함수는 다른 곳에서 널리
+//   호출되므로 시그니처를 바꾸지 않고 호출부에서 같은 공식을 재현).
+// - 무기공격력+/%: calculateCharacterStats의 customDeltas로 전달 — 순수공격력이
+//   sqrt(주스탯×무기공격력/6)로 무기공격력과 비선형 관계라 무기공격력을 만드는 시점에 더해야
+//   정확하다(basePower까지 전부 다시 파생됨).
+function calculateCustomSimulation(ctx, customInputs) {
+  const inputs = Object.assign({
+    critRatePercent: 0, critDamagePercent: 0, enemyDamagePercent: 0, extraDamagePercent: 0,
+    attackFlat: 0, attackPercent: 0, weaponAttackFlat: 0, weaponAttackPercent: 0,
+  }, customInputs || {});
+
+  const newDealerStats = calculateCharacterStats(ctx.dealerData, {
+    weaponAttackFlat: inputs.weaponAttackFlat, weaponAttackPercent: inputs.weaponAttackPercent,
+  });
+
+  const critResult = calculateCritMultiplier(ctx.dealerData, ctx.supportData, {
+    partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios,
+    extraCritRatePercent: inputs.critRatePercent, extraCritDamagePercent: inputs.critDamagePercent,
+  });
+  const baseEnemyDamageResult = calculateEnemyDamageMultiplier(
+    ctx.dealerData, critResult.critRatePercent, ctx.supportData, ctx.brandEffectiveRatio,
+    { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios }
+  );
+  const enemyDamageMultiplier = baseEnemyDamageResult.multiplier * toMultiplier(inputs.enemyDamagePercent);
+  const extraDamageMultiplier = ctx.extraDamageResult.multiplier + inputs.extraDamagePercent / 100;
+
+  const flatTotal = newDealerStats.basePower + newDealerStats.accessoryAttackFlat + newDealerStats.chaosCoreAttack.flat
+    + ctx.supportBuffPower + inputs.attackFlat;
+  const percentSum = newDealerStats.chaosCoreAttack.percent + newDealerStats.earringAttackPercent
+    + newDealerStats.arkgridGemsAttackPercent + ctx.adrenalineBonusBase + ctx.arkPassiveAttackPercent + inputs.attackPercent;
+  const finalDamage = flatTotal * toMultiplier(percentSum) * toMultiplier(ctx.classSynergyAttackPercent);
+
+  const finalOutputResult = calculateFinalOutput(
+    finalDamage, critResult.avgDamageMultiplier, extraDamageMultiplier, enemyDamageMultiplier,
+    ctx.defenseResult.multiplier, ctx.brandResult.multiplier, ctx.cardExtraDamageResult.multiplier
+  );
+  const fullBuffFinalOutputResult = calculateFullBuffFinalOutput(
+    finalOutputResult.output, ctx.adenkiDamageBuffResult.multiplier, ctx.hyperAwakeningDamageBuffResult.multiplier
+  );
+
+  const changePercent = (fullBuffFinalOutputResult.output / ctx.baselineFullBuffOutput - 1) * 100;
+
+  return {
+    output: fullBuffFinalOutputResult.output,
+    changePercent,
+    newDealerStats, critResult, enemyDamageMultiplier, extraDamageMultiplier, finalDamage,
   };
 }
 
