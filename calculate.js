@@ -4603,6 +4603,8 @@ function getClassBuildEngravingName(arkpassiveData) {
 // "주는 피해 X% 증가"만 스킬명 지정 없이 정말로 전체 데미지에 적용되는 general 버프라 그대로 유지.
 const IDENTITY_PERSISTENT_STAT_BONUS = {
   // 1. 단순 스탯 버프형(상시 켜짐 가정) — 폭주모드/사신화/악마화/하이퍼 싱크
+  // 버서커/슬레이어는 여기 적힌 값이 기본값이고, 실제로는 특화 스탯의 "폭주 효과 증폭"만큼 더 커짐
+  // (getIdentityPersistentStatBonus에서 곱연산으로 적용 — 아래 표 값은 그 증폭 전 기준치일 뿐).
   '버서커': { critRatePercent: 30, moveSpeedPercent: 20, attackSpeedPercent: 20 },
   '슬레이어': { critRatePercent: 30, moveSpeedPercent: 20, attackSpeedPercent: 20 },
   '소울이터': { critRatePercent: 20, moveSpeedPercent: 20, attackSpeedPercent: 10 },
@@ -4633,6 +4635,20 @@ const BREAKER_STANCE_STAT_BONUS = {
 };
 
 // 딜러 데이터로 아이덴티티 상시 버프 객체를 조회 (없는 직업은 빈 객체)
+// 버서커/슬레이어(폭주모드 공유 시스템)는 특화 스탯 Tooltip에 "폭주 효과가 X% 증폭됩니다"라는
+// 별도 항목이 있어서, IDENTITY_PERSISTENT_STAT_BONUS에 넣어둔 기본값(치적30%/이속20%/공속20%)이
+// 그대로 적용되는 게 아니라 이 증폭률만큼 곱연산으로 더 커진다(실측: 뇌벽 특화 1846 → "폭주 효과가
+// 68.66% 증폭됩니다" — 스킬명이 안 붙은 일반 증폭이라 [[특정 스킬 전용 데미지 제외 정책]]과 무관,
+// 아이덴티티 버프 자체의 세기를 키우는 항목). "블러디러쉬/각성 스킬 피해량 X% 증가"는 스킬명이
+// 붙어있어 정책대로 미반영, "분노 게이지 획득량"은 자원 관련이라 미반영.
+function getBerserkModeAmplificationPercent(profilesData) {
+  if (!profilesData || !profilesData.Stats) return 0;
+  const stat = profilesData.Stats.find((s) => s.Type === '특화');
+  if (!stat || !stat.Tooltip) return 0;
+  const text = stripHtml(stat.Tooltip.join(' '));
+  return extractPercent(text, '폭주\\s*효과');
+}
+
 function getIdentityPersistentStatBonus(dealerData) {
   const className = dealerData.profiles ? dealerData.profiles.CharacterClassName : '';
   if (className === '브레이커') {
@@ -4641,7 +4657,17 @@ function getIdentityPersistentStatBonus(dealerData) {
     if (buildName.includes('권왕')) return BREAKER_STANCE_STAT_BONUS['권왕'];
     return {};
   }
-  return IDENTITY_PERSISTENT_STAT_BONUS[className] || {};
+  const base = IDENTITY_PERSISTENT_STAT_BONUS[className] || {};
+  if (className === '버서커' || className === '슬레이어') {
+    const amplifyMultiplier = toMultiplier(getBerserkModeAmplificationPercent(dealerData.profiles));
+    return {
+      ...base,
+      critRatePercent: (base.critRatePercent || 0) * amplifyMultiplier,
+      moveSpeedPercent: (base.moveSpeedPercent || 0) * amplifyMultiplier,
+      attackSpeedPercent: (base.attackSpeedPercent || 0) * amplifyMultiplier,
+    };
+  }
+  return base;
 }
 
 function getIdentityCritRatePercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).critRatePercent || 0; }
@@ -4653,8 +4679,10 @@ function getIdentityEnemyDamagePercent(dealerData) { return getIdentityPersisten
 // 보여주기 위함. 대부분 직업은 메커니즘이 하나뿐이라 모든 스탯이 같은 출처지만, 리퍼는 페르소나/
 // 혼돈상태 두 메커니즘이 스탯별로 겹쳐 적용되고 브레이커는 채용 각인에 따라 완전히 다른 메커니즘이라
 // 별도 표로 분리.
+// 버서커/슬레이어(폭주모드)는 특화 스탯 증폭률이 캐릭터마다 달라서 정적 문자열이 아니라
+// getIdentityStatSourceText 안에서 동적으로 생성함(아래 참고) — 이 표에는 없음.
 const IDENTITY_STAT_SOURCE_TEXT = {
-  '버서커': '폭주모드', '슬레이어': '폭주모드', '소울이터': '사신화', '데모닉': '악마화',
+  '소울이터': '사신화', '데모닉': '악마화',
   '스카우터': '하이퍼 싱크', '블레이드': '블레이드 아츠(오브 최대치 가정)',
   '기공사': '금강선공 3단계', '창술사': '집중 스탠스(고정 가정)',
   '아르카나': '도태 카드 가정(랜덤 요소 무시)',
@@ -4676,6 +4704,10 @@ function getIdentityStatSourceText(dealerData, statKey) {
     return '';
   }
   if (className === '리퍼') return REAPER_STAT_SOURCE_TEXT[statKey] || '';
+  if (className === '버서커' || className === '슬레이어') {
+    const amp = getBerserkModeAmplificationPercent(dealerData.profiles);
+    return `폭주모드 (특화 스탯 "폭주 효과 ${amp.toFixed(2)}% 증폭" 반영됨)`;
+  }
   return IDENTITY_STAT_SOURCE_TEXT[className] || '';
 }
 function getIdentityMoveSpeedPercent(dealerData) { return getIdentityPersistentStatBonus(dealerData).moveSpeedPercent || 0; }
