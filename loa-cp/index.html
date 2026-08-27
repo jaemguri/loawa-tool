@@ -678,8 +678,17 @@
       return `<img class="itemIcon" src="${iconUrl}" alt="${escapeAttr(name || '')}" title="${escapeAttr(name || '')}">`;
     }
 
+    // "질서의 해 코어 : 일섬" 같은 이름을 "질서의 해 코어 :" / "일섬" 두 줄로 나눠 표시
+    function formatArkgridCoreName(name) {
+      const idx = name.indexOf(':');
+      if (idx === -1) return name;
+      const head = name.slice(0, idx + 1).trim();
+      const tail = name.slice(idx + 1).trim();
+      return `${head}<br>${tail}`;
+    }
+
     function buildArkgridSectionHtml(info) {
-      const coreRows = info.arkgridCores.map((c) => `<tr><td>${itemIconHtml(c.icon, c.name)}${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
+      const coreRows = info.arkgridCores.map((c) => `<tr><td>${itemIconHtml(c.icon, c.name)}${formatArkgridCoreName(c.name)}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
       return `
         <div class="fieldGroup">
           <h4>아크그리드 정보</h4>
@@ -712,35 +721,22 @@
       `;
     }
 
-    function buildBraceletSectionHtml(info) {
-      const rows = Object.entries(info.braceletOptions)
-        .filter(([, value]) => value)
-        .map(([key, value]) => `<tr><th>${key}</th><td>${key.endsWith('Percent') ? pct(value) + '%' : value}</td></tr>`)
-        .join('');
-      const braceletName = info.braceletItem ? stripHtml(info.braceletItem.Name) : '(미장착)';
-      return `
-        <div class="fieldGroup">
-          <h4>${itemIconHtml(info.braceletItem?.Icon, braceletName)}팔찌 정보 — ${braceletName}</h4>
-          <table class="statTable">${rows || '<tr><td>팔찌 미장착 또는 옵션 없음</td></tr>'}</table>
-        </div>
-        ${buildBraceletEfficiencySectionHtml(info)}
-      `;
-    }
-
     // 팔찌 옵션별 "적에게 주는 피해" 기준 환산 효율표. 값이 0인 옵션(팔찌에 없는 옵션)은 표에서 뺀다.
-    function buildBraceletEfficiencySectionHtml(info) {
+    // 원본 옵션 원시값 표는 삭제하고 이 효율표만 "팔찌" 섹션으로 보여준다(사용자 확정).
+    function buildBraceletSectionHtml(info) {
+      const braceletName = info.braceletItem ? stripHtml(info.braceletItem.Name) : '(미장착)';
       const activeRows = info.braceletEfficiency.filter((item) => item.value);
       const rows = activeRows
-        .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td><td>${item.method}</td></tr>`)
+        .map((item) => `<tr><th>${item.label}</th><td>${item.value}${item.key.endsWith('Percent') ? '%' : ''}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`)
         .join('');
       const total = activeRows.reduce((sum, item) => sum + item.efficiencyPercent, 0);
       return `
         <div class="fieldGroup">
-          <h4>팔찌 효율표 (적에게 주는 피해 기준 환산)</h4>
+          <h4>${itemIconHtml(info.braceletItem?.Icon, braceletName)}팔찌 — ${braceletName}</h4>
           <table class="statTable">
-            <tr><th>옵션</th><th>값</th><th>환산 효율</th><th>방식</th></tr>
-            ${rows || '<tr><td colspan="4">팔찌에 환산 가능한 옵션이 없습니다</td></tr>'}
-            ${activeRows.length ? `<tr><th>합산</th><td></td><td>${pct(total)}%</td><td></td></tr>` : ''}
+            <tr><th>옵션</th><th>값</th><th>효율</th></tr>
+            ${rows || '<tr><td colspan="3">팔찌에 환산 가능한 옵션이 없습니다</td></tr>'}
+            ${activeRows.length ? `<tr><th>합산</th><td></td><td>${pct(total)}%</td></tr>` : ''}
           </table>
         </div>
       `;
@@ -771,7 +767,6 @@
         <div class="fieldGroup">
           <h4>${itemIconHtml(info.abilityStone?.Icon, stoneName)}어빌리티 스톤 정보 — ${stoneName}</h4>
           <table class="statTable">
-            <tr><th>기본 공격력</th><td>${pct(info.stoneBaseAttackPercent)}%</td></tr>
             <tr><th>각인 효과</th><td>${stoneEffectsText}</td></tr>
           </table>
         </div>
@@ -827,14 +822,18 @@
       document.getElementById('liveFullBuffOutput').textContent = fullBuffFinalOutputResult.output.toLocaleString();
     }
 
+    // 레벨 합산치를 표시하고, 실제 옵션값(%)은 title 속성으로 마우스오버 시에만 노출
     function buildArkgridGemSectionHtml(ctx) {
+      const attackLevel = getAllArkgridGemsAttackLevel(ctx.dealerData.arkgrid);
+      const extraDamageLevel = getAllArkgridGemsExtraDamageLevel(ctx.dealerData.arkgrid);
+      const bossDamageLevel = getAllArkgridGemsBossDamageLevel(ctx.dealerData.arkgrid);
       return `
         <div class="fieldGroup">
           <h4>아크그리드 젬 정보</h4>
           <table class="statTable">
-            <tr><th>공격력</th><td>${pct(ctx.dealerStats.arkgridGemsAttackPercent)}%</td></tr>
-            <tr><th>추가피해</th><td>${pct(ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬)}%</td></tr>
-            <tr><th>보스피해</th><td>${pct(ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해)}%</td></tr>
+            <tr><th>공격력</th><td class="hoverInfo" title="${escapeAttr(pct(ctx.dealerStats.arkgridGemsAttackPercent) + '%')}">Lv.${attackLevel}</td></tr>
+            <tr><th>추가피해</th><td class="hoverInfo" title="${escapeAttr(pct(ctx.extraDamageResult.extraDamageBreakdown.아크그리드젬) + '%')}">Lv.${extraDamageLevel}</td></tr>
+            <tr><th>보스피해</th><td class="hoverInfo" title="${escapeAttr(pct(ctx.enemyDamageResult.breakdown.아크그리드젬_보스피해) + '%')}">Lv.${bossDamageLevel}</td></tr>
           </table>
         </div>
       `;
