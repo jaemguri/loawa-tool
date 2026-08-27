@@ -2788,6 +2788,10 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
   const validSelections = (selections || []).filter((s) => s.name && s.level > 0);
   const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
 
+  // total만 필요한 대부분의 호출(zeroTotal, 노드별 개별 기여도 계산)은 숫자 하나로 충분하지만,
+  // 실제 선택(validSelections) 하나만은 최종 산출식/풀버프 산출식을 만들 재료(finalDamage/치명타·추가피해·
+  // 적주피 배율)가 그대로 필요해서 pieces까지 같이 반환한다 — calculateFinalOutput/calculateFullBuffFinalOutput에
+  // 그대로 넘기면 되므로 여기서 새 계산식을 만들 필요는 없음.
   function totalFor(sels) {
     const modifiedDealerData = buildDealerDataWithEvolutionSelections(dealerData, sels);
     const newStats = calculateCharacterStats(modifiedDealerData);
@@ -2799,7 +2803,17 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
       newStats.chaosCoreAttack.percent, newStats.earringAttackPercent, newStats.arkgridGemsAttackPercent,
       ctx.adrenalineBonusBase, ctx.classSynergyAttackPercent, ctx.arkPassiveAttackPercent
     );
-    return newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+    const total = newFinalDamage * newCrit.avgDamageMultiplier * newExtra.multiplier * newEnemy.multiplier;
+    return {
+      total,
+      pieces: {
+        weaponAttack: newStats.weaponAttack,
+        finalDamage: newFinalDamage,
+        avgDamageMultiplier: newCrit.avgDamageMultiplier,
+        extraMultiplier: newExtra.multiplier,
+        enemyMultiplier: newEnemy.multiplier,
+      },
+    };
   }
 
   // 실제 캐릭터의 현재 진화 투자 상태가 아니라, "진화 트리에 아무것도 안 찍은 상태(0)"를 기준선으로 비교
@@ -2808,20 +2822,21 @@ function calculateHypotheticalEvolutionEfficiency(dealerData, supportData, ctx, 
   // 통째로 빼는 셈이라 선택 몇 개만으로는 항상 큰 폭의 음수로 나와 오해를 준다.
   // 다만 실제 빌드도 "같은 미투자(0) 기준선" 대비로 환산해서(realChangePercent) 같이 보여주면, 두 값을
   // 나눠서(1+커스텀%)/(1+실제%) 커스텀 선택이 실제 빌드 대비 몇 %인지도 비교 가능해진다(사용자 제안).
-  const zeroTotal = totalFor([]);
-  const hypotheticalTotal = totalFor(validSelections);
+  const zeroTotal = totalFor([]).total;
+  const hypothetical = totalFor(validSelections);
+  const hypotheticalTotal = hypothetical.total;
   const totalChangePercent = ((hypotheticalTotal / zeroTotal) - 1) * 100;
   const realChangePercent = ((realTotal / zeroTotal) - 1) * 100;
   const vsRealPercent = ((hypotheticalTotal / realTotal) - 1) * 100;
 
   const rows = validSelections.map((sel) => {
     const withoutSelections = validSelections.filter((s) => s !== sel);
-    const withoutTotal = totalFor(withoutSelections);
+    const withoutTotal = totalFor(withoutSelections).total;
     const efficiencyPercent = ((hypotheticalTotal / withoutTotal) - 1) * 100;
     return { key: sel.name, label: sel.name, value: `Lv.${sel.level}`, efficiencyPercent };
   });
 
-  return { rows, totalChangePercent, realChangePercent, vsRealPercent };
+  return { rows, totalChangePercent, realChangePercent, vsRealPercent, hypotheticalPieces: hypothetical.pieces };
 }
 
 // === 진화 트리 1~4티어 최적화 시뮬레이터 (9/7 어빌리티 스톤 최적화와 같은 성격 — 사용자가 정리한 티어별
@@ -2870,7 +2885,11 @@ function enumerateTierCandidates(candidateNames, tierBudget) {
 // buildDealerDataWithEvolutionSelections는 "0에서 시작하는" 커스텀 시뮬레이터라 이 문제가 없었지만, 이
 // 최적화는 실제 현재값에서 ±4만 미세 조정하는 거라 델타 계산이 꼭 필요하다).
 function buildDealerDataWithEvolutionTier1to4Selections(dealerData, sels, realCritLevel) {
-  const validSelections = (sels || []).filter((s) => s.level > 0);
+  // 치명은 level>0 필터에서 예외 처리 — "치명 레벨을 정확히 0으로 선택"한 경우도 유효한 선택인데,
+  // 다른 노드처럼 level>0으로 걸러버리면 배열에서 통째로 사라져서 critSelection이 항상 undefined가
+  // 되고, 실제 치명 스탯이 그대로 남아 "0으로 낮췄는데 반영이 안 되는" 버그가 생긴다(realCritLevel이
+  // 4 이하일 때 최적화 탐색이 낸 candidateSels에서도 같은 문제로 조용히 틀린 값을 냈을 수 있음).
+  const validSelections = (sels || []).filter((s) => s.level > 0 || s.name === '치명');
   const critSelection = validSelections.find((s) => s.name === '치명');
   const textSelections = validSelections.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
 
@@ -2970,7 +2989,8 @@ function buildSyntheticTier5Effect(name) {
 // buildDealerDataWithEvolutionTier1to4Selections와 달리 5티어까지 전부 선택대로 갈아끼우는 버전 — 1~4티어
 // 최적화가 끝난 뒤, 그 확정값을 유지한 채 5티어 후보만 바꿔가며 비교하는 마지막 단계에서 쓴다.
 function buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, tier5Sels, realCritLevel) {
-  const validT14 = (tier1to4Sels || []).filter((s) => s.level > 0);
+  // 치명 0 예외 — buildDealerDataWithEvolutionTier1to4Selections와 같은 이유(위 주석 참고).
+  const validT14 = (tier1to4Sels || []).filter((s) => s.level > 0 || s.name === '치명');
   const critSelection = validT14.find((s) => s.name === '치명');
   const textSelections = validT14.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
   const tier5Synthetic = (tier5Sels || []).map((s) => buildSyntheticTier5Effect(s.name)).filter(Boolean);
