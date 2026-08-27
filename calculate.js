@@ -1052,10 +1052,20 @@ function getArkPassivePersistentAttackPercent(arkpassiveData) {
 // 치명타 적중 시에만 곱연산으로 이미 정확히 반영하고 있어서, 여기서 또 세면 상시 적용되는 것처럼 이중
 // 반영된다(실측 발견: 잼구릿 진화 트리 최적화에서 '회심' 채용 시 상시버프_적주피가 22%→34%로 부풀려져서
 // 회심의 실제 가치가 과대평가되고 있었음 — 4티어 회심/달인 비교에 직접 영향).
+// "OO 1(.0)% 당 적에게 주는 피해가 Y% 증가" 형태(스탯/자원 비례 조건부, 예: 브레이커 수라 "치명적인 주먹"
+// =치명타 확률 1%당 2%(최대200%), 브레이커 권왕 "권왕파천무"/"권왕십이식: 풍랑"=충격 에너지 1당 4%)도
+// 제외해야 한다 — 정규식이 "N당"을 무시하고 뒤의 "Y% 증가"만 플랫 보너스로 잘못 합산하고 있었음(실측
+// 발견: 권구릿 치명적인 주먹이 실제로는 크리 확률 비례 최대 200%인데 "2%"로 20분의1 이하로 과소평가,
+// 눈가루 충격 에너지 조건부 두 곳이 각각 "4%"로 잘못 플랫 합산). 충격 에너지 같은 실시간 전투 자원은
+// API로 값을 알 수 없어 계산 자체가 불가능하므로 완전히 제외; 치명타 확률 비례 조건은 계산은 가능하지만
+// "수라결 기본 공격"에만 적용되는 스킬 한정 보너스라 이번 세션에 확정한 정책("특정 스킬 전용 피해%는
+// 적주피에 반영 금지") 대상이고, 기본 공격은 전투분석 스킬 지분표에 잡히는 이름이 아니라 지분가중도
+// 불가능해 당장은 계산에서 제외한다(추후 기본 공격 지분 추적 방법이 생기면 재검토).
 function getArkPassivePersistentEnemyDamagePercent(arkpassiveData) {
   const stripCritOnHit = (text) => text.replace(/치명타(?:로|론)?\s*(?:적중\s*)?시\s*적에게\s*주는\s*피해가\s*[\d.]+\s*%\s*증가(?:하며|하고)?/g, '');
-  const evo = stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '진화'));
-  const real = stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '깨달음'));
+  const stripPerUnitConditional = (text) => text.replace(/\d+(?:\.\d+)?\s*(?:%\s*)?당\s*적에게\s*주는\s*(?:모든\s*)?피해량?(?:이|가)?\s*[\d.]+\s*%\s*증가(?:하며|하고)?/g, '');
+  const evo = stripPerUnitConditional(stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '진화')));
+  const real = stripPerUnitConditional(stripCritOnHit(getArkPassivePersistentEffectsText(arkpassiveData, '깨달음')));
   return extractEnemyDamageAllPercent(evo) + extractEnemyDamageAllPercent(real);
 }
 
