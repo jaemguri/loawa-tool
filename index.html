@@ -251,6 +251,7 @@
       <button class="innerTabBtn" data-tab="gem">보석</button>
       <button class="innerTabBtn" data-tab="synergy">시너지</button>
       <button class="innerTabBtn" data-tab="custom">커스텀</button>
+      <button class="innerTabBtn" data-tab="change">변동 정보</button>
     </div>
     <div class="tabPanel" data-panel="info"></div>
     <div class="tabPanel" data-panel="equip" hidden>준비 중입니다.</div>
@@ -263,6 +264,7 @@
     <div class="tabPanel" data-panel="gem" hidden></div>
     <div class="tabPanel" data-panel="synergy" hidden>준비 중입니다.</div>
     <div class="tabPanel" data-panel="custom" hidden></div>
+    <div class="tabPanel" data-panel="change" hidden></div>
   </div>
 
   <div id="supportView" style="display:none;">
@@ -1109,6 +1111,51 @@
       const result = calculateUnifiedSimulationResult(globalSimCtx, globalSimState, globalSimSkillShares);
       const surgeEl = document.getElementById('surgeBarValue');
       if (surgeEl) surgeEl.textContent = pct(result.totalChangePercent);
+      renderDealerChangeInfoTab(globalSimCtx);
+    }
+
+    // "변동 정보" 탭 — 지금까지 각 탭(스톤/팔찌/장비/진화/아크그리드)에서 고른 시뮬레이션 선택을 전부
+    // 합쳐서(globalSimState) 실제로 적용했을 때 캐릭터 스펙이 어떻게 바뀌는지, 최종 산출식/풀버프 최종
+    // 산출식까지 계산해서 보여준다. 아무 탭도 안 건드렸으면 실제값과 동일(변화율 0.00%). 방어율/서포터
+    // 낙인/카드/아덴기·초각성 버프는 이 탭들과 무관하므로 ctx의 실제값을 그대로 재사용.
+    // recomputeUnifiedSurgeBar가 모든 시뮬레이터 탭의 재계산 경로에서 공통으로 호출되므로, 여기 한 곳만
+    // 고치면 어떤 탭을 만지든 이 탭도 항상 최신 상태로 갱신된다.
+    function renderDealerChangeInfoTab(ctx) {
+      const panel = views.dealer.querySelector('.tabPanel[data-panel="change"]');
+      if (!panel) return;
+
+      const pieces = calculateCombinedSimulationPieces(ctx.dealerData, ctx.supportData, ctx, globalSimState, globalSimSkillShares);
+      const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+      const totalChangePercent = ((pieces.total / realTotal) - 1) * 100;
+
+      // calculateFinalOutput은 치명타/적주피를 별도 인자로 받지만, 스킬 지분 가중이 걸리면 이 둘이
+      // critEnemyCombined 하나로 합쳐져서 더는 분리할 수 없다 — critMultiplier 자리에 결합값을 넣고,
+      // 원래 enemyDamageMultiplier 자리에는 combinedSimulation 전용 곱연산 항인 orderAdjustment(아크그리드
+      // 질서 코어 조정)를 대신 넣는다 — 어느 자리에 뭘 넣든 전부 곱해지는 구조라 최종 산출식(총합) 값은
+      // 정확히 동일하고, breakdown 라벨만 실제 의미와 다를 뿐이라 여기선 표에 그 breakdown을 안 쓴다.
+      const finalOutputResult = calculateFinalOutput(
+        pieces.finalDamage, pieces.critEnemyCombined, pieces.extraMultiplier, pieces.orderAdjustment,
+        ctx.defenseResult.multiplier, ctx.brandResult.multiplier, ctx.cardExtraDamageResult.multiplier
+      );
+      const fullBuffOutputResult = calculateFullBuffFinalOutput(
+        finalOutputResult.output, ctx.adenkiDamageBuffResult.multiplier, ctx.hyperAwakeningDamageBuffResult.multiplier
+      );
+
+      panel.innerHTML = `
+        <div class="fieldGroup">
+          <h4>변동 정보 (모든 시뮬레이터 탭의 현재 선택 반영)</h4>
+          <p style="font-size:11px;color:var(--text-muted);">스톤/팔찌/장비/아크패시브 진화/아크그리드 탭에서 지금 고른 가상 선택을 전부 합쳐서 실제로 적용했다고 가정한 값입니다. 아무 탭도 안 건드렸으면 실제값과 동일합니다.</p>
+          <table class="statTable">
+            <tr><th>무기 공격력</th><td>${Math.round(pieces.weaponAttack).toLocaleString()}</td></tr>
+            <tr><th>최종 공격력</th><td>${Math.round(pieces.finalDamage).toLocaleString()}</td></tr>
+            <tr><th>치명타×적주피 결합배율</th><td>${pieces.critEnemyCombined.toFixed(4)}</td></tr>
+            <tr><th>추가피해 배율</th><td>${pieces.extraMultiplier.toFixed(4)}</td></tr>
+            <tr><th>최종 산출식</th><td>${Math.round(finalOutputResult.output).toLocaleString()}</td></tr>
+            <tr><th>풀버프 최종 산출식</th><td>${Math.round(fullBuffOutputResult.output).toLocaleString()}</td></tr>
+            <tr><th>최종 변화율</th><td>${pct(totalChangePercent)}%</td></tr>
+          </table>
+        </div>
+      `;
     }
 
     // 어떤 탭이든 자기 자신의 선택을 뺀 "다른 탭들 상태" 대비 변화율(맥락 안에서의 한계 기여도)을
@@ -2492,6 +2539,7 @@
       renderDealerGemTab(ctx);
       renderDealerSynergyTab(ctx);
       renderDealerCustomTab(ctx);
+      renderDealerChangeInfoTab(ctx);
     }
 
     function renderSupportView(ctx) {
