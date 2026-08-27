@@ -488,7 +488,8 @@
 
     // %로 표시할 숫자를 소수점 2자리로 정리 (부동소수점 오차로 4.0417000000000005% 같은 값이 나오는 것 방지)
     function pct(n) {
-      return Number(n || 0).toFixed(2);
+      const fixed = Number(n || 0).toFixed(2);
+      return fixed === '-0.00' ? '0.00' : fixed;
     }
 
     // calculate.js가 반환하는 breakdown 객체(중첩 객체 포함)를 마우스오버 title에 넣을 수 있는
@@ -1645,36 +1646,12 @@
       const rows = result.rows.map((item) => `<tr><th>${item.label}</th><td>${item.value}</td><td>${pct(item.efficiencyPercent)}%</td></tr>`).join('');
       const contextAwarePercent = calculateContextAwareChangePercent('evolution', globalSimState.evolution);
 
-      // "변동 정보" — 이 커스텀 선택을 실제로 적용했을 때 캐릭터 스펙이 어떻게 바뀌는지(치명타/추가피해/
-      // 적주피 배율)와, 최종 산출식/풀버프 최종 산출식까지 그대로 계산해서 보여준다. 진화 트리는 무기공격력에
-      // 영향을 주는 노드가 없어 finalDamage 자체는 대개 변하지 않고, 세 배율(치명타/추가피해/적주피)만
-      // 바뀌는 게 정상 — 방어율/서포터낙인/카드/아덴기·초각성 버프는 진화 트리와 무관하므로 ctx의 실제값을
-      // 그대로 재사용(현재정보 탭의 recomputeDealerLiveNumbers와 동일한 조합 방식).
-      const p = result.hypotheticalPieces;
-      const hypFinalOutput = calculateFinalOutput(
-        p.finalDamage, p.avgDamageMultiplier, p.extraMultiplier, p.enemyMultiplier,
-        evolutionSimCtx.defenseResult.multiplier, evolutionSimCtx.brandResult.multiplier, evolutionSimCtx.cardExtraDamageResult.multiplier
-      );
-      const hypFullBuffOutput = calculateFullBuffFinalOutput(
-        hypFinalOutput.output, evolutionSimCtx.adenkiDamageBuffResult.multiplier, evolutionSimCtx.hyperAwakeningDamageBuffResult.multiplier
-      );
-
       resultEl.innerHTML = `
         <table class="statTable"><tr><th>노드</th><th>레벨</th><th>환산 효율</th></tr>${rows}</table>
         <table class="statTable">
           <tr><th>변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
         </table>
-        <h5 style="margin-top:12px;">변동 정보 (커스텀 선택 반영)</h5>
-        <table class="statTable">
-          <tr><th>최종 공격력</th><td>${Math.round(p.finalDamage).toLocaleString()}</td></tr>
-          <tr><th>치명타 평균피해배율</th><td>${p.avgDamageMultiplier.toFixed(4)}</td></tr>
-          <tr><th>추가피해 배율</th><td>${p.extraMultiplier.toFixed(4)}</td></tr>
-          <tr><th>적에게 주는 피해 배율</th><td>${p.enemyMultiplier.toFixed(4)}</td></tr>
-          <tr><th>최종 산출식</th><td>${Math.round(hypFinalOutput.output).toLocaleString()}</td></tr>
-          <tr><th>풀버프 최종 산출식</th><td>${Math.round(hypFullBuffOutput.output).toLocaleString()}</td></tr>
-          <tr><th>최종 변화율</th><td>${pct(contextAwarePercent)}%</td></tr>
-        </table>
-        <p style="font-size:11px;color:var(--text-muted);">※ 진화 최적화와 동일한 빌더를 사용해 5티어까지 반영되며, 다른 탭에서 선택한 스톤/팔찌/장비/아크그리드/전투분석도 함께 반영됩니다. 최종 산출식/풀버프 산출식은 방어율·서포터 낙인·카드·아덴기/초각성 버프는 실제 값을 그대로 사용하고 치명타/추가피해/적주피 배율만 이 커스텀 선택으로 재계산한 값입니다.</p>
+        <p style="font-size:11px;color:var(--text-muted);">※ 진화 최적화와 동일한 빌더를 사용해 5티어까지 반영되며, 다른 탭에서 선택한 스톤/팔찌/장비/아크그리드/전투분석도 함께 반영됩니다. 최종 산출식/풀버프 산출식/모든 탭 통합 변화율은 "변동 정보" 탭에서 확인할 수 있습니다.</p>
       `;
     }
 
@@ -2180,6 +2157,19 @@
       const realGemAttackLevel = getAllArkgridGemsAttackLevel(ctx.dealerData.arkgrid);
       const realGemExtraLevel = getAllArkgridGemsExtraDamageLevel(ctx.dealerData.arkgrid);
       const realGemBossLevel = getAllArkgridGemsBossDamageLevel(ctx.dealerData.arkgrid);
+      // 입력칸이 실제 상태로 기본 채워져 있어서, 사용자가 하나도 안 건드려도 recalcGemSim()이 실행되며
+      // globalSimState.arkgrid가 항상 non-null이 된다 — 그런데 이 값을 buildDealerDataWithArkGridChaosAndGems로
+      // "재구성"하면 실제 dealerData를 그대로 쓰는 것과 완전히 똑같지는 않아서(질서/혼돈 코어 포인트→
+      // 텍스트 재합성 경로의 미세한 근사 오차), "변동 정보"/surgeBar의 "아무 것도 안 건드렸는데 0%가
+      // 아님" 버그로 나타났다(잼구릿 실측 0.45%). 입력값이 실제값과 완전히 같으면 아예 override를
+      // 안 보내서(null 유지) 재구성 경로 자체를 안 타게 만든다.
+      const realGemSimInputs = {
+        orderPoints: { ...corePoints.질서 },
+        chaosPoints: { ...corePoints.혼돈 },
+        gemAttackLevel: realGemAttackLevel,
+        gemExtraDamageLevel: realGemExtraLevel,
+        gemBossDamageLevel: realGemBossLevel,
+      };
       const coreRows = coreSummary.map((c) => `<tr><td>${c.name}</td><td>${c.point}P</td><td>${c.grade}</td></tr>`).join('');
 
       panel.innerHTML = `
@@ -2263,7 +2253,7 @@
         if (result.chaosCritDamagePercent) {
           chaosContribParts.push(`치명타 피해 +${pct(result.chaosCritDamagePercent)}%`);
         }
-        globalSimState.arkgrid = inputs;
+        globalSimState.arkgrid = JSON.stringify(inputs) === JSON.stringify(realGemSimInputs) ? null : inputs;
         const contextAwarePercent = calculateContextAwareChangePercent('arkgrid', inputs);
         panel.querySelector('.gemSimResult').innerHTML = `
           <table class="statTable">
