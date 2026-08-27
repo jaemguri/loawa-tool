@@ -919,7 +919,7 @@
         </div>
         <div class="fieldGroup">
           <h4>특화 스탯 효과 (API 실측 — 캐릭터 정보창 "특화" hover와 동일한 원문, 참고용)</h4>
-          <p style="font-size:11px;color:var(--text-muted);">전부 특정 스킬 하나에만 적용되는 조건부 효과라 여기 표시된 원문 그대로 "적에게 주는 피해"에 곱하지는 않습니다. 대신 "전투분석" 탭에서 실제 로테이션 스킬 지분과 매칭해 그 스킬의 사용 비중만큼만 가중 반영합니다("특화 스탯 스킬 피해 지분 가중" 표 참고).</p>
+          <p style="font-size:11px;color:var(--text-muted);">특정 스킬 하나에만 적용되는 조건부 효과는 여기 표시된 원문 그대로 "적에게 주는 피해"에 곱하지 않고, "전투분석" 탭에서 실제 로테이션 스킬 지분과 매칭해 그 스킬의 사용 비중만큼만 가중 반영합니다("특화 스탯 스킬 피해 지분 가중" 표 참고). 다만 소서리스처럼 특정 스킬이 아니라 아이덴티티 메커니즘 전체(주력 스킬 대부분)에 걸리는 효과는 지분가중 없이 바로 "적에게 주는 피해"에 general 버프로 직접 반영됩니다.</p>
           <ul style="margin:4px 0; padding-left:20px; font-size:12.5px;">
             ${getSpecializationTooltipLines(ctx.dealerData.profiles).map((line) => `<li>${line}</li>`).join('')}
           </ul>
