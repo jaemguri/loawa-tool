@@ -5140,6 +5140,11 @@ function buildDealerDataWithAllOverrides(dealerData, overrides) {
 function calculateCombinedSimulationPieces(dealerData, supportData, ctx, overrides, skillShares) {
   const modifiedDealerData = buildDealerDataWithAllOverrides(dealerData, overrides);
   const newStats = calculateCharacterStats(modifiedDealerData);
+  // 최종 산출식용으로는 스킬 지분 가중이 걸린 결합값(critEnemyCombined)을 쓰지만, "변동 정보" 화면에
+  // 치명타 적중률%/진화형 피해%처럼 사람이 읽을 수 있는 raw 값을 보여주려면 가중 전(base) 결과가 따로
+  // 필요하다 — "현재 정보" 탭도 가중 안 된 값을 보여주는 것과 일관되게 맞춘다.
+  const newCrit = calculateCritMultiplier(modifiedDealerData, supportData, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
+  const newEnemy = calculateEnemyDamageMultiplier(modifiedDealerData, newCrit.critRatePercent, supportData, ctx.brandEffectiveRatio, { partyClassNames: ctx.partyClassNames, partyMemberRatios: ctx.partyMemberRatios });
   const critEnemyCombined = calculateSkillWeightedCritEnemyMultiplier(modifiedDealerData, supportData, ctx, skillShares);
   const newExtra = calculateExtraDamageMultiplier(modifiedDealerData);
   const adrenalineBonusBase = calculateCombinedAdrenalineBonusBase(dealerData, ctx, overrides);
@@ -5155,8 +5160,11 @@ function calculateCombinedSimulationPieces(dealerData, supportData, ctx, overrid
   return {
     total,
     weaponAttack: newStats.weaponAttack,
+    weaponAttackBreakdown: newStats.weaponAttackBreakdown,
     finalDamage: newFinalDamage,
     critEnemyCombined,
+    critResult: newCrit,
+    enemyResult: newEnemy,
     extraMultiplier: newExtra.multiplier,
     orderAdjustment,
   };
