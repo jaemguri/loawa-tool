@@ -1141,18 +1141,35 @@
       const fullBuffOutputResult = calculateFullBuffFinalOutput(
         finalOutputResult.output, ctx.adenkiDamageBuffResult.multiplier, ctx.hyperAwakeningDamageBuffResult.multiplier
       );
+      // calculateFinalOutput의 breakdown은 critMultiplier/enemyDamageMultiplier 자리에 실제로는
+      // critEnemyCombined/orderAdjustment를 넣어서 계산했기 때문에(위 주석 참고) 그 breakdown을 그대로
+      // hover에 쓰면 라벨이 실제 값과 안 맞는다 — hover 전용으로 정확한 이름의 breakdown을 따로 만든다.
+      const finalOutputHoverBreakdown = {
+        최종공격력: pieces.finalDamage,
+        치명타_진화형피해_결합배율: pieces.critEnemyCombined,
+        추가피해_배율: pieces.extraMultiplier,
+        아크그리드_질서코어_조정: pieces.orderAdjustment,
+        방어율: ctx.defenseResult.multiplier,
+        서포터_낙인: ctx.brandResult.multiplier,
+        카드: ctx.cardExtraDamageResult.multiplier,
+      };
+      const fullBuffOutputHoverBreakdown = {
+        최종산출식: finalOutputResult.output,
+        아덴기배율: ctx.adenkiDamageBuffResult.multiplier,
+        초각성배율: ctx.hyperAwakeningDamageBuffResult.multiplier,
+      };
 
       panel.innerHTML = `
         <div class="fieldGroup">
           <h4>변동 정보 (모든 시뮬레이터 탭의 현재 선택 반영)</h4>
-          <p style="font-size:11px;color:var(--text-muted);">스톤/팔찌/장비/아크패시브 진화/아크그리드 탭에서 지금 고른 가상 선택을 전부 합쳐서 실제로 적용했다고 가정한 값입니다. 아무 탭도 안 건드렸으면 실제값과 동일합니다.</p>
+          <p style="font-size:11px;color:var(--text-muted);">스톤/팔찌/장비/아크패시브 진화/아크그리드 탭에서 지금 고른 가상 선택을 전부 합쳐서 실제로 적용했다고 가정한 값입니다. 아무 탭도 안 건드렸으면 실제값과 동일합니다. 각 값에 마우스를 올리면 어디서 어떻게 반영됐는지 나옵니다.</p>
           <table class="statTable">
-            <tr><th>무기 공격력</th><td>${Math.round(pieces.weaponAttack).toLocaleString()}</td></tr>
+            <tr><th>무기 공격력</th><td class="hoverInfo" ${hoverTitle(pieces.weaponAttackBreakdown)}>${Math.round(pieces.weaponAttack).toLocaleString()}</td></tr>
             <tr><th>최종 공격력</th><td>${Math.round(pieces.finalDamage).toLocaleString()}</td></tr>
-            <tr><th>치명타×적주피 결합배율</th><td>${pieces.critEnemyCombined.toFixed(4)}</td></tr>
-            <tr><th>추가피해 배율</th><td>${pieces.extraMultiplier.toFixed(4)}</td></tr>
-            <tr><th>최종 산출식</th><td>${Math.round(finalOutputResult.output).toLocaleString()}</td></tr>
-            <tr><th>풀버프 최종 산출식</th><td>${Math.round(fullBuffOutputResult.output).toLocaleString()}</td></tr>
+            <tr><th>치명타 적중률</th><td class="hoverInfo" ${hoverTitle(pieces.critResult.critRateBreakdown)}>${pieces.critResult.critRatePercent.toFixed(2)}%</td></tr>
+            <tr><th>진화형 피해</th><td class="hoverInfo" ${hoverTitle(pieces.enemyResult.breakdown.아크패시브_진화형피해_상세)}>${pct(pieces.enemyResult.breakdown.아크패시브_진화형피해)}%</td></tr>
+            <tr><th>최종 산출식</th><td class="hoverInfo" ${hoverTitle(finalOutputHoverBreakdown)}>${Math.round(finalOutputResult.output).toLocaleString()}</td></tr>
+            <tr><th>풀버프 최종 산출식</th><td class="hoverInfo" ${hoverTitle(fullBuffOutputHoverBreakdown)}>${Math.round(fullBuffOutputResult.output).toLocaleString()}</td></tr>
             <tr><th>최종 변화율</th><td>${pct(totalChangePercent)}%</td></tr>
           </table>
         </div>
