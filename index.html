@@ -1126,7 +1126,19 @@
       if (!panel) return;
 
       const pieces = calculateCombinedSimulationPieces(ctx.dealerData, ctx.supportData, ctx, globalSimState, globalSimSkillShares);
-      const realTotal = ctx.finalDamage * ctx.critResult.avgDamageMultiplier * ctx.extraDamageResult.multiplier * ctx.enemyDamageResult.multiplier;
+      // 비교 기준(realTotal)도 pieces와 완전히 같은 방식(calculateCombinedSimulationPieces, overrides만
+      // 전부 비움)으로 계산해야 한다 — ctx.critResult/ctx.enemyDamageResult는 전투분석 탭에서 이미
+      // 스킬 지분 가중(치명타 트라이포드) + 특화 스킬 지분 가중(calculateSpecializationSkillWeightedEnemyDamage)이
+      // 둘 다 덮어써져 있는 값인데, pieces.total 쪽(calculateSkillWeightedCritEnemyMultiplier)은 치명타
+      // 트라이포드 가중만 반영하고 특화 스킬 가중은 반영하지 않아서, 두 값을 그대로 나누면 "특화 스킬
+      // 가중분"만큼 기준선이 부풀려져 실제로는 이득인 조합도 손해로 보이는 버그가 있었다(한가한신수 실측:
+      // 진화 트리 최적화에선 +7.76%인데 이 탭에서만 -9.76%로 반대로 나온 사례 — 사용자 제보로 발견).
+      const baselinePieces = calculateCombinedSimulationPieces(
+        ctx.dealerData, ctx.supportData, ctx,
+        { abilityStone: null, bracelet: null, armorLevels: null, evolution: null, arkgrid: null },
+        globalSimSkillShares
+      );
+      const realTotal = baselinePieces.total;
       const totalChangePercent = ((pieces.total / realTotal) - 1) * 100;
 
       // calculateFinalOutput은 치명타/적주피를 별도 인자로 받지만, 스킬 지분 가중이 걸리면 이 둘이
