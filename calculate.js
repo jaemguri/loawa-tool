@@ -3202,9 +3202,14 @@ function calculateEvolutionTreeOptimization(dealerData, supportData, ctx, skillS
 
   // 비교 기준(realTotal)도 최적화 결과와 동일한 방식(스킬 지분 가중 포함)으로 다시 계산해야 공정하게
   // 비교된다 — ctx.critResult.avgDamageMultiplier는 전투분석 탭에서 이미 가중치가 반영돼 있을 수도
-  // 있고 아닐 수도 있어 일관성이 없다(적주피 배율은 아예 가중 안 됨). 현재 실제 선택 그대로(1~4티어는
-  // 원본, 금단의 주문 리매핑 없이) 재구성해서 skillShares를 동일하게 적용한다.
-  const currentFull1to4 = [1, 2, 3, 4].flatMap((t) => current[t]);
+  // 있고 아닐 수도 있어 일관성이 없다(적주피 배율은 아예 가중 안 됨).
+  // 2티어는 원본('금단의 주문') 대신 tier2Current(리매핑된 '한계 돌파')를 써야 한다 — '금단의 주문'
+  // 원문("...추가로 X% 증가합니다")은 일반 정규식 추출기가 두 번째 조건절을 못 잡아서 실제보다 적게
+  // 잡히는데(사용자 실측: 낫구릿 금단의주문Lv2 텍스트 추출 30% vs 한계돌파Lv2 텍스트 추출 40%, 10%p
+  // 과소평가), '금단의 주문=한계 돌파와 같은 값'이라는 정책 자체가 이 추출 부정확성을 우회하려고 만든
+  // 것인데 realTotal 쪽에서만 원본을 쓰면 그 우회가 무효화되어, 모든 티어가 "변경 없음"이어도 두 값이
+  // 서로 다른 방식으로 재구성되어 가짜 변화율(사용자 제보: 4.84%)이 나오는 버그였음.
+  const currentFull1to4 = [...current[1], ...tier2Current, ...current[3], ...current[4]];
   const realTotal = totalDamageForFullEvolutionSelections(dealerData, supportData, ctx, currentFull1to4, current[5], realCritLevel, skillShares);
   const totalChangePercent = ((optimizedTotal / realTotal) - 1) * 100;
 
