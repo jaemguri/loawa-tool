@@ -2764,8 +2764,14 @@ function buildSyntheticEvolutionEffect(name, level) {
 
 // 선택된 진화 노드 조합(selections=[{name, level}])으로 실제 진화 트리를 통째로 교체한 dealerData를 생성.
 // 치명(1티어)은 진화 Effects 텍스트가 아니라 profiles.Stats의 치명 스탯 자체에 직접 반영되는 값이라(실제
-// 캐릭터도 이렇게 반영됨) buildDealerDataWithCritStatDelta로 별도 처리 — 다만 실제 팔찌 치명 스탯 시뮬레이터와
-// 같은 한계로, 실제 캐릭터가 이미 갖고 있는 치명 스탯을 빼지 않고 가상 값만큼 "추가로 있다"고 가정한다.
+// 캐릭터도 이렇게 반영됨) buildDealerDataWithCritStatDelta로 별도 처리 — "선택 레벨 × 50"을 그대로 더하지
+// 않고, 실제 현재 투자 레벨과의 **차이**만큼만 델타로 적용한다(buildDealerDataWithFullEvolutionSelections와
+// 동일한 방식). 예전엔 커스텀 시뮬레이터가 항상 0에서 시작했어서 "선택 레벨×50 그대로 더하기"가 곧
+// "0 대비 증가분"과 같아 문제가 없었지만, 커스텀 시뮬레이터 초기값을 실제 투자 트리로 프리필하도록 바꾼
+// 뒤로는(치명 선택값이 보통 실제값과 같거나 비슷하게 시작) 이 방식이 실제 치명 스탯 위에 또 한 번
+// 통째로 더해버려서 치명타 적중률이 실제보다 훨씬 부풀려지는 버그가 됨 — 사용자가 재구성값(109%)이
+// 실제 표시값(91%)과 다르다고 정확히 지적해서 발견(잼구릿 실측 차이 17.9%p ≈ 치명 Lv10×50=500 스탯을
+// 중복으로 더한 만큼과 정확히 일치).
 function buildDealerDataWithEvolutionSelections(dealerData, selections) {
   const validSelections = (selections || []).filter((s) => s.level > 0);
   const critSelection = validSelections.find((s) => s.name === '치명');
@@ -2775,8 +2781,12 @@ function buildDealerDataWithEvolutionSelections(dealerData, selections) {
   const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
   const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects] };
 
+  const realCritLevel = (getEvolutionTierCurrentSelections(dealerData.arkpassive)[1].find((s) => s.name === '치명') || {}).level || 0;
+  const selectedCritLevel = critSelection ? critSelection.level : 0;
+  const critDelta = (selectedCritLevel - realCritLevel) * 50;
+
   let modifiedDealerData = { ...dealerData, arkpassive: modifiedArkpassive };
-  if (critSelection) modifiedDealerData = buildDealerDataWithCritStatDelta(modifiedDealerData, critSelection.level * 50);
+  if (critDelta !== 0) modifiedDealerData = buildDealerDataWithCritStatDelta(modifiedDealerData, critDelta);
   return modifiedDealerData;
 }
 
@@ -2995,9 +3005,28 @@ function buildDealerDataWithFullEvolutionSelections(dealerData, tier1to4Sels, ti
   const textSelections = validT14.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
   const tier5Synthetic = (tier5Sels || []).map((s) => buildSyntheticTier5Effect(s.name)).filter(Boolean);
 
+  // 음속 돌파처럼 EVOLUTION_TIER5_LEVEL2_TEXT에 없는(합성 미지원) 5티어 노드가 tier5Sels에 들어있으면
+  // buildSyntheticTier5Effect가 null을 반환해서 그냥 통째로 사라진다 — "현재 실제 상태를 그대로
+  // 재구성"하는 용도(예: "변동 정보" 탭의 비교 기준선)로 쓰일 때 이 노드의 실제 보너스가 감쪽같이
+  // 빠져서 재구성값이 실제값보다 작게 나오는 문제가 있었다(뇌벽처럼 음속 돌파를 쓰는 캐릭터는 진화 탭을
+  // 열기만 해도 "변동 정보"에 가짜 음수 변화율이 뜸). 합성 못 하는 이름은 실제 원본 Effect를 그대로
+  // 보존해서 채워 넣는다 — 다른 후보로 교체 비교할 때는(진화 최적화 등) 여전히 0 취급되지만, "지금 상태
+  // 그대로"를 재구성할 땐 실제와 정확히 일치하게 된다.
+  const tier5UnsupportedNames = (tier5Sels || []).filter((s) => !EVOLUTION_TIER5_LEVEL2_TEXT[s.name]).map((s) => s.name);
+  const realEvolutionEffects = ((dealerData.arkpassive && dealerData.arkpassive.Effects) || []).filter((e) => e.Name === '진화');
+  const preservedTier5RealEffects = tier5UnsupportedNames.length
+    ? realEvolutionEffects.filter((e) => {
+        try {
+          const obj = JSON.parse(e.ToolTip);
+          const name = obj.Element_000 && stripHtml(obj.Element_000.value);
+          return tier5UnsupportedNames.includes(name);
+        } catch (err) { return false; }
+      })
+    : [];
+
   const nonEvolutionEffects = ((dealerData.arkpassive && dealerData.arkpassive.Effects) || []).filter((e) => e.Name !== '진화');
   const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
-  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects, ...tier5Synthetic] };
+  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects, ...tier5Synthetic, ...preservedTier5RealEffects] };
 
   let modifiedDealerData = { ...dealerData, arkpassive: modifiedArkpassive };
   if (critSelection) {
