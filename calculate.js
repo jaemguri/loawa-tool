@@ -2776,10 +2776,17 @@ function buildDealerDataWithEvolutionSelections(dealerData, selections) {
   const validSelections = (selections || []).filter((s) => s.level > 0);
   const critSelection = validSelections.find((s) => s.name === '치명');
   const textSelections = validSelections.filter((s) => s.name !== '치명' && EVOLUTION_NODE_LEVEL_TEXT[s.name]);
+  // 5티어(뭉툭한 가시/마나 용광로/입식 타격가)는 별도 테이블(EVOLUTION_TIER5_LEVEL2_TEXT, Lv.2 풀투자만
+  // 실측 텍스트가 있음)에서 관리되므로 위 textSelections 필터에 안 걸린다 — 그대로 두면 이 표(커스텀
+  // 시뮬레이터의 "노드별 환산 효율")에서 5티어 노드가 항상 0%로 나와서, 실제로는 값이 큰 노드가 아무
+  // 것도 안 주는 것처럼 보이는 문제가 있었다(사용자 제보: 입식 타격가가 0%로 나옴). Lv.2일 때만 합성
+  // 가능(Lv.1은 실측 데이터 자체가 없어 여전히 0%로 남음 — 데이터가 없어서 못 하는 것뿐, 버그 아님).
+  const tier5Selections = validSelections.filter((s) => s.level === 2 && EVOLUTION_TIER5_LEVEL2_TEXT[s.name]);
 
   const nonEvolutionEffects = ((dealerData.arkpassive && dealerData.arkpassive.Effects) || []).filter((e) => e.Name !== '진화');
   const syntheticEffects = textSelections.map((s) => buildSyntheticEvolutionEffect(s.name, s.level)).filter(Boolean);
-  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects] };
+  const tier5Synthetic = tier5Selections.map((s) => buildSyntheticTier5Effect(s.name)).filter(Boolean);
+  const modifiedArkpassive = { ...dealerData.arkpassive, Effects: [...nonEvolutionEffects, ...syntheticEffects, ...tier5Synthetic] };
 
   const realCritLevel = (getEvolutionTierCurrentSelections(dealerData.arkpassive)[1].find((s) => s.name === '치명') || {}).level || 0;
   const selectedCritLevel = critSelection ? critSelection.level : 0;
